@@ -4,7 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
+	"time"
 )
+
+var symlinkSeq uint64
 
 // IsSymlink returns true if path exists and is a symbolic link.
 func IsSymlink(path string) bool {
@@ -32,8 +36,11 @@ func AtomicSymlink(target, linkPath string) error {
 		return err
 	}
 
-	tmpLink := filepath.Join(parent, fmt.Sprintf(".tmp_link_%d", os.Getpid()))
-	_ = os.Remove(tmpLink)
+	seq := atomic.AddUint64(&symlinkSeq, 1)
+	tmpLink := filepath.Join(parent, fmt.Sprintf(".tmp_link_%d_%d_%d", os.Getpid(), time.Now().UnixNano(), seq))
+	defer func() {
+		_ = os.Remove(tmpLink)
+	}()
 
 	if err := os.Symlink(target, tmpLink); err != nil {
 		return err

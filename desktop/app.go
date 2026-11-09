@@ -33,7 +33,7 @@ func NewAppState(cx *core.Scope) *AppState {
 		accessors = append(accessors, p)
 	}
 
-	defaultTarget := "/Volumes/PHD/exodrive-caches"
+	defaultTarget := "/Volumes/ExternalDrive/exodrive-caches"
 
 	return &AppState{
 		Items:       core.NewSignalFunc(cx, []exoCore.CacheItem{}, nil),
@@ -78,7 +78,7 @@ func renderHeader(cx *core.Scope, state *AppState) core.Node {
 					},
 					core.Text{
 						Class:   "text-xs text-slate-500 dark:text-zinc-400",
-						Content: "Detect and safely migrate developer tool caches to external APFS/NVMe storage",
+						Content: "Detect and migrate developer tool caches to external storage",
 					},
 				},
 			},
@@ -281,11 +281,11 @@ func renderFooter(cx *core.Scope, state *AppState) core.Node {
 		Children: []core.Node{
 			core.Text{
 				Class:   "text-xs text-slate-400 dark:text-zinc-500",
-				Content: "Exodrive v1.0 • Fail-Closed APFS Protected",
+				Content: "Exodrive v1.0 • APFS / ext4",
 			},
 			core.Text{
 				Class:   "text-xs font-mono text-slate-500 dark:text-zinc-400",
-				Content: "Manifest: ~/.exodrive/manifest.json",
+				Content: fmt.Sprintf("Manifest: %s", exoCore.GetManifestPath()),
 			},
 		},
 	}
@@ -293,7 +293,7 @@ func renderFooter(cx *core.Scope, state *AppState) core.Node {
 
 func triggerScan(cx *core.Scope, state *AppState) {
 	state.IsScanning.Set(true)
-	state.StatusMsg.Set("Scanning developer caches across 10 toolchains...")
+	state.StatusMsg.Set("Scanning developer caches...")
 
 	go func() {
 		ctx := context.Background()
@@ -301,7 +301,7 @@ func triggerScan(cx *core.Scope, state *AppState) {
 		cx.Post(func() {
 			state.IsScanning.Set(false)
 			if err != nil {
-				state.StatusMsg.Set(fmt.Sprintf("Scan error: %v", err))
+				state.StatusMsg.Set(fmt.Sprintf("Scan failed: %v", err))
 				return
 			}
 			state.Items.Set(items)
@@ -362,7 +362,7 @@ func triggerMigration(cx *core.Scope, state *AppState) {
 			if len(errs) > 0 {
 				state.StatusMsg.Set(fmt.Sprintf("Migrated %d with errors: %s", successCount, strings.Join(errs, "; ")))
 			} else {
-				state.StatusMsg.Set(fmt.Sprintf("Successfully migrated %d cache(s) to %s!", successCount, filepath.Base(targetDir)))
+				state.StatusMsg.Set(fmt.Sprintf("Migrated %d cache(s) to %s.", successCount, filepath.Base(targetDir)))
 			}
 		})
 	}()

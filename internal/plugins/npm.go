@@ -71,7 +71,7 @@ func (p *NPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 func (p *NPMProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
 	running := fsutil.CheckRunningProcesses("npm", "npx")
 	if len(running) > 0 {
-		return fmt.Errorf("npm is currently running (PID: %s). Please complete or stop npm tasks before migrating", running[0].PID)
+		return fmt.Errorf("npm is running (PID: %s): stop active npm processes before migration", running[0].PID)
 	}
 	return nil
 }

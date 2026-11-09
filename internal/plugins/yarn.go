@@ -79,7 +79,7 @@ func (p *YarnProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 func (p *YarnProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
 	running := fsutil.CheckRunningProcesses("yarn")
 	if len(running) > 0 {
-		return fmt.Errorf("yarn is actively running (PID: %s)", running[0].PID)
+		return fmt.Errorf("yarn is running (PID: %s): stop active yarn tasks before migration", running[0].PID)
 	}
 	return nil
 }

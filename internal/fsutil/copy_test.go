@@ -54,3 +54,51 @@ func TestCopyDir(t *testing.T) {
 		t.Fatalf("failed verifying readonly.txt content")
 	}
 }
+
+func TestCopyFile(t *testing.T) {
+	tmp := t.TempDir()
+	srcFile := filepath.Join(tmp, "source.bin")
+	dstFile := filepath.Join(tmp, "sub", "destination.bin")
+
+	content := []byte("binary cache raw content for docker virtual disk testing")
+	if err := os.WriteFile(srcFile, content, 0640); err != nil {
+		t.Fatal(err)
+	}
+
+	var progressCalls int
+	var lastCopied, lastTotal int64
+	err := CopyFile(srcFile, dstFile, int64(len(content)), func(copied, total int64) {
+		progressCalls++
+		lastCopied = copied
+		lastTotal = total
+	})
+	if err != nil {
+		t.Fatalf("CopyFile failed: %v", err)
+	}
+
+	if progressCalls == 0 {
+		t.Errorf("expected progress callback to be called")
+	}
+	if lastCopied != int64(len(content)) || lastTotal != int64(len(content)) {
+		t.Errorf("expected copied=%d, total=%d; got copied=%d, total=%d", len(content), len(content), lastCopied, lastTotal)
+	}
+
+	dstData, err := os.ReadFile(dstFile)
+	if err != nil || string(dstData) != string(content) {
+		t.Fatalf("destination file content mismatch: %v", err)
+	}
+
+	// Test Directory error
+	srcDir := filepath.Join(tmp, "dir")
+	if err := os.Mkdir(srcDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := CopyFile(srcDir, filepath.Join(tmp, "out"), 0, nil); err == nil {
+		t.Errorf("expected error when source is directory, got nil")
+	}
+
+	// Test Nonexistent file error
+	if err := CopyFile(filepath.Join(tmp, "nonexistent"), filepath.Join(tmp, "out2"), 0, nil); err == nil {
+		t.Errorf("expected error for nonexistent file, got nil")
+	}
+}

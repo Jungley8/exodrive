@@ -44,9 +44,10 @@ func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 		orbDataDir = filepath.Join(home, "Library", "Application Support", "OrbStack", "data")
 	}
 
-	// Also check known user volume path if existing
-	if fi, err := os.Stat("/Volumes/PHD/Docker/data"); err == nil && fi.IsDir() {
-		orbDataDir = "/Volumes/PHD/Docker/data"
+	if envDir := os.Getenv("ORBSTACK_DATA_DIR"); envDir != "" {
+		if fi, err := os.Stat(envDir); err == nil && fi.IsDir() {
+			orbDataDir = envDir
+		}
 	}
 
 	if _, err := os.Stat(orbDataDir); err == nil {
@@ -65,7 +66,7 @@ func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			IsSymlink:      fsutil.IsSymlink(orbDataDir),
 			RedirectMethod: core.RedirectNativeConfig,
 			TargetSubdir:   filepath.Join("Docker", "orbstack"),
-			Warning:        "Safety guard: Stop OrbStack before migration to prevent disk image corruption.",
+			Warning:        "Stop OrbStack before migration to prevent disk image corruption.",
 		})
 	}
 
@@ -84,7 +85,7 @@ func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			IsSymlink:      fsutil.IsSymlink(dockerRaw),
 			RedirectMethod: core.RedirectSymlink,
 			TargetSubdir:   filepath.Join("Docker", "docker-desktop"),
-			Warning:        "Safety guard: Quit Docker Desktop completely before migrating Docker.raw.",
+			Warning:        "Stop Docker Desktop before migrating Docker.raw.",
 		})
 	}
 
@@ -104,7 +105,7 @@ func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			IsSymlink:      fsutil.IsSymlink(colimaDir),
 			RedirectMethod: core.RedirectSymlink,
 			TargetSubdir:   filepath.Join("Docker", "colima"),
-			Warning:        "Safety guard: Run 'colima stop' before migrating VM disks.",
+			Warning:        "Run 'colima stop' before migrating VM disks.",
 		})
 	}
 
@@ -114,7 +115,7 @@ func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 func (p *DockerProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
 	running := fsutil.CheckRunningProcesses("Docker", "com.docker.backend", "OrbStack", "orbstack", "colima")
 	if len(running) > 0 {
-		return fmt.Errorf("container engine is actively running (%s, PID: %s). Please quit/stop it before migrating VM images", running[0].Name, running[0].PID)
+		return fmt.Errorf("container engine is running (%s, PID: %s): stop the container engine before migration", running[0].Name, running[0].PID)
 	}
 	return nil
 }
@@ -146,12 +147,29 @@ func (p *DockerProvider) Migrate(ctx context.Context, item core.CacheItem, targe
 
 	// Copy and symlink fallback
 	if !item.IsSymlink {
-		if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
-			return fmt.Errorf("copy %s: %w", item.Title, err)
-		}
-		backupDir := item.CurrentPath + ".bak"
-		if err := fsutil.ReplaceDirWithSymlink(item.CurrentPath, dest, backupDir); err != nil {
+		fi, err := os.Stat(item.CurrentPath)
+		if err != nil {
 			return err
+		}
+
+		if fi.IsDir() {
+			if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+				return fmt.Errorf("copy %s: %w", item.Title, err)
+			}
+			backupDir := item.CurrentPath + ".bak"
+			if err := fsutil.ReplaceDirWithSymlink(item.CurrentPath, dest, backupDir); err != nil {
+				return err
+			}
+		} else {
+			// Single-file image (Docker.raw)
+			destFile := filepath.Join(dest, filepath.Base(item.CurrentPath))
+			if err := fsutil.CopyFile(item.CurrentPath, destFile, item.SizeBytes, onProgress); err != nil {
+				return fmt.Errorf("copy %s: %w", item.Title, err)
+			}
+			backupFile := item.CurrentPath + ".bak"
+			if err := fsutil.ReplaceDirWithSymlink(item.CurrentPath, destFile, backupFile); err != nil {
+				return err
+			}
 		}
 	}
 

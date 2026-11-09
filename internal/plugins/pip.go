@@ -78,7 +78,7 @@ func (p *PipProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 func (p *PipProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
 	running := fsutil.CheckRunningProcesses("pip", "pip3")
 	if len(running) > 0 {
-		return fmt.Errorf("pip is actively running (PID: %s)", running[0].PID)
+		return fmt.Errorf("pip is running (PID: %s): stop active pip tasks before migration", running[0].PID)
 	}
 	return nil
 }

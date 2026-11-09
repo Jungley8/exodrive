@@ -74,7 +74,7 @@ func (p *CargoProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 				IsSymlink:      isSymlink,
 				RedirectMethod: core.RedirectSymlink,
 				TargetSubdir:   s.target,
-				Warning:        "Safety rule: ~/.cargo/bin is kept on local drive for offline availability.",
+				Warning:        "Binary directory ~/.cargo/bin remains on internal storage.",
 			})
 		}
 	}
@@ -85,7 +85,7 @@ func (p *CargoProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 func (p *CargoProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
 	running := fsutil.CheckRunningProcesses("cargo", "rustc")
 	if len(running) > 0 {
-		return fmt.Errorf("cargo or rustc is actively running (PID: %s). Finish builds before migrating", running[0].PID)
+		return fmt.Errorf("cargo or rustc is running (PID: %s): stop active builds before migration", running[0].PID)
 	}
 	return nil
 }

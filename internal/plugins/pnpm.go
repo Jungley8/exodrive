@@ -86,7 +86,7 @@ func (p *PNPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 func (p *PNPMProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
 	running := fsutil.CheckRunningProcesses("pnpm")
 	if len(running) > 0 {
-		return fmt.Errorf("pnpm is actively running (PID: %s). Stop running tasks before migrating", running[0].PID)
+		return fmt.Errorf("pnpm is running (PID: %s): stop active pnpm tasks before migration", running[0].PID)
 	}
 	return nil
 }

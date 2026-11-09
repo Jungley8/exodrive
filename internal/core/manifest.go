@@ -28,11 +28,8 @@ func GetManifestPath() string {
 	return filepath.Join(home, ".exodrive", "manifest.json")
 }
 
-// LoadManifest reads the manifest file from ~/.exodrive/manifest.json (or EXODRIVE_MANIFEST_PATH).
-func LoadManifest() (*Manifest, error) {
-	manifestMu.Lock()
-	defer manifestMu.Unlock()
-
+// loadManifestLocked reads the manifest from disk. Caller MUST hold manifestMu.
+func loadManifestLocked() (*Manifest, error) {
 	p := GetManifestPath()
 	data, err := os.ReadFile(p)
 	if err != nil {
@@ -55,11 +52,8 @@ func LoadManifest() (*Manifest, error) {
 	return &m, nil
 }
 
-// SaveManifest atomically writes the manifest to ~/.exodrive/manifest.json (or EXODRIVE_MANIFEST_PATH).
-func SaveManifest(m *Manifest) error {
-	manifestMu.Lock()
-	defer manifestMu.Unlock()
-
+// saveManifestLocked atomically writes the manifest to disk. Caller MUST hold manifestMu.
+func saveManifestLocked(m *Manifest) error {
 	p := GetManifestPath()
 	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 		return err
@@ -78,22 +72,48 @@ func SaveManifest(m *Manifest) error {
 	return os.Rename(tmp, p)
 }
 
-// RecordMigration saves a migration record.
-func RecordMigration(rec MigrationRecord) error {
-	m, err := LoadManifest()
-	if err != nil {
-		return err
-	}
-	m.Records[rec.ID] = rec
-	return SaveManifest(m)
+// LoadManifest reads the manifest file from ~/.exodrive/manifest.json (or EXODRIVE_MANIFEST_PATH).
+func LoadManifest() (*Manifest, error) {
+	manifestMu.Lock()
+	defer manifestMu.Unlock()
+	return loadManifestLocked()
 }
 
-// RemoveRecord removes a record upon rollback.
-func RemoveRecord(id string) error {
-	m, err := LoadManifest()
+// SaveManifest atomically writes the manifest to ~/.exodrive/manifest.json (or EXODRIVE_MANIFEST_PATH).
+func SaveManifest(m *Manifest) error {
+	manifestMu.Lock()
+	defer manifestMu.Unlock()
+	return saveManifestLocked(m)
+}
+
+// ModifyManifest executes fn within an exclusive transaction, holding manifestMu
+// across the load, mutation, and save cycle.
+func ModifyManifest(fn func(m *Manifest) error) error {
+	manifestMu.Lock()
+	defer manifestMu.Unlock()
+
+	m, err := loadManifestLocked()
 	if err != nil {
 		return err
 	}
-	delete(m.Records, id)
-	return SaveManifest(m)
+	if err := fn(m); err != nil {
+		return err
+	}
+	return saveManifestLocked(m)
+}
+
+// RecordMigration saves a migration record atomically under manifestMu.
+func RecordMigration(rec MigrationRecord) error {
+	return ModifyManifest(func(m *Manifest) error {
+		m.Records[rec.ID] = rec
+		return nil
+	})
+}
+
+// RemoveRecord removes a record upon rollback atomically under manifestMu.
+func RemoveRecord(id string) error {
+	return ModifyManifest(func(m *Manifest) error {
+		delete(m.Records, id)
+		return nil
+	})
 }

@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"exodrive/internal/core"
@@ -12,22 +14,30 @@ import (
 	"exodrive/internal/ui"
 )
 
+const version = "1.0.0"
+
 func main() {
 	if len(os.Args) < 2 {
-		runCheck()
+		runCheck(nil)
 		return
 	}
 
 	cmd := os.Args[1]
 	switch cmd {
-	case "check", "scan", "list":
-		runCheck()
+	case "check", "scan", "list", "status":
+		runCheck(os.Args[2:])
+	case "--json":
+		runCheck([]string{"--json"})
+	case "preflight":
+		runPreflight(os.Args[2:])
 	case "migrate":
 		runMigrate(os.Args[2:])
 	case "orphans":
 		runOrphans(os.Args[2:])
 	case "rollback":
 		runRollback(os.Args[2:])
+	case "version", "--version", "-v":
+		printVersion()
 	case "help", "-h", "--help":
 		printHelp()
 	default:
@@ -36,18 +46,27 @@ func main() {
 	}
 }
 
+func printVersion() {
+	fmt.Printf("Exodrive v%s (%s/%s)\n", version, runtime.GOOS, runtime.GOARCH)
+}
+
 func printHelp() {
-	fmt.Println(`Exodrive — Safe Developer Cache Offloader
+	fmt.Println(`Exodrive — Developer Cache Migrator
 
 Usage:
-  exodrive check                     Scan and list all detected developer caches
-  exodrive migrate --target=<dir>    Migrate caches to external storage volume
-  exodrive orphans [--clean]         Detect or clean abandoned legacy caches
-  exodrive rollback <item_id>        Restore a migrated cache to internal storage
-  exodrive help                      Display this help message
+  exodrive check [--json]             Scan and list detected developer caches
+  exodrive preflight <item> --target  Run safety checks before migration
+  exodrive migrate --target=<dir>     Migrate caches to external storage
+  exodrive orphans [--clean]          Detect or delete abandoned caches
+  exodrive rollback <item_id>         Restore a migrated cache to internal storage
+  exodrive version                    Display version information
+  exodrive help                       Display this help message
+
+Options for check:
+  --json     Output scan results as formatted JSON
 
 Options for migrate:
-  --target   Destination directory on external APFS/ext4 drive (Required)
+  --target   Destination directory on external storage (Required)
   --tools    Comma-separated list of tools to migrate (e.g. npm,pnpm,go)
   --all      Migrate all eligible local caches`)
 }
@@ -61,27 +80,96 @@ func buildEngine() *core.Engine {
 	return core.NewEngine(accessors...)
 }
 
-func runCheck() {
+func runCheck(args []string) {
+	fs := flag.NewFlagSet("check", flag.ExitOnError)
+	jsonOutput := fs.Bool("json", false, "Output results in JSON format")
+	_ = fs.Parse(args)
+
 	engine := buildEngine()
-	fmt.Println("Scanning developer caches across 10 toolchains (npm, pnpm, yarn, cargo, go, bun, uv, pip, docker, orphans)...")
 	ctx := context.Background()
 	items, err := engine.ScanAll(ctx)
 	if err != nil {
-		fmt.Printf("Error scanning: %v\n", err)
+		fmt.Printf("Scan failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	if *jsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(items); err != nil {
+			fmt.Printf("JSON encode failed: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
+
+	fmt.Println("Scanning developer caches across supported toolchains...")
 	ui.RenderTable(items)
+}
+
+func runPreflight(args []string) {
+	fs := flag.NewFlagSet("preflight", flag.ContinueOnError)
+	target := fs.String("target", "", "Destination directory on external storage (e.g. /Volumes/ExternalDrive/exodrive-caches)")
+
+	var itemID string
+	var flagArgs []string
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			flagArgs = append(flagArgs, arg)
+		} else if itemID == "" {
+			itemID = arg
+		}
+	}
+	_ = fs.Parse(flagArgs)
+
+	if itemID == "" {
+		fmt.Println("Usage: exodrive preflight <item_id> --target=<dir>")
+		os.Exit(1)
+	}
+
+	if *target == "" {
+		fmt.Println("Error: --target is required. Specify external volume path (e.g. /Volumes/ExternalDrive/exodrive-caches).")
+		os.Exit(1)
+	}
+
+	engine := buildEngine()
+	ctx := context.Background()
+	items, err := engine.ScanAll(ctx)
+	if err != nil {
+		fmt.Printf("Scan failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	var targetItem *core.CacheItem
+	for _, it := range items {
+		if it.ID == itemID {
+			targetItem = &it
+			break
+		}
+	}
+
+	if targetItem == nil {
+		fmt.Printf("Error: cache item '%s' not found.\n", itemID)
+		os.Exit(1)
+	}
+
+	if err := engine.Preflight(ctx, *targetItem, *target); err != nil {
+		fmt.Printf("Preflight failed for %s: %v\n", itemID, err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Preflight passed for %s on destination %s.\n", itemID, *target)
 }
 
 func runMigrate(args []string) {
 	fs := flag.NewFlagSet("migrate", flag.ExitOnError)
-	target := fs.String("target", "", "Destination directory on external storage (e.g. /Volumes/PHD/exodrive-caches)")
+	target := fs.String("target", "", "Destination directory on external storage (e.g. /Volumes/ExternalDrive/exodrive-caches)")
 	tools := fs.String("tools", "", "Comma-separated list of tools to migrate")
 	all := fs.Bool("all", false, "Migrate all unmigrated caches")
 	_ = fs.Parse(args)
 
 	if *target == "" {
-		fmt.Println("Error: --target is required. Specify external volume path (e.g. /Volumes/PHD/exodrive-caches).")
+		fmt.Println("Error: --target is required. Specify external volume path (e.g. /Volumes/ExternalDrive/exodrive-caches).")
 		os.Exit(1)
 	}
 
@@ -121,6 +209,9 @@ func runMigrate(args []string) {
 	fmt.Printf("\nTarget external directory: %s\n", *target)
 	fmt.Printf("Selected %d cache target(s) for migration.\n\n", len(candidates))
 
+	var failureCount int
+	var successCount int
+
 	for _, it := range candidates {
 		fmt.Printf("==> Migrating %s (%s, %s)...\n", it.Title, it.CurrentPath, ui.FormatBytes(it.SizeBytes))
 
@@ -131,25 +222,34 @@ func runMigrate(args []string) {
 
 		if err != nil {
 			fmt.Printf("❌ Migration failed for %s: %v\n\n", it.Title, err)
+			failureCount++
 		} else {
-			fmt.Printf("✅ %s migrated successfully.\n\n", it.Title)
+			fmt.Printf("✅ Migrated %s.\n\n", it.Title)
+			successCount++
 		}
 	}
 
-	fmt.Println("Migration completed. Ledger updated at ~/.exodrive/manifest.json")
+	manifestPath := core.GetManifestPath()
+	if failureCount > 0 {
+		fmt.Printf("Migration completed with %d failure(s). Migrated %d/%d caches.\n", failureCount, successCount, len(candidates))
+		fmt.Printf("Ledger updated at %s.\n", manifestPath)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Migration completed. Ledger updated at %s.\n", manifestPath)
 }
 
 func runOrphans(args []string) {
 	fs := flag.NewFlagSet("orphans", flag.ExitOnError)
-	clean := fs.Bool("clean", false, "Permanently delete detected abandoned caches")
+	clean := fs.Bool("clean", false, "Delete detected abandoned caches")
 	_ = fs.Parse(args)
 
 	engine := buildEngine()
 	ctx := context.Background()
 	items, err := engine.ScanAll(ctx)
 	if err != nil {
-		fmt.Printf("Scan error: %v\n", err)
-		return
+		fmt.Printf("Scan failed: %v\n", err)
+		os.Exit(1)
 	}
 
 	var orphans []core.CacheItem
@@ -160,7 +260,7 @@ func runOrphans(args []string) {
 	}
 
 	if len(orphans) == 0 {
-		fmt.Println("No abandoned or orphaned developer caches found.")
+		fmt.Println("No abandoned caches found.")
 		return
 	}
 
@@ -171,24 +271,29 @@ func runOrphans(args []string) {
 	}
 
 	if *clean {
-		fmt.Println("\nCleaning abandoned caches...")
+		fmt.Println("\nDeleting abandoned caches...")
+		var failCount int
 		for _, o := range orphans {
 			fmt.Printf("Removing %s... ", o.CurrentPath)
 			if err := engine.CleanOrphan(o.CurrentPath); err != nil {
 				fmt.Printf("Failed: %v\n", err)
+				failCount++
 			} else {
-				fmt.Printf("Done! Reclaimed %s\n", ui.FormatBytes(o.SizeBytes))
+				fmt.Printf("Reclaimed %s.\n", ui.FormatBytes(o.SizeBytes))
 			}
 		}
+		if failCount > 0 {
+			os.Exit(1)
+		}
 	} else {
-		fmt.Println("\nRun 'exodrive orphans --clean' to permanently delete these abandoned caches.")
+		fmt.Println("\nRun 'exodrive orphans --clean' to delete abandoned caches.")
 	}
 }
 
 func runRollback(args []string) {
 	if len(args) < 1 {
 		fmt.Println("Usage: exodrive rollback <item_id> (e.g. npm.cache, go.build)")
-		return
+		os.Exit(1)
 	}
 	itemID := args[0]
 	engine := buildEngine()
@@ -197,7 +302,7 @@ func runRollback(args []string) {
 	fmt.Printf("Reverting migration for %s...\n", itemID)
 	if err := engine.Rollback(ctx, itemID); err != nil {
 		fmt.Printf("Rollback failed: %v\n", err)
-		return
+		os.Exit(1)
 	}
-	fmt.Printf("Successfully restored %s to default internal configuration.\n", itemID)
+	fmt.Printf("Restored %s to default internal configuration.\n", itemID)
 }

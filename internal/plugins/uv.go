@@ -99,7 +99,7 @@ func (p *UVProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 func (p *UVProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
 	running := fsutil.CheckRunningProcesses("uv")
 	if len(running) > 0 {
-		return fmt.Errorf("uv is actively running (PID: %s)", running[0].PID)
+		return fmt.Errorf("uv is running (PID: %s): stop active uv tasks before migration", running[0].PID)
 	}
 	return nil
 }

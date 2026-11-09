@@ -95,7 +95,7 @@ func (p *GoProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 func (p *GoProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
 	running := fsutil.CheckRunningProcesses("go")
 	if len(running) > 0 {
-		return fmt.Errorf("go tool is actively running (PID: %s). Wait for completion before migrating", running[0].PID)
+		return fmt.Errorf("go tool is running (PID: %s): stop active go processes before migration", running[0].PID)
 	}
 	return nil
 }

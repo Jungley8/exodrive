@@ -1,8 +1,10 @@
 package fsutil
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -49,5 +51,39 @@ func TestAtomicSymlinkAndReplace(t *testing.T) {
 	backupContent, err := os.ReadFile(filepath.Join(backupDir, "data.txt"))
 	if err != nil || string(backupContent) != "sample" {
 		t.Errorf("failed reading backup: %v", err)
+	}
+}
+
+func TestAtomicSymlinkConcurrent(t *testing.T) {
+	parent := t.TempDir()
+	const workers = 30
+	var wg sync.WaitGroup
+	errCh := make(chan error, workers)
+
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			targetDir := filepath.Join(parent, fmt.Sprintf("target_%d", id))
+			if err := os.Mkdir(targetDir, 0755); err != nil {
+				errCh <- err
+				return
+			}
+			linkPath := filepath.Join(parent, fmt.Sprintf("link_%d", id))
+			if err := AtomicSymlink(targetDir, linkPath); err != nil {
+				errCh <- err
+				return
+			}
+			if target := ReadSymlinkTarget(linkPath); target != targetDir {
+				errCh <- fmt.Errorf("symlink target mismatch: got %s, want %s", target, targetDir)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Fatalf("concurrent AtomicSymlink error: %v", err)
 	}
 }

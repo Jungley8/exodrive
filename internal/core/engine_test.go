@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -135,5 +136,65 @@ func TestEngineMigrateAndRollback(t *testing.T) {
 	m, _ = LoadManifest()
 	if _, ok := m.Records[mockItem.ID]; ok {
 		t.Errorf("expected record removed from manifest after rollback")
+	}
+}
+
+func TestCleanOrphanDefensiveGuards(t *testing.T) {
+	e := NewEngine()
+
+	// Empty and whitespace paths
+	if err := e.CleanOrphan(""); err == nil {
+		t.Errorf("expected error on empty path, got nil")
+	}
+	if err := e.CleanOrphan("   "); err == nil {
+		t.Errorf("expected error on whitespace path, got nil")
+	}
+
+	// Root paths
+	if err := e.CleanOrphan("/"); err == nil {
+		t.Errorf("expected error on root path '/', got nil")
+	}
+	if err := e.CleanOrphan("///"); err == nil {
+		t.Errorf("expected error on root path '///', got nil")
+	}
+
+	// Relative paths
+	if err := e.CleanOrphan("."); err == nil {
+		t.Errorf("expected error on relative path '.', got nil")
+	}
+	if err := e.CleanOrphan("sub/orphan"); err == nil {
+		t.Errorf("expected error on relative path 'sub/orphan', got nil")
+	}
+
+	// Shallow system directories
+	if err := e.CleanOrphan("/Users"); err == nil {
+		t.Errorf("expected error on shallow path '/Users', got nil")
+	}
+	if err := e.CleanOrphan("/tmp"); err == nil {
+		t.Errorf("expected error on shallow path '/tmp', got nil")
+	}
+
+	// User home directory
+	if home, err := os.UserHomeDir(); err == nil {
+		if err := e.CleanOrphan(home); err == nil {
+			t.Errorf("expected error on home directory %q, got nil", home)
+		}
+	}
+
+	// Legitimate deeply nested orphan directory
+	tmpDir := t.TempDir()
+	orphanTarget := filepath.Join(tmpDir, "orphans", "go-build")
+	if err := os.MkdirAll(orphanTarget, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orphanTarget, "data.bin"), []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := e.CleanOrphan(orphanTarget); err != nil {
+		t.Fatalf("CleanOrphan on valid target failed: %v", err)
+	}
+	if _, err := os.Stat(orphanTarget); !os.IsNotExist(err) {
+		t.Errorf("expected orphanTarget to be deleted")
 	}
 }

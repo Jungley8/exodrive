@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"exodrive/internal/fsutil"
@@ -59,7 +61,7 @@ func (e *Engine) Preflight(ctx context.Context, item CacheItem, targetRoot strin
 	}
 
 	if !fsutil.IsSafeFilesystem(fstype) {
-		return fmt.Errorf("incompatible filesystem '%s': dev caches require APFS/HFS+ on macOS or ext4/btrfs on Linux. exFAT/FAT32 is forbidden", fstype)
+		return fmt.Errorf("incompatible filesystem '%s': target storage requires APFS, HFS+, ext4, or btrfs", fstype)
 	}
 
 	required := int64(float64(item.SizeBytes) * 1.1) // 10% headroom
@@ -115,7 +117,37 @@ func (e *Engine) Rollback(ctx context.Context, itemID string) error {
 	return fmt.Errorf("no provider found for %s", rec.ToolName)
 }
 
-// CleanOrphan deletes an abandoned cache directory.
+// CleanOrphan deletes an abandoned cache directory after strict path validation.
 func (e *Engine) CleanOrphan(path string) error {
-	return os.RemoveAll(path)
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return fmt.Errorf("clean orphan: path cannot be empty")
+	}
+
+	cleanPath := filepath.Clean(trimmed)
+	if !filepath.IsAbs(cleanPath) {
+		return fmt.Errorf("clean orphan: path must be absolute: %q", path)
+	}
+
+	// Refuse root filesystem
+	if cleanPath == "/" || cleanPath == filepath.VolumeName(cleanPath)+string(filepath.Separator) {
+		return fmt.Errorf("clean orphan: refusing to delete root filesystem: %q", path)
+	}
+
+	// Refuse user home directory
+	if home, err := os.UserHomeDir(); err == nil && cleanPath == filepath.Clean(home) {
+		return fmt.Errorf("clean orphan: refusing to delete user home directory: %q", path)
+	}
+
+	// Guard against shallow/top-level directories (e.g. /Users, /var, /etc, /tmp)
+	rel, err := filepath.Rel("/", cleanPath)
+	if err != nil || rel == "." {
+		return fmt.Errorf("clean orphan: invalid path hierarchy: %q", path)
+	}
+	segments := strings.Split(rel, string(filepath.Separator))
+	if len(segments) < 2 {
+		return fmt.Errorf("clean orphan: refusing to delete shallow root directory: %q", path)
+	}
+
+	return os.RemoveAll(cleanPath)
 }

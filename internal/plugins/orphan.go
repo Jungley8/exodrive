@@ -46,7 +46,7 @@ func (p *OrphanProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 					IsSymlink:      false,
 					RedirectMethod: core.RedirectManual,
 					TargetSubdir:   "orphans/go-build",
-					Warning:        "This legacy build cache is no longer used by Go. Safe to clean or archive.",
+					Warning:        "Legacy Go build cache. Clean or archive this item.",
 				})
 			}
 		}
@@ -69,7 +69,7 @@ func (p *OrphanProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 				IsSymlink:      false,
 				RedirectMethod: core.RedirectManual,
 				TargetSubdir:   "orphans/pnpm-cache",
-				Warning:        "Legacy local PNPM cache folder. Safe to clean.",
+				Warning:        "Legacy PNPM cache folder. Clean this item.",
 			})
 		}
 	}

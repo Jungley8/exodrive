@@ -67,7 +67,7 @@ func (p *BunProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 				IsSymlink:      isSymlink,
 				RedirectMethod: core.RedirectSymlink,
 				TargetSubdir:   "bun-cache",
-				Warning:        "Safety rule: ~/.bun/bin is preserved locally on internal drive.",
+				Warning:        "Binary directory ~/.bun/bin remains on internal storage.",
 			})
 			break
 		}
@@ -79,7 +79,7 @@ func (p *BunProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 func (p *BunProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
 	running := fsutil.CheckRunningProcesses("bun")
 	if len(running) > 0 {
-		return fmt.Errorf("bun is actively running (PID: %s)", running[0].PID)
+		return fmt.Errorf("bun is running (PID: %s): stop active bun tasks before migration", running[0].PID)
 	}
 	return nil
 }

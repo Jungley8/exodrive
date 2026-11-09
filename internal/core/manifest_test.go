@@ -1,9 +1,11 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -75,5 +77,49 @@ func TestManifestLifecycleIsolated(t *testing.T) {
 	}
 	if _, ok := reloaded.Records[rec.ID]; ok {
 		t.Fatalf("expected record %q to be deleted", rec.ID)
+	}
+}
+
+func TestManifestConcurrentRecordMigration(t *testing.T) {
+	tempLedger := filepath.Join(t.TempDir(), "concurrent_ledger.json")
+	t.Setenv(ManifestEnvVar, tempLedger)
+
+	const total = 50
+	var wg sync.WaitGroup
+	errCh := make(chan error, total)
+
+	for i := 0; i < total; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			rec := MigrationRecord{
+				ID:             fmt.Sprintf("tool.%d", id),
+				ToolName:       "tool",
+				OriginalPath:   fmt.Sprintf("/tmp/src/%d", id),
+				DestinationDir: fmt.Sprintf("/tmp/dst/%d", id),
+				RedirectMethod: RedirectSymlink,
+				MigratedAt:     time.Now(),
+				SizeBytes:      int64(id * 1024),
+			}
+			if err := RecordMigration(rec); err != nil {
+				errCh <- err
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Fatalf("concurrent RecordMigration failed: %v", err)
+	}
+
+	loaded, err := LoadManifest()
+	if err != nil {
+		t.Fatalf("failed to load manifest: %v", err)
+	}
+
+	if len(loaded.Records) != total {
+		t.Fatalf("lost updates detected! expected %d records, got %d", total, len(loaded.Records))
 	}
 }

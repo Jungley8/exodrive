@@ -11,8 +11,11 @@ import (
 // locking, and symlinks reliably.
 func IsSafeFilesystem(fstype string) bool {
 	norm := strings.ToLower(strings.TrimSpace(fstype))
+	if norm == "" {
+		return false
+	}
 	switch norm {
-	case "apfs", "hfs", "hfs+", "ext4", "ext3", "btrfs", "zfs", "xfs":
+	case "apfs", "hfs", "hfs+", "ext4", "ext3", "btrfs", "zfs", "xfs", "unix":
 		return true
 	case "msdos", "fat", "fat32", "exfat", "ntfs", "smbfs", "cifs":
 		return false

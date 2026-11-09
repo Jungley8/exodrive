@@ -72,6 +72,68 @@ func CopyDir(src, dst string, totalBytes int64, progress CopyProgressCallback) e
 	return nil
 }
 
+// CopyFile copies a single file from src to dst, preserving permissions and reporting progress.
+func CopyFile(src, dst string, totalBytes int64, progress CopyProgressCallback) (err error) {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if srcInfo.IsDir() {
+		return fmt.Errorf("source %s is a directory, use CopyDir", src)
+	}
+
+	if totalBytes <= 0 {
+		totalBytes = srcInfo.Size()
+	}
+
+	if err := os.MkdirAll(filepath.Dir(dst), 0755); err != nil {
+		return err
+	}
+
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := in.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode()|0200)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if cerr := out.Close(); cerr != nil && err == nil {
+			err = cerr
+		}
+	}()
+
+	buf := make([]byte, 1024*1024)
+	var copied int64
+	for {
+		n, rerr := in.Read(buf)
+		if n > 0 {
+			if _, werr := out.Write(buf[:n]); werr != nil {
+				return werr
+			}
+			copied += int64(n)
+			if progress != nil {
+				progress(copied, totalBytes)
+			}
+		}
+		if rerr != nil {
+			if rerr == io.EOF {
+				break
+			}
+			return rerr
+		}
+	}
+
+	return os.Chmod(dst, srcInfo.Mode())
+}
+
 func copyFile(src, dst string, mode os.FileMode) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
