@@ -52,6 +52,7 @@ func (p *NPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 		items = append(items, core.CacheItem{
 			ID:             "npm.cache",
 			ToolName:       "npm",
+			ToolVersion:    toolVersion(ctx, "npm"),
 			Title:          "NPM Global Cache",
 			Category:       core.CategoryPackageStore,
 			CurrentPath:    activePath,

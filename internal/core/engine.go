@@ -87,7 +87,33 @@ func (e *Engine) provider(item CacheItem) (ProviderAccessor, error) {
 }
 
 // Preflight evaluates whether targetRoot is valid and has sufficient space.
+// TargetInfo describes the volume that holds a target folder.
+type TargetInfo struct {
+	Path       string `json:"path"`
+	Filesystem string `json:"filesystem"`
+	FreeBytes  int64  `json:"free_bytes"`
+	TotalBytes int64  `json:"total_bytes"`
+}
+
+// CheckTarget reports the volume under targetRoot before anything moves. It
+// refuses a folder it cannot read and a filesystem outside the allowlist, so
+// the window and the command line show the same reason.
+func (e *Engine) CheckTarget(targetRoot string) (TargetInfo, error) {
+	freeBytes, totalBytes, fstype, err := fsutil.GetDiskUsage(targetRoot)
+	if err != nil {
+		return TargetInfo{}, fmt.Errorf("target folder is not available: %w", err)
+	}
+	if !fsutil.IsSafeFilesystem(fstype) {
+		return TargetInfo{}, fmt.Errorf("filesystem '%s' is not supported: choose APFS, HFS+, ext2/3/4, btrfs, zfs, xfs, f2fs, or bcachefs", fstype)
+	}
+	return TargetInfo{Path: targetRoot, Filesystem: fstype, FreeBytes: freeBytes, TotalBytes: totalBytes}, nil
+}
+
 func (e *Engine) Preflight(ctx context.Context, item CacheItem, targetRoot string) error {
+	if item.BlockedReason != "" {
+		return fmt.Errorf("%s: %s", item.Title, item.BlockedReason)
+	}
+
 	p, err := e.provider(item)
 	if err != nil {
 		return err

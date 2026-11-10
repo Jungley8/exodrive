@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,12 +28,22 @@ func (p *YarnProvider) Name() string {
 func (p *YarnProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	var items []core.CacheItem
 
+	version := yarnVersion(ctx)
+	major := yarnMajor(version)
+
+	// Yarn 1 keeps one global cache and reads it from cache-folder. Yarn 2 and
+	// later keep the cacheFolder in a project .yarnrc.yml, so a global switch
+	// would not reach the projects that use it.
 	var cacheDir string
-	cmd := exec.CommandContext(ctx, "yarn", "cache", "dir")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err == nil {
-		cacheDir = strings.TrimSpace(out.String())
+	if major >= 2 {
+		cacheDir = yarnConfigValue(ctx, "cacheFolder")
+	} else {
+		cmd := exec.CommandContext(ctx, "yarn", "cache", "dir")
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		if err := cmd.Run(); err == nil {
+			cacheDir = strings.TrimSpace(out.String())
+		}
 	}
 
 	home, _ := os.UserHomeDir()
@@ -55,9 +66,15 @@ func (p *YarnProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			isSymlink := fsutil.IsSymlink(path)
 			isMigrated := strings.HasPrefix(path, "/Volumes/") || isSymlink
 
+			blocked := ""
+			if major >= 2 {
+				blocked = fmt.Sprintf("Yarn %s reads cacheFolder from each project's .yarnrc.yml, so a global move does not reach it. Delete this cache, or keep it.", version)
+			}
+
 			items = append(items, core.CacheItem{
 				ID:             "yarn.cache",
 				ToolName:       "yarn",
+				ToolVersion:    version,
 				Title:          "Yarn Cache",
 				Category:       core.CategoryPackageStore,
 				CurrentPath:    path,
@@ -68,6 +85,7 @@ func (p *YarnProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 				IsSymlink:      isSymlink,
 				RedirectMethod: core.RedirectNativeConfig,
 				TargetSubdir:   "yarn-cache",
+				BlockedReason:  blocked,
 			})
 			break
 		}
@@ -76,7 +94,45 @@ func (p *YarnProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	return items, nil
 }
 
+// yarnVersion returns the version that the yarn binary reports, empty when it
+// does not answer.
+func yarnVersion(ctx context.Context) string {
+	out, err := exec.CommandContext(ctx, "yarn", "--version").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// yarnMajor returns the major number of a yarn version, 0 when the string does
+// not hold one.
+func yarnMajor(version string) int {
+	head, _, _ := strings.Cut(version, ".")
+	n, err := strconv.Atoi(head)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+// yarnConfigValue returns one setting that yarn reports, empty when yarn does
+// not set it.
+func yarnConfigValue(ctx context.Context, key string) string {
+	out, err := exec.CommandContext(ctx, "yarn", "config", "get", key).Output()
+	if err != nil {
+		return ""
+	}
+	value := strings.TrimSpace(string(out))
+	if value == "undefined" {
+		return ""
+	}
+	return value
+}
+
 func (p *YarnProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
+	if item.BlockedReason != "" {
+		return fmt.Errorf("%s", item.BlockedReason)
+	}
 	running, err := fsutil.CheckRunningProcesses("yarn")
 	if err != nil {
 		return err

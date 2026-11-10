@@ -2,6 +2,9 @@ package plugins
 
 import (
 	"context"
+	"os/exec"
+	"strings"
+
 	"exodrive/internal/core"
 	"exodrive/internal/fsutil"
 )
@@ -66,4 +69,14 @@ func (r *Registry) Find(name string) Provider {
 		}
 	}
 	return nil
+}
+
+// toolVersion returns the version that a tool reports, empty when the tool does
+// not answer. A scan shows it, so a user can tell which layout Exodrive sees.
+func toolVersion(ctx context.Context, tool string) string {
+	out, err := exec.CommandContext(ctx, tool, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }

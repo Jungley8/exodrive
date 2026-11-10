@@ -211,6 +211,7 @@ func runMigrate(args []string) {
 	}
 
 	var candidates []core.CacheItem
+	var blocked []core.CacheItem
 	for _, it := range items {
 		if it.IsMigrated {
 			continue // Already migrated
@@ -218,12 +219,25 @@ func runMigrate(args []string) {
 		if !it.IsActive && it.Category == core.CategoryOrphan {
 			continue // Use orphans command for dead caches
 		}
-		if *all || toolFilter[it.ToolName] || toolFilter[it.ID] {
-			candidates = append(candidates, it)
+		if !*all && !toolFilter[it.ToolName] && !toolFilter[it.ID] {
+			continue
 		}
+		if it.BlockedReason != "" {
+			blocked = append(blocked, it)
+			continue
+		}
+		candidates = append(candidates, it)
+	}
+
+	for _, it := range blocked {
+		fmt.Printf("[blocked] %s: %s\n", it.Title, it.BlockedReason)
 	}
 
 	if len(candidates) == 0 {
+		if len(blocked) > 0 {
+			fmt.Println("Every selected cache is blocked. Read the reasons above.")
+			os.Exit(1)
+		}
 		fmt.Println("No matching unmigrated caches found. Run 'exodrive check' to inspect items.")
 		return
 	}

@@ -273,3 +273,65 @@ func TestCLI_MigrateDryRunMovesNothing(t *testing.T) {
 		t.Fatalf("dry run wrote a ledger record:\n%s", data)
 	}
 }
+
+// TestCLI_ReportsBlockedCache pins the rule that a cache Exodrive cannot move
+// stays visible in the plan, with its reason, and stops the run when nothing
+// else is selected.
+func TestCLI_ReportsBlockedCache(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	bin := filepath.Join(tmp, "bin")
+	cacheDir := filepath.Join(home, ".yarn", "berry", "cache")
+	target := filepath.Join(tmp, "target")
+	ledger := filepath.Join(tmp, "manifest.json")
+
+	for _, dir := range []string{bin, cacheDir, target} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "pkg.zip"), []byte("berry"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	yarn := filepath.Join(bin, "yarn")
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in\n" +
+		"--version) echo 4.1.0 ;;\n" +
+		"config) if [ \"$2\" = get ]; then echo \"$MOCK_YARN_CACHE\"; fi ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(yarn, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	env := map[string]string{
+		"HOME":                   home,
+		"PATH":                   bin + string(os.PathListSeparator) + os.Getenv("PATH"),
+		"MOCK_YARN_CACHE":        cacheDir,
+		"YARN_CACHE_FOLDER":      "",
+		"EXODRIVE_MANIFEST_PATH": ledger,
+		"GOCACHE":                filepath.Join(home, "gocache"),
+		"GOMODCACHE":             filepath.Join(home, "gomodcache"),
+		"UV_CACHE_DIR":           filepath.Join(home, "uv"),
+		"PIP_CACHE_DIR":          filepath.Join(home, "pip"),
+		"BUN_INSTALL":            filepath.Join(home, "bun"),
+		"CARGO_HOME":             filepath.Join(home, "cargo"),
+		"ORBSTACK_DATA_DIR":      filepath.Join(home, "orbstack"),
+	}
+
+	out, code := runCLIEnv(t, env, "migrate", "--dry-run", "--tools=yarn", "--target="+target)
+	if code != 1 {
+		t.Fatalf("expected exit 1 when every selected cache is blocked, got %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "[blocked]") || !strings.Contains(out, "Yarn 4.1.0") {
+		t.Fatalf("the plan does not report the blocked cache:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".yarn", "berry", "cache", "pkg.zip")); err != nil {
+		t.Fatalf("the blocked cache changed: %v", err)
+	}
+
+	checkOut, _ := runCLIEnv(t, env, "check")
+	if !strings.Contains(checkOut, "Blocked") {
+		t.Fatalf("check does not show the Blocked status:\n%s", checkOut)
+	}
+}

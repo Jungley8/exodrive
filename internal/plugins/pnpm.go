@@ -68,6 +68,12 @@ func (p *PNPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			isMigrated := strings.HasPrefix(path, "/Volumes/") || isSymlink
 			isActive := (path == storeRoot)
 
+			// The store folder name carries the store layout version.
+			var storeVersion string
+			if isStoreVersion(filepath.Base(storePath)) {
+				storeVersion = filepath.Base(storePath)
+			}
+
 			warning := ""
 			if !isMigrated {
 				warning = "Cross-disk notice: pnpm uses hardlinks. Keep store on the same volume as projects."
@@ -76,6 +82,7 @@ func (p *PNPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			items = append(items, core.CacheItem{
 				ID:             "pnpm.store",
 				ToolName:       "pnpm",
+				ToolVersion:    storeVersion,
 				Title:          "PNPM Package Store",
 				Category:       core.CategoryPackageStore,
 				CurrentPath:    path,

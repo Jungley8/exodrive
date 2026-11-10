@@ -25,6 +25,7 @@ const (
 type CacheItem struct {
 	ID             string         `json:"id"`
 	ToolName       string         `json:"tool_name"`
+	ToolVersion    string         `json:"tool_version,omitempty"`
 	Title          string         `json:"title"`
 	Category       CacheCategory  `json:"category"`
 	CurrentPath    string         `json:"current_path"`
@@ -36,6 +37,9 @@ type CacheItem struct {
 	RedirectMethod RedirectMethod `json:"redirect_method"`
 	TargetSubdir   string         `json:"target_subdir"`
 	Warning        string         `json:"warning,omitempty"`
+	// BlockedReason says why Exodrive cannot move this item. Empty when it can.
+	// A blocked item stays visible, so the user can read the reason and act.
+	BlockedReason string `json:"blocked_reason,omitempty"`
 }
 
 // MigrationRecord is saved in ~/.exodrive/manifest.json.

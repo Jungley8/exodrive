@@ -40,19 +40,30 @@ func RenderTable(items []core.CacheItem) {
 		if !item.IsActive {
 			status = "Abandoned"
 		}
+		if item.BlockedReason != "" {
+			status = "Blocked"
+		}
 
 		shortPath := item.CurrentPath
 		if len(shortPath) > 36 {
 			shortPath = "..." + shortPath[len(shortPath)-33:]
 		}
 
+		title := truncate(item.Title, 17)
+		if item.ToolVersion != "" {
+			title = truncate(item.Title+" "+item.ToolVersion, 17)
+		}
+
 		fmt.Printf("%-18s %-12s %-10s %-10s %-32s\n",
-			truncate(item.Title, 17),
+			title,
 			item.Category,
 			FormatBytes(item.SizeBytes),
 			status,
 			shortPath,
 		)
+		if item.BlockedReason != "" {
+			fmt.Printf("   └── [!] %s\n", item.BlockedReason)
+		}
 		if item.Warning != "" {
 			fmt.Printf("   └── [!] %s\n", item.Warning)
 		}

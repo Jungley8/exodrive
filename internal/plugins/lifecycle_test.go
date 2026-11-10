@@ -274,7 +274,9 @@ func TestLifecycle_Yarn(t *testing.T) {
 	t.Setenv("MOCK_YARN_CONF", confFile)
 
 	writeMockCLI(t, env.bin, "yarn", `
-if [ "$1" = "cache" ] && [ "$2" = "dir" ]; then
+if [ "$1" = "--version" ]; then
+	echo "1.22.19"
+elif [ "$1" = "cache" ] && [ "$2" = "dir" ]; then
 	echo "$MOCK_YARN_CACHE"
 elif [ "$1" = "config" ] && [ "$2" = "set" ]; then
 	echo "$3=$4" > "$MOCK_YARN_CONF"
@@ -1174,5 +1176,53 @@ func TestRestoreSymlinkReconcilesUnswitchedCopy(t *testing.T) {
 	}
 	if data, err := os.ReadFile(filepath.Join(original, "crate")); err != nil || string(data) != "crate-bytes" {
 		t.Fatalf("original data is not intact: %v", err)
+	}
+}
+
+// Yarn 2 and later read cacheFolder from each project file. A global move does
+// not reach them, so the item must stay visible but blocked.
+func TestYarnBerryIsBlocked(t *testing.T) {
+	env := setupMockEnv(t)
+	ctx := context.Background()
+	t.Setenv("YARN_CACHE_FOLDER", "")
+
+	cacheDir := filepath.Join(env.home, "berry-cache")
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "pkg.zip"), []byte("berry"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MOCK_YARN_CACHE", cacheDir)
+
+	writeMockCLI(t, env.bin, "yarn", `
+if [ "$1" = "--version" ]; then
+	echo "4.1.0"
+elif [ "$1" = "config" ] && [ "$2" = "get" ]; then
+	echo "$MOCK_YARN_CACHE"
+fi
+`)
+
+	p := NewYarnProvider()
+	items, err := p.Detect(ctx)
+	if err != nil {
+		t.Fatalf("Detect failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one item, got %+v", items)
+	}
+
+	item := items[0]
+	if item.ToolVersion != "4.1.0" {
+		t.Fatalf("tool version is %q, want 4.1.0", item.ToolVersion)
+	}
+	if item.BlockedReason == "" {
+		t.Fatal("a Yarn 4 cache must carry a blocked reason")
+	}
+	if err := p.PreflightCheck(ctx, item, env.targetRoot); err == nil {
+		t.Fatal("expected PreflightCheck to refuse a Yarn 4 cache")
+	}
+	if err := core.NewEngine(p).Preflight(ctx, item, env.targetRoot); err == nil {
+		t.Fatal("expected Engine.Preflight to refuse a Yarn 4 cache")
 	}
 }
