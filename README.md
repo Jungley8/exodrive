@@ -1,5 +1,12 @@
 # Exodrive
 
+[![CI](https://github.com/Jungley8/exodrive/actions/workflows/ci.yml/badge.svg)](https://github.com/Jungley8/exodrive/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Jungley8/exodrive)](https://github.com/Jungley8/exodrive/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.27-00ADD8.svg)](go.mod)
+
+**English** | [简体中文](README.zh.md)
+
 Move developer caches from your internal disk to an external volume. Exodrive
 checks every copy before it deletes the local data. A ledger keeps every move,
 so you can move a cache back at any time.
@@ -36,6 +43,22 @@ flowchart LR
     Engine --> FS["fsutil<br/>copy, verify, symlink,<br/>disk check, process lock"]
     FS --> Ledger["~/.exodrive/manifest.json"]
 ```
+
+## After a move
+
+Exodrive changes the tool's own setting during the switch. The new path takes
+effect at the next start of the tool.
+
+- npm, pnpm, yarn, pip, and Go read their setting when a command starts. Open
+  a new terminal, or start the tool again.
+- cargo, bun, uv, Docker Desktop, and Colima keep their path. Exodrive
+  replaces the folder or the file with a symbolic link, so the next start uses
+  the external copy.
+- OrbStack reads `data_dir` at launch. Start OrbStack again.
+- A process that already runs keeps the old path. The migration stops while a
+  tool runs, so stop the tool first.
+
+Run `exodrive check` to confirm. A moved cache shows the state Migrated.
 
 ## Safety rules
 
@@ -85,7 +108,12 @@ archive against `SHA256SUMS`.
 
 The macOS archive for your architecture also holds `Exodrive.app`. This bundle
 is ad-hoc signed. macOS asks for your confirmation the first time you open it:
-right-click the app, then choose **Open**.
+right-click the app, then choose **Open**. Or remove the quarantine flag one
+time:
+
+```sh
+xattr -d com.apple.quarantine Exodrive.app
+```
 
 Or build the command line tool from source:
 
@@ -110,6 +138,11 @@ Set `SIGN_IDENTITY` to sign with a Developer ID:
 ```sh
 SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" make app
 ```
+
+No Developer ID is required. Without `SIGN_IDENTITY`, `make app` signs with an
+ad-hoc identity (`codesign --sign -`). macOS opens such a bundle after the
+one-time Gatekeeper step above. A Developer ID, the hardened runtime, and
+notarization need an Apple Developer Program membership.
 
 Set a version string for a release build:
 

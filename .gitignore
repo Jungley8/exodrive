@@ -22,6 +22,9 @@ Thumbs.db
 *.bak
 *~
 
+# Local handover notes
+HANDOFF.md
+
 # IDE and tool configuration
 .idea/
 .vscode/

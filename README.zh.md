@@ -1,5 +1,12 @@
 # Exodrive
 
+[![CI](https://github.com/Jungley8/exodrive/actions/workflows/ci.yml/badge.svg)](https://github.com/Jungley8/exodrive/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Jungley8/exodrive)](https://github.com/Jungley8/exodrive/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.27-00ADD8.svg)](go.mod)
+
+[English](README.md) | **简体中文**
+
 把开发缓存从内置磁盘迁移到外置磁盘。Exodrive 先校验副本，再删除本地数据。所有迁移都记入账本，可随时回滚。
 
 Exodrive 提供一个命令行工具和一个 macOS 原生窗口。
@@ -29,6 +36,17 @@ flowchart LR
     Engine --> FS["fsutil<br/>拷贝、校验、软链接、<br/>磁盘检查、进程锁"]
     FS --> Ledger["~/.exodrive/manifest.json"]
 ```
+
+## 迁移后如何生效
+
+Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读取新路径。
+
+- npm、pnpm、yarn、pip、Go 在命令启动时读取配置。开一个新终端，或重新启动该工具。
+- cargo、bun、uv、Docker Desktop、Colima 的路径不变。Exodrive 把原目录或原文件换成软链接，下次启动直接使用外置副本。
+- OrbStack 在启动时读取 `data_dir`。重新启动 OrbStack。
+- 已经在运行的进程仍持有旧路径。迁移在工具运行时拒绝执行，所以先停止工具。
+
+执行 `exodrive check` 确认结果。已迁移的缓存状态显示为 Migrated。
 
 ## 安全规则
 
@@ -72,7 +90,11 @@ flowchart LR
 
 从[发布页](https://github.com/Jungley8/exodrive/releases)下载 macOS 或 Linux 的构建包。压缩包内含命令行工具、窗口程序、README 和许可证。用 `SHA256SUMS` 校验文件。
 
-对应架构的 macOS 包还含 `Exodrive.app`。该应用为 ad-hoc 签名，macOS 首次打开时会要求确认：右键点按应用，选择**打开**。
+对应架构的 macOS 包还含 `Exodrive.app`。该应用为 ad-hoc 签名，macOS 首次打开时会要求确认：右键点按应用，选择**打开**。也可在终端里一次性去掉隔离标记：
+
+```sh
+xattr -d com.apple.quarantine Exodrive.app
+```
 
 也可以从源码构建命令行工具：
 
@@ -97,6 +119,8 @@ make app
 ```sh
 SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" make app
 ```
+
+没有 Developer ID 也能打包。不设 `SIGN_IDENTITY` 时，`make app` 用 ad-hoc 身份签名（`codesign --sign -`）。macOS 在完成上文的首次确认后即可打开。Developer ID、强化运行时与公证需要 Apple Developer Program 会员资格。
 
 发布构建时写入版本号：
 
