@@ -5,7 +5,8 @@
 #
 # SIGN_IDENTITY selects the codesign identity, for example
 # "Developer ID Application: Name (TEAMID)". Without it, the bundle gets an
-# ad-hoc signature. An ad-hoc bundle runs on the machine that built it.
+# ad-hoc signature. macOS asks for confirmation once before it opens an ad-hoc
+# bundle.
 set -eu
 
 VERSION="${1:?usage: make-app.sh <version> [output-dir]}"
