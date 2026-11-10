@@ -36,6 +36,26 @@ func CopyDir(src, dst string, totalBytes int64, progress CopyProgressCallback) e
 		return fmt.Errorf("destination %s is inside source %s", dst, src)
 	}
 
+	// A destination that holds a link or data would merge two trees. The copy
+	// would then overwrite files it does not own, and VerifyTree could pass on
+	// a mix of both. Refuse it.
+	switch info, statErr := os.Lstat(dst); {
+	case statErr == nil && info.Mode()&os.ModeSymlink != 0:
+		return fmt.Errorf("destination %s is a symbolic link: choose a folder", dst)
+	case statErr == nil && !info.IsDir():
+		return fmt.Errorf("destination %s is a file: choose a folder", dst)
+	case statErr == nil:
+		entries, readErr := os.ReadDir(dst)
+		if readErr != nil {
+			return fmt.Errorf("inspect destination %s: %w", dst, readErr)
+		}
+		if len(entries) > 0 {
+			return fmt.Errorf("destination %s is not empty: remove its contents, then run the migration again", dst)
+		}
+	case !os.IsNotExist(statErr):
+		return fmt.Errorf("inspect destination %s: %w", dst, statErr)
+	}
+
 	if err := os.MkdirAll(dst, 0755); err != nil {
 		return err
 	}
@@ -243,37 +263,74 @@ func copyFile(src, dst string, info os.FileInfo) (err error) {
 	return nil
 }
 
-// VerifyTree checks that dst holds the same regular files, with the same total
-// size, as src. A provider calls it before it replaces the source with a link.
+// VerifyTree checks that dst matches src: the same regular files, the same
+// total size, and the same symbolic links with the same targets. A provider
+// calls it before it replaces the source with a link.
 func VerifyTree(src, dst string) error {
-	srcCount, srcBytes, err := treeStats(src)
+	srcTree, err := scanTree(src)
 	if err != nil {
 		return err
 	}
-	dstCount, dstBytes, err := treeStats(dst)
+	dstTree, err := scanTree(dst)
 	if err != nil {
 		return err
 	}
-	if srcCount != dstCount {
-		return fmt.Errorf("verification failed: %s has %d files, %s has %d", dst, dstCount, src, srcCount)
+	if srcTree.files != dstTree.files {
+		return fmt.Errorf("verification failed: %s has %d files, %s has %d", dst, dstTree.files, src, srcTree.files)
 	}
-	if srcBytes != dstBytes {
-		return fmt.Errorf("verification failed: %s has %d bytes, %s has %d", dst, dstBytes, src, srcBytes)
+	if srcTree.bytes != dstTree.bytes {
+		return fmt.Errorf("verification failed: %s has %d bytes, %s has %d", dst, dstTree.bytes, src, srcTree.bytes)
+	}
+	if len(srcTree.links) != len(dstTree.links) {
+		return fmt.Errorf("verification failed: %s has %d symbolic links, %s has %d", dst, len(dstTree.links), src, len(srcTree.links))
+	}
+	for rel, target := range srcTree.links {
+		copied, ok := dstTree.links[rel]
+		if !ok {
+			return fmt.Errorf("verification failed: %s is missing the symbolic link %s", dst, rel)
+		}
+		if copied != target {
+			return fmt.Errorf("verification failed: %s points to %s, the source points to %s", filepath.Join(dst, rel), copied, target)
+		}
 	}
 	return nil
 }
 
-func treeStats(root string) (count int64, size int64, err error) {
-	err = filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
+// treeSummary holds what VerifyTree compares.
+type treeSummary struct {
+	files int64
+	bytes int64
+	// links maps the path relative to the root to the link target.
+	links map[string]string
+}
+
+func scanTree(root string) (treeSummary, error) {
+	summary := treeSummary{links: make(map[string]string)}
+	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if info.Mode()&os.ModeSymlink != 0 || info.IsDir() {
+		if path == root {
 			return nil
 		}
-		count++
-		size += info.Size()
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			summary.links[rel] = target
+			return nil
+		}
+		if info.IsDir() {
+			return nil
+		}
+		summary.files++
+		summary.bytes += info.Size()
 		return nil
 	})
-	return count, size, err
+	return summary, err
 }

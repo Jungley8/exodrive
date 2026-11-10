@@ -231,3 +231,97 @@ func TestCopyFileRefusesSameFile(t *testing.T) {
 		t.Fatalf("source file was damaged: %v", err)
 	}
 }
+
+// A destination that holds data would merge two trees. The copy must refuse it
+// instead of overwriting files it does not own.
+func TestCopyDirRefusesNonEmptyDestination(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dst, "keep.txt"), []byte("keep"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := CopyDir(src, dst, 1, nil); err == nil {
+		t.Fatal("expected CopyDir to refuse a destination that holds data")
+	}
+	if data, err := os.ReadFile(filepath.Join(dst, "keep.txt")); err != nil || string(data) != "keep" {
+		t.Fatalf("the existing file changed: %v", err)
+	}
+}
+
+// Writing through a destination symlink would land outside the target tree.
+func TestCopyDirRefusesSymlinkDestination(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	real := t.TempDir()
+	dst := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := CopyDir(src, dst, 1, nil); err == nil {
+		t.Fatal("expected CopyDir to refuse a symbolic link destination")
+	}
+	if entries, _ := os.ReadDir(real); len(entries) != 0 {
+		t.Fatalf("the copy wrote through the link: %v", entries)
+	}
+}
+
+// A store can hold symbolic links. A copy that drops them still matches on file
+// count and size, so VerifyTree must compare the links too.
+func TestVerifyTreeChecksSymlinks(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "a.txt"), []byte("a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("a.txt", filepath.Join(src, "link")); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("identical trees pass", func(t *testing.T) {
+		dst := t.TempDir()
+		if err := CopyDir(src, dst, 1, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := VerifyTree(src, dst); err != nil {
+			t.Fatalf("VerifyTree on identical trees failed: %v", err)
+		}
+	})
+
+	t.Run("a missing link fails", func(t *testing.T) {
+		dst := t.TempDir()
+		if err := CopyDir(src, dst, 1, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(filepath.Join(dst, "link")); err != nil {
+			t.Fatal(err)
+		}
+		if err := VerifyTree(src, dst); err == nil {
+			t.Fatal("expected VerifyTree to report the missing link")
+		}
+	})
+
+	t.Run("a changed target fails", func(t *testing.T) {
+		dst := t.TempDir()
+		if err := CopyDir(src, dst, 1, nil); err != nil {
+			t.Fatal(err)
+		}
+		link := filepath.Join(dst, "link")
+		if err := os.Remove(link); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("elsewhere", link); err != nil {
+			t.Fatal(err)
+		}
+		if err := VerifyTree(src, dst); err == nil {
+			t.Fatal("expected VerifyTree to report the changed link target")
+		}
+	})
+}
