@@ -38,6 +38,7 @@ git clone <repository-url> exodrive
 cd exodrive
 make build
 make test
+make app    # macOS only: build and sign bin/Exodrive.app
 ```
 
 The window needs macOS. The command line builds on macOS and Linux.
@@ -69,6 +70,8 @@ invariants.
 5. Never swallow an error from a copy, a configuration command, or a rename.
 6. Refuse an unknown filesystem, an unknown provider, and an unknown redirect.
 7. Refuse a migration while an environment variable pins the cache path.
+8. Never run a migration without the process check. An unreadable process table
+   is an error, not an empty list.
 
 A pull request that breaks an invariant does not merge.
 

@@ -72,6 +72,8 @@ flowchart LR
 
 从[发布页](https://github.com/Jungley8/exodrive/releases)下载 macOS 或 Linux 的构建包。压缩包内含命令行工具、窗口程序、README 和许可证。用 `SHA256SUMS` 校验文件。
 
+对应架构的 macOS 包还含 `Exodrive.app`。该应用为 ad-hoc 签名，macOS 首次打开时会要求确认：右键点按应用，选择**打开**。
+
 也可以从源码构建命令行工具：
 
 ```sh
@@ -82,6 +84,18 @@ go build -o bin/exodrive ./cmd/exodrive
 
 ```sh
 go build -o bin/exodrive-gui ./cmd/exodrive-gui
+```
+
+构建带签名的应用包：
+
+```sh
+make app
+```
+
+用 Developer ID 签名：
+
+```sh
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" make app
 ```
 
 发布构建时写入版本号：
@@ -117,6 +131,12 @@ exodrive migrate --target=/Volumes/External/exodrive --all
 exodrive migrate --target=/Volumes/External/exodrive --tools=npm,pnpm
 ```
 
+只看计划、不动数据：
+
+```sh
+exodrive migrate --target=/Volumes/External/exodrive --all --dry-run
+```
+
 检查孤儿缓存：
 
 ```sh
@@ -134,12 +154,13 @@ exodrive rollback npm.cache
 
 ## 窗口用法
 
-1. 打开 `bin/exodrive-gui`。
+1. 打开 `bin/exodrive-gui` 或 `Exodrive.app`。
 2. 点击 **Browse...**，选择外置磁盘上的空目录。
 3. 点击 **Migrate**，并在确认框中确认。
 4. 查看状态栏，其中显示已迁移的数量。
+5. 要把某个缓存搬回本地，点该行的 **Roll back** 并确认。
 
-窗口显示本地、已迁移、孤儿三类占用。每次扫描和迁移后，列表自动刷新。
+窗口显示本地、已迁移、孤儿三类占用。每次扫描、迁移和回滚后，列表自动刷新。
 
 ## 账本
 
@@ -156,13 +177,14 @@ exodrive rollback npm.cache
 - 迁移是拷贝操作。大容量 VM 磁盘需要时间和临时空间。
 - 迁移需要目标磁盘容纳完整副本。
 - 回滚需要外置磁盘上的副本仍然存在。
-- 窗口暂不提供回滚，请使用命令行。
-- 进程锁按进程名检查。进程名不常见的工具可能绕过检查，迁移前请自行停止该工具。
+- 进程锁读取进程表。启动方式特殊的工具可能绕过检查，迁移前请自行停止该工具。
+- 应用包为 ad-hoc 签名。使用 Developer ID 需要你自己的证书。
 
 ## 开发
 
 ```sh
 make build     # 构建两个二进制
+make app       # 构建并签名 bin/Exodrive.app
 make test      # go test -race ./...
 make lint      # gofmt、go vet、golangci-lint
 make check     # 测试与检查

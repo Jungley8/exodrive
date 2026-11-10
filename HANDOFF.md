@@ -3,7 +3,7 @@
 **项目路径**: `/Volumes/PHD/code/exodrive`
 **开源协议**: Apache-2.0
 **技术栈**: Go 1.27 + nsgo (`github.com/oneo-me/nsgo` 原生 macOS Cocoa 声明式 GUI)
-**当前状态**: 核心引擎、CLI、GUI 全部可运行，已按 Apache-2.0 开源发布 v0.1.0。`make check` 全绿（60 个测试函数，race 检测，`golangci-lint` 0 警告，gofmt 无差异）。CLI 与 GUI 二进制均已实测启动，发布产物已下载验证。
+**当前状态**: 核心引擎、CLI、GUI 全部可运行，已按 Apache-2.0 开源发布 v0.1.0。第三轮补齐 5 项 P2 产品增强（GUI 回滚、`.app` 打包签名、可取消的 `DirSize`、进程表进程锁、`--dry-run`），已在 main（尚未重新发版）。`make check` 全绿（67 个测试函数，race 检测，`golangci-lint` 0 警告，gofmt 无差异）。CLI 与 GUI 二进制均已实测启动，发布产物已下载验证。
 
 ---
 
@@ -72,7 +72,7 @@
 
 ```text
 $ make check
-go test -race -count=1 ./...        # PASS, 6 packages, 60 test functions
+go test -race -count=1 ./...        # PASS, 6 packages, 67 test functions
 go vet ./...                        # PASS
 golangci-lint run ./...             # 0 issues
 $ gofmt -l .                        # 空
@@ -92,6 +92,30 @@ $ go test ./desktop/ -v
 --- PASS: TestWindowListsDetectedCaches
 --- PASS: TestWindowMigratesSelectedCaches
 --- PASS: TestWindowRescanRecovers
+--- PASS: TestWindowRollsBackMigratedCache
+
+$ make app
+make-app: bin/Exodrive.app (version 0.1.0-1-g845180c-dirty, identity: -)
+$ codesign -dv --verbose=2 bin/Exodrive.app
+Identifier=net.jungley.exodrive
+Format=app bundle with Mach-O thin (arm64)
+Signature=adhoc
+
+$ ./bin/exodrive help
+  ... --dry-run    Run every check and print the plan without moving data
+
+$ ./bin/exodrive migrate --tools=cargo --target=$T --dry-run     # 无工具运行时
+Target external directory: $T/target
+Dry run. 1 cache(s) selected. No data moves.
+[ready] Cargo Crate Registry: $T/home/.cargo/registry -> $T/target/cargo/registry (4.0 KB)
+Dry run complete. 1 cache(s) ready. 4.0 KB would be free on the local disk.
+exit=0   registry 仍是真目录，target 0 个条目，账本不存在
+
+$ cp /bin/sleep $T/fakebin/cargo && $T/fakebin/cargo 45 &
+$ ./bin/exodrive migrate --tools=cargo --target=$T --dry-run     # 工具运行时
+[blocked] Cargo Crate Registry: cargo or rustc is running (PID: 16082): stop active builds before migration
+Dry run complete. 0 cache(s) ready. 0 B would be free on the local disk.
+exit=1   registry 仍是真目录，target 0 个条目，账本不存在
 
 $ gh release download v0.1.0 && shasum -a 256 -c SHA256SUMS
 全部 4 个产物 OK
@@ -99,7 +123,9 @@ $ ./exodrive_darwin_arm64/exodrive version
 Exodrive v0.1.0 (darwin/arm64)
 ```
 
-窗口测试用 `nsgotest` 无头挂载真实窗口并模拟点击，覆盖：扫描结果渲染、无目标时 Migrate 禁用、输入目标后可点、确认弹窗、迁移写入账本、迁移后徽章变为 Migrated、重扫期间按钮禁用并在完成后恢复。
+窗口测试用 `nsgotest` 无头挂载真实窗口并模拟点击，覆盖：扫描结果渲染、无目标时 Migrate 禁用、输入目标后可点、确认弹窗、迁移写入账本、迁移后徽章变为 Migrated、重扫期间按钮禁用并在完成后恢复、已迁移行出现 Roll back 并完成回滚。
+
+进程锁的匹配规则另有单测：`node .../npm-cli.js` 命中 `npm`，`--tools=cargo` 不命中，`CARGO_HOME=/tmp/cargo exodrive migrate` 不命中，`GOFLAGS=-mod=mod go build` 命中 `go`。
 
 ---
 
@@ -117,18 +143,19 @@ Exodrive v0.1.0 (darwin/arm64)
 
 首发时发现并修复：workflow 把 tag 名（`v0.1.0`）直接注入 `main.version`，CLI 又加了一次前缀，二进制显示 `vv0.1.0`。修复后重新发同一版本（旧 tag 与 release 已删除重建，无外部使用者）。
 
-### 5.2 产品增强 (P2)
-- [ ] GUI 回滚入口（目前仅 CLI 支持 `rollback`）
-- [ ] macOS `.app` 打包与签名（当前只有裸二进制）
-- [ ] `DirSize` 支持 context 取消（大缓存扫描无法中断）
-- [ ] 进程锁按可执行文件路径匹配，而不是进程名
-- [ ] `migrate --dry-run`
+### 5.2 产品增强 (P2，✅ 2026-11-10 完成)
+
+- [x] **GUI 回滚入口**：已迁移行显示 **Roll back** 按钮（`ContentFunc` 随 signal 重绘），二次确认后执行 `Engine.Rollback`；`busy` 把扫描、迁移、回滚三者互斥。
+- [x] **macOS `.app` 打包与签名**：`packaging/Info.plist.in` + `scripts/make-app.sh`（`net.jungley.exodrive`，最低 13.0）；`make app` 构建 `bin/Exodrive.app`，`codesign --force` 签名（默认 ad-hoc `-`，`SIGN_IDENTITY` 可换 Developer ID），随后 `codesign --verify --strict` 失败即中止。CI 的 macOS job 跑同一条命令，release 的 `bundle` job 用 `ditto` 打成 zip 附在每个 macOS 产物旁。
+- [x] **`DirSize` 支持取消**：`fsutil.DirSize(ctx, root)` 在每次遍历前检查 `ctx.Err()`，入口先 `EvalSymlinks`，避免统计到链接目标。
+- [x] **进程锁改读进程表**：`ps -axo pid=,args=`，按 token 的 basename 匹配可执行文件，因此 `node .../npm-cli.js` 这类解释器启动也能命中；flag token 跳过（`--tools=cargo` 不算），shell 赋值 token 跳过（`CARGO_HOME=/tmp/cargo exodrive migrate` 不算）。进程表读不出来是错误，不是空列表。
+- [x] **`migrate --dry-run`**：跑完目标文件系统、空间、进程锁、环境变量四项检查，逐条打印 `[ready]` / `[blocked]` 与计划路径，然后给出合计。不拷贝、不切换、不写账本；有条目被拦时退出码 1。
 
 ### 5.3 已知限制（README 已声明）
 - 迁移需要目标空间容纳完整副本；回滚需要外置副本仍存在
-- 进程锁通过 `pgrep` 匹配进程名，可能漏检
-- 窗口不做回滚
+- 进程锁读进程表并按名字匹配。改用异常名字启动的工具可能绕过检查，迁移前请自行停止该工具
 - 跨盘时 pnpm 与 uv 退化为复制（硬链接无法跨卷）
+- `.app` 为 ad-hoc 签名，首次打开需右键选择「打开」；Developer ID 需自备证书，公证未做
 
 ---
 
@@ -158,6 +185,6 @@ make check          # race 全量测试 + gofmt/vet/golangci-lint 门禁
 |---|---|
 | `README.md` / `README.zh.md` | 用户向：迁移流程、安全规则、工具链表、用法、限制 |
 | `SPEC.md` | 工程向：接口契约、迁移/回滚时序、不变量、失败矩阵、窗口契约 |
-| `CONTRIBUTING.md` | 贡献者向：DCO、代码规则、7 条安全不变量、测试要求、新增 provider 指南 |
+| `CONTRIBUTING.md` | 贡献者向：DCO、代码规则、8 条安全不变量、测试要求、新增 provider 指南 |
 | `SECURITY.md` | 威胁模型、报告渠道、设计防线 |
 | `HANDOFF.md` | 本文档：接手状态、两轮修复、证据、待办 |

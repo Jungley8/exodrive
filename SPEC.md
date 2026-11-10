@@ -32,6 +32,8 @@ internal/
     npm.go pnpm.go yarn.go cargo.go golang.go bun.go uv.go pip.go docker.go orphan.go
   ui/                     # terminal table and progress bar
 desktop/                  # nsgo reactive window
+packaging/Info.plist.in   # app bundle template
+scripts/make-app.sh       # bundle and sign Exodrive.app
 .github/workflows/        # CI and release
 ```
 
@@ -103,7 +105,12 @@ and return an error with the record intact.
 2. **Process lock**:
    - `docker` refuses to run while Docker Desktop, OrbStack, or Colima runs.
    - Each package manager refuses to run while its own process runs.
-   - The check reads process names with `pgrep`. It is a guard, not a proof.
+   - The check reads `ps -axo pid=,args=` and matches the executable and the
+     arguments. A tool that starts through an interpreter is still found:
+     `node .../npm-cli.js` matches `npm`. A flag token is skipped, so
+     `--tools=cargo` does not match `cargo`. A shell assignment is skipped, so
+     `CARGO_HOME=/tmp/cargo exodrive migrate` does not match `cargo`.
+   - An unreadable process table is an error. The migration does not run blind.
 3. **Environment overrides**:
    - npm, pnpm, yarn, Go, and pip accept a cache path from the environment. A
      set variable wins over the tool's own configuration, so the switch would
@@ -139,6 +146,7 @@ and return an error with the record intact.
 | Target on exFAT, NTFS, or an unknown filesystem | Preflight error, nothing copied |
 | Target lacks free space (needs size × 1.1) | Preflight error, nothing copied |
 | Tool is running | Preflight error, nothing copied |
+| Process table unreadable | Preflight error, nothing copied |
 | Environment variable pins the cache path | Preflight error, nothing copied |
 | Copy fails | Error, local data intact |
 | Verification fails | Error, local data intact, partial copy stays for inspection |
@@ -152,13 +160,29 @@ and return an error with the record intact.
 
 ## 5. Window contract
 
-- The window reads signals inside `core.Dynamic`, `core.Each`, and `...Func`
-  fields only. A signal read at build time does not repaint.
+- The window reads signals inside `core.Dynamic`, `core.Each`, `core.Show`, and
+  `...Func` fields only. A signal read at build time does not repaint.
 - A migration requires a non-empty target folder. The Migrate button stays
   disabled until the field holds one.
 - A migration asks for confirmation and shows the number of caches and the
   target folder.
+- A migrated row shows a Roll back button. The button opens a second
+  confirmation, then runs `Engine.Rollback`.
 - Progress comes from the provider's copy callback, posted to the UI thread
   through the root scope. A Dynamic branch scope ends when the branch repaints.
-- A rescan and a migration cannot run at the same time.
-- The window does not run a rollback. The command line does.
+- A scan, a migration, and a rollback exclude each other. `busy` reads the
+  three signals.
+- Every long action rescans before it reports, so the list matches the ledger.
+
+## 6. Command line contract
+
+- `check` prints the detected caches. A provider that fails prints a warning;
+  the other items stay usable. An unreadable ledger stops the command.
+- `preflight <item> --target` runs the same checks a migration runs first.
+- `migrate --target` moves the selected caches. `--dry-run` runs every check
+  and prints the plan. It copies no data, switches no tool, and writes no
+  record. A blocked item makes the command exit 1.
+- `rollback <item>` restores one cache and removes its record.
+- `orphans [--clean]` lists or deletes abandoned caches.
+- `version` prints the build version. A release build shows its number with a
+  `v` prefix; a development build shows its commit or `dev`.

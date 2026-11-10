@@ -83,6 +83,10 @@ Download a release build for macOS or Linux from the
 holds the command line tool, the window, the README, and the license. Check the
 archive against `SHA256SUMS`.
 
+The macOS archive for your architecture also holds `Exodrive.app`. This bundle
+is ad-hoc signed. macOS asks for your confirmation the first time you open it:
+right-click the app, then choose **Open**.
+
 Or build the command line tool from source:
 
 ```sh
@@ -93,6 +97,18 @@ Build the macOS window:
 
 ```sh
 go build -o bin/exodrive-gui ./cmd/exodrive-gui
+```
+
+Build the window as a signed app bundle:
+
+```sh
+make app
+```
+
+Set `SIGN_IDENTITY` to sign with a Developer ID:
+
+```sh
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" make app
 ```
 
 Set a version string for a release build:
@@ -128,6 +144,12 @@ exodrive migrate --target=/Volumes/External/exodrive --all
 exodrive migrate --target=/Volumes/External/exodrive --tools=npm,pnpm
 ```
 
+Check what a move would do, without moving data:
+
+```sh
+exodrive migrate --target=/Volumes/External/exodrive --all --dry-run
+```
+
 Find abandoned caches:
 
 ```sh
@@ -149,13 +171,14 @@ exodrive check
 
 ## Use the window
 
-1. Open `bin/exodrive-gui`.
+1. Open `bin/exodrive-gui`, or `Exodrive.app`.
 2. Press **Browse...** and choose an empty folder on the external volume.
 3. Press **Migrate**. Confirm the move.
 4. Read the status line. It shows the number of moved caches.
+5. To move a cache back, press **Roll back** on its row. Confirm the move.
 
 The window shows local, migrated, and abandoned bytes. It updates the list after
-every scan and every move.
+every scan, every move, and every rollback.
 
 ## The ledger
 
@@ -175,14 +198,15 @@ Keep the ledger and the external volume together. A rollback needs both.
 - Exodrive copies data. A large VM disk takes time and temporary space.
 - A migration needs the target volume to hold one complete copy.
 - A rollback needs the migrated copy on the external volume.
-- The window does not run a rollback. Use the command line.
-- The process lock reads process names. A tool with an unusual process name can
-  pass the check. Stop the tool yourself before you migrate its data.
+- The process lock reads the process table. A tool that starts under an unusual
+  name can pass the check. Stop the tool yourself before you migrate its data.
+- The app bundle is ad-hoc signed. A Developer ID needs your own certificate.
 
 ## Development
 
 ```sh
 make build     # build both binaries
+make app       # build and sign bin/Exodrive.app
 make test      # go test -race ./...
 make lint      # gofmt, go vet, golangci-lint
 make check     # test and lint
