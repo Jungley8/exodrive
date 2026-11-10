@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"exodrive/internal/core"
 	"exodrive/internal/fsutil"
@@ -143,7 +144,8 @@ func TestLifecycle_PNPM(t *testing.T) {
 	env := setupMockEnv(t)
 	ctx := context.Background()
 
-	storeDir := filepath.Join(env.home, "pnpm-store-data")
+	storeRoot := filepath.Join(env.home, "pnpm-store-data")
+	storeDir := filepath.Join(storeRoot, "v11")
 	if err := os.MkdirAll(storeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -158,6 +160,8 @@ func TestLifecycle_PNPM(t *testing.T) {
 	writeMockCLI(t, env.bin, "pnpm", `
 if [ "$1" = "store" ] && [ "$2" = "path" ]; then
 	echo "$MOCK_PNPM_STORE"
+elif [ "$1" = "config" ] && [ "$2" = "get" ]; then
+	echo "undefined"
 elif [ "$1" = "config" ] && [ "$2" = "set" ]; then
 	echo "$3=$4" > "$MOCK_PNPM_CONF"
 elif [ "$1" = "config" ] && [ "$2" = "delete" ]; then
@@ -175,6 +179,10 @@ fi
 	}
 
 	item := items[0]
+	// pnpm appends its version folder to store-dir, so the root is the unit.
+	if item.CurrentPath != storeRoot {
+		t.Fatalf("expected the store root %s, got %s", storeRoot, item.CurrentPath)
+	}
 	if err := p.PreflightCheck(ctx, item, env.targetRoot); err != nil {
 		t.Fatalf("PreflightCheck failed: %v", err)
 	}
@@ -183,18 +191,66 @@ fi
 		t.Fatalf("Migrate failed: %v", err)
 	}
 
-	targetFile := filepath.Join(env.targetRoot, item.TargetSubdir, "meta.json")
+	// The version folder must survive the move, or pnpm starts an empty store.
+	targetFile := filepath.Join(env.targetRoot, item.TargetSubdir, "v11", "meta.json")
 	if data, err := os.ReadFile(targetFile); err != nil || string(data) != "pnpm-meta" {
 		t.Fatalf("target file mismatch: %v", err)
+	}
+
+	conf, err := os.ReadFile(confFile)
+	if err != nil {
+		t.Fatalf("read the pnpm config: %v", err)
+	}
+	if want := "store-dir=" + filepath.Join(env.targetRoot, item.TargetSubdir); string(conf) != want+"\n" {
+		t.Fatalf("store-dir mismatch: got %q, want %q", string(conf), want)
 	}
 
 	if err := p.Rollback(ctx, item); err != nil {
 		t.Fatalf("Rollback failed: %v", err)
 	}
 
+	if data, err := os.ReadFile(filepath.Join(storeDir, "meta.json")); err != nil || string(data) != "pnpm-meta" {
+		t.Fatalf("restored file mismatch: %v", err)
+	}
+
 	m, _ := core.LoadManifest()
 	if len(m.Records) != 0 {
 		t.Fatalf("manifest record not removed: %+v", m)
+	}
+}
+
+// A recorded move whose store path is gone must fail the scan. An empty store
+// would send pnpm to a new location without the packages.
+func TestPNPMDetectRefusesMissingStoreAfterMigration(t *testing.T) {
+	env := setupMockEnv(t)
+	ctx := context.Background()
+
+	missing := filepath.Join(env.home, "pnpm-store-data", "v11")
+	t.Setenv("MOCK_PNPM_STORE", missing)
+	writeMockCLI(t, env.bin, "pnpm", `
+if [ "$1" = "store" ] && [ "$2" = "path" ]; then
+	echo "$MOCK_PNPM_STORE"
+fi
+`)
+
+	if err := core.RecordMigration(core.MigrationRecord{
+		ID:             "pnpm.store",
+		ToolName:       "pnpm",
+		OriginalPath:   filepath.Join(env.home, "pnpm-store-data"),
+		DestinationDir: filepath.Join(env.targetRoot, "pnpm-store"),
+		RedirectMethod: core.RedirectNativeConfig,
+		MigratedAt:     time.Now(),
+		SizeBytes:      1024,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := NewPNPMProvider().Detect(ctx)
+	if err == nil {
+		t.Fatal("expected an error for a recorded store that is missing")
+	}
+	if !strings.Contains(err.Error(), "rollback pnpm.store") {
+		t.Fatalf("expected a rollback hint, got %v", err)
 	}
 }
 

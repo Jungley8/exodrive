@@ -1,7 +1,6 @@
 package plugins
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -27,17 +26,30 @@ func (p *PNPMProvider) Name() string {
 func (p *PNPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	var items []core.CacheItem
 
-	var storePath string
-	cmd := exec.CommandContext(ctx, "pnpm", "store", "path")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err == nil {
-		storePath = strings.TrimSpace(out.String())
+	// pnpm reports the store of its own version: <store-dir>/v<N>. It appends
+	// that folder to store-dir on every run. Exodrive moves the store root and
+	// keeps the folder, so the new store-dir holds v<N> again.
+	storePath := pnpmStorePath(ctx)
+	storeRoot := storePath
+	if isStoreVersion(filepath.Base(storePath)) {
+		storeRoot = filepath.Dir(storePath)
+	}
+
+	if storePath != "" {
+		if _, err := os.Stat(storePath); err != nil {
+			// A ledger record means Exodrive moved this store. A missing path
+			// then means the move went wrong, not that the store is empty.
+			if m, mErr := core.LoadManifest(); mErr == nil {
+				if _, recorded := m.Records["pnpm.store"]; recorded {
+					return nil, fmt.Errorf("pnpm store is missing at %s: run 'exodrive rollback pnpm.store', then migrate again", storePath)
+				}
+			}
+		}
 	}
 
 	home, _ := os.UserHomeDir()
 	candidatePaths := []string{
-		storePath,
+		storeRoot,
 		filepath.Join(home, "Library", "pnpm", "store"),
 		filepath.Join(home, ".pnpm-store"),
 		filepath.Join(home, "Library", "Caches", "pnpm"),
@@ -54,7 +66,7 @@ func (p *PNPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			size, _ := fsutil.DirSize(ctx, path)
 			isSymlink := fsutil.IsSymlink(path)
 			isMigrated := strings.HasPrefix(path, "/Volumes/") || isSymlink
-			isActive := (path == storePath)
+			isActive := (path == storeRoot)
 
 			warning := ""
 			if !isMigrated {
@@ -67,7 +79,7 @@ func (p *PNPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 				Title:          "PNPM Package Store",
 				Category:       core.CategoryPackageStore,
 				CurrentPath:    path,
-				ConfiguredPath: storePath,
+				ConfiguredPath: pnpmStoreDir(ctx),
 				SizeBytes:      size,
 				IsActive:       isActive,
 				IsMigrated:     isMigrated,
@@ -81,6 +93,43 @@ func (p *PNPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	}
 
 	return items, nil
+}
+
+// pnpmStorePath returns the path pnpm uses for its store, empty when pnpm does
+// not answer.
+func pnpmStorePath(ctx context.Context) string {
+	out, err := exec.CommandContext(ctx, "pnpm", "store", "path").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// pnpmStoreDir returns the value of the store-dir setting, empty when pnpm
+// does not set it.
+func pnpmStoreDir(ctx context.Context) string {
+	out, err := exec.CommandContext(ctx, "pnpm", "config", "get", "store-dir").Output()
+	if err != nil {
+		return ""
+	}
+	value := strings.TrimSpace(string(out))
+	if value == "undefined" {
+		return ""
+	}
+	return value
+}
+
+// isStoreVersion reports whether name is a store version folder, such as v11.
+func isStoreVersion(name string) bool {
+	if len(name) < 2 || name[0] != 'v' {
+		return false
+	}
+	for _, r := range name[1:] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *PNPMProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
@@ -134,7 +183,9 @@ func (p *PNPMProvider) Rollback(ctx context.Context, item core.CacheItem) error 
 		return err
 	}
 
-	if rec.OriginalConfig != "" && rec.OriginalConfig != rec.DestinationDir {
+	// store-dir points at the root. pnpm adds its own v<N> folder below it, and
+	// the copy kept that folder, so pnpm finds the data again.
+	if rec.OriginalConfig != "" {
 		if err := runCommand(ctx, "pnpm", "config", "set", "store-dir", rec.OriginalConfig, "--global"); err != nil {
 			return err
 		}
