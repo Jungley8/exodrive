@@ -104,7 +104,9 @@ func (p *UVProvider) PreflightCheck(ctx context.Context, item core.CacheItem, ta
 	if len(running) > 0 {
 		return fmt.Errorf("uv is running (PID: %s): stop active uv tasks before migration", running[0].PID)
 	}
-	return nil
+	// UV_CACHE_DIR wins over the link, so the switch would not take effect and
+	// Exodrive would still delete the local cache.
+	return envOverride("UV_CACHE_DIR")
 }
 
 func (p *UVProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {

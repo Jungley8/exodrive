@@ -84,7 +84,9 @@ func (p *BunProvider) PreflightCheck(ctx context.Context, item core.CacheItem, t
 	if len(running) > 0 {
 		return fmt.Errorf("bun is running (PID: %s): stop active bun tasks before migration", running[0].PID)
 	}
-	return nil
+	// BUN_INSTALL_CACHE_DIR wins over the link, so the switch would not take
+	// effect and Exodrive would still delete the local cache.
+	return envOverride("BUN_INSTALL_CACHE_DIR")
 }
 
 func (p *BunProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {

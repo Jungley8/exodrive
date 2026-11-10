@@ -521,6 +521,8 @@ fi
 func TestLifecycle_UV(t *testing.T) {
 	env := setupMockEnv(t)
 	ctx := context.Background()
+	// Preflight refuses a migration while the variable pins the cache folder.
+	t.Setenv("UV_CACHE_DIR", "")
 
 	uvCache := filepath.Join(env.home, "Library", "Caches", "uv")
 	uvPython := filepath.Join(env.home, ".local", "share", "uv", "python")
@@ -1094,6 +1096,34 @@ func TestPreflightRefusesEnvOverride(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "npm_config_cache") {
 		t.Fatalf("error does not name the variable: %v", err)
+	}
+}
+
+// uv and bun read their cache path from the environment too. The switch would
+// not take effect while the variable is set.
+func TestPreflightRefusesUVAndBunEnvOverride(t *testing.T) {
+	env := setupMockEnv(t)
+
+	cases := []struct {
+		variable string
+		provider Provider
+		item     core.CacheItem
+	}{
+		{"UV_CACHE_DIR", NewUVProvider(), core.CacheItem{ID: "uv.cache", ToolName: "uv", CurrentPath: filepath.Join(env.home, "uv")}},
+		{"BUN_INSTALL_CACHE_DIR", NewBunProvider(), core.CacheItem{ID: "bun.cache", ToolName: "bun", CurrentPath: filepath.Join(env.home, "bun")}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.variable, func(t *testing.T) {
+			t.Setenv(tc.variable, "/tmp/pinned")
+			err := tc.provider.PreflightCheck(context.Background(), tc.item, env.targetRoot)
+			if err == nil {
+				t.Fatalf("expected PreflightCheck to refuse while %s is set", tc.variable)
+			}
+			if !strings.Contains(err.Error(), tc.variable) {
+				t.Fatalf("error does not name %s: %v", tc.variable, err)
+			}
+		})
 	}
 }
 
