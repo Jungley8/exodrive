@@ -6,7 +6,8 @@
 # SIGN_IDENTITY selects the codesign identity, for example
 # "Developer ID Application: Name (TEAMID)". Without it, the bundle gets an
 # ad-hoc signature. macOS asks for confirmation once before it opens an ad-hoc
-# bundle.
+# bundle. A Developer ID signature carries the hardened runtime and a secure
+# timestamp, which notarization requires.
 set -eu
 
 VERSION="${1:?usage: make-app.sh <version> [output-dir]}"
@@ -32,7 +33,13 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$ROOT/README.md" "$ROOT/README.zh.md" "$ROOT/LICENSE" "$APP/Contents/Resources/"
 sed "s/__VERSION__/$VERSION/g" "$ROOT/packaging/Info.plist.in" > "$APP/Contents/Info.plist"
 
-codesign --force --sign "$IDENTITY" "$APP"
+if [ "$IDENTITY" = "-" ]; then
+	codesign --force --sign - "$APP"
+else
+	# Notarization needs the hardened runtime and a secure timestamp. An
+	# ad-hoc identity can hold neither, so the flags apply here only.
+	codesign --force --options runtime --timestamp --sign "$IDENTITY" "$APP"
+fi
 codesign --verify --strict "$APP"
 
 echo "make-app: $APP (version $VERSION, identity: $IDENTITY)"

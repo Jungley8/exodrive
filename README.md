@@ -146,6 +146,20 @@ ad-hoc identity (`codesign --sign -`). macOS opens such a bundle after the
 one-time Gatekeeper step above. A Developer ID, the hardened runtime, and
 notarization need an Apple Developer Program membership.
 
+A Developer ID build carries the hardened runtime and a secure timestamp. Store
+a notary profile once, then build and notarize:
+
+```sh
+xcrun notarytool store-credentials exodrive-notary \
+  --apple-id you@example.com --team-id TEAMID --password APP_PASSWORD
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" make app
+NOTARY_PROFILE=exodrive-notary make notarize
+```
+
+`make notarize` uploads the bundle, waits for Apple, staples the ticket, and
+checks the bundle with Gatekeeper. It stops when the profile is missing, when
+the signature is not a Developer ID, or when Apple rejects the bundle.
+
 Set a version string for a release build:
 
 ```sh

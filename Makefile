@@ -17,6 +17,11 @@ build:
 app:
 	@scripts/make-app.sh "$(VERSION)" "$(BIN)"
 
+## notarize: submit bin/Exodrive.app to Apple, then staple the ticket
+##      Needs a Developer ID build and NOTARY_PROFILE. See scripts/notarize.sh.
+notarize:
+	@scripts/notarize.sh "$(BIN)/Exodrive.app"
+
 ## test: run the test suite
 test:
 	go test -count=1 ./...

@@ -286,3 +286,17 @@ and return an error with the record intact.
 - `orphans [--clean]` lists or deletes abandoned caches.
 - `version` prints the build version. A release build shows its number with a
   `v` prefix; a development build shows its commit or `dev`.
+
+## 7. Release contract
+
+- `release.yml` runs the test suite, builds four CLI targets, builds two app
+  bundles on macOS, writes `SHA256SUMS`, and publishes the release.
+- The CI bundle is ad-hoc signed, because the workflow holds no signing
+  identity. `make app` with `SIGN_IDENTITY` produces a Developer ID build.
+- A Developer ID build carries `--options runtime` and `--timestamp`.
+  Notarization refuses a bundle without both, so the two paths cannot mix.
+- `make notarize` needs `NOTARY_PROFILE`. `scripts/notarize.sh` stops when the
+  profile is missing, when the signature is not a Developer ID, when Apple
+  rejects the upload, or when Gatekeeper still rejects the stapled bundle.
+- A bundle that carries no ticket keeps the Gatekeeper prompt. It must not ship
+  as a notarized build.

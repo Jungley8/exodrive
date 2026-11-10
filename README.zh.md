@@ -124,6 +124,17 @@ SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" make app
 
 没有 Developer ID 也能打包。不设 `SIGN_IDENTITY` 时，`make app` 用 ad-hoc 身份签名（`codesign --sign -`）。macOS 在完成上文的首次确认后即可打开。Developer ID、强化运行时与公证需要 Apple Developer Program 会员资格。
 
+用 Developer ID 打包时，应用带强化运行时和安全时间戳。先保存一次公证凭据，再打包并公证：
+
+```sh
+xcrun notarytool store-credentials exodrive-notary \
+  --apple-id you@example.com --team-id TEAMID --password APP_PASSWORD
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" make app
+NOTARY_PROFILE=exodrive-notary make notarize
+```
+
+`make notarize` 会上传应用包、等待 Apple 处理、把票据钉入应用，并用 Gatekeeper 检查。凭据缺失、签名不是 Developer ID、或 Apple 拒绝时，命令直接失败。
+
 发布构建时写入版本号：
 
 ```sh
