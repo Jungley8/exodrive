@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -84,7 +85,8 @@ Options for check:
 Options for migrate:
   --target   Destination directory on external storage (Required)
   --tools    Comma-separated list of tools to migrate (e.g. npm,pnpm,go)
-  --all      Migrate all eligible local caches`)
+  --all      Migrate all eligible local caches
+  --dry-run  Run every check and print the plan without moving data`)
 }
 
 func buildEngine() *core.Engine {
@@ -189,6 +191,7 @@ func runMigrate(args []string) {
 	target := fs.String("target", "", "Destination directory on external storage (e.g. /Volumes/ExternalDrive/exodrive-caches)")
 	tools := fs.String("tools", "", "Comma-separated list of tools to migrate")
 	all := fs.Bool("all", false, "Migrate all unmigrated caches")
+	dryRun := fs.Bool("dry-run", false, "Check every selected cache without moving data")
 	_ = fs.Parse(args)
 
 	if *target == "" {
@@ -222,6 +225,11 @@ func runMigrate(args []string) {
 
 	if len(candidates) == 0 {
 		fmt.Println("No matching unmigrated caches found. Run 'exodrive check' to inspect items.")
+		return
+	}
+
+	if *dryRun {
+		runMigrateDryRun(ctx, engine, candidates, *target)
 		return
 	}
 
@@ -259,6 +267,32 @@ func runMigrate(args []string) {
 
 	fmt.Printf("Migration completed. Reclaimed %s on the local disk.\n", ui.FormatBytes(reclaimedBytes))
 	fmt.Printf("Ledger updated at %s.\n", manifestPath)
+}
+
+// runMigrateDryRun reports what a migration would do. It runs the same checks
+// and changes nothing: no copy, no switch, no ledger record.
+func runMigrateDryRun(ctx context.Context, engine *core.Engine, candidates []core.CacheItem, target string) {
+	fmt.Printf("\nTarget external directory: %s\n", target)
+	fmt.Printf("Dry run. %d cache(s) selected. No data moves.\n\n", len(candidates))
+
+	var reclaimable int64
+	var failures int
+	for _, it := range candidates {
+		if err := engine.Preflight(ctx, it, target); err != nil {
+			fmt.Printf("[blocked] %s: %v\n", it.Title, err)
+			failures++
+			continue
+		}
+		destination := filepath.Join(target, it.TargetSubdir)
+		fmt.Printf("[ready] %s: %s -> %s (%s)\n", it.Title, it.CurrentPath, destination, ui.FormatBytes(it.SizeBytes))
+		reclaimable += it.SizeBytes
+	}
+
+	fmt.Printf("\nDry run complete. %d cache(s) ready. %s would be free on the local disk.\n",
+		len(candidates)-failures, ui.FormatBytes(reclaimable))
+	if failures > 0 {
+		os.Exit(1)
+	}
 }
 
 func runOrphans(args []string) {

@@ -68,7 +68,7 @@ func (p *GoProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			continue
 		}
 		if fi, err := os.Stat(t.curr); err == nil && fi.IsDir() {
-			size, _ := fsutil.DirSize(t.curr)
+			size, _ := fsutil.DirSize(ctx, t.curr)
 			isSymlink := fsutil.IsSymlink(t.curr)
 			isMigrated := strings.HasPrefix(t.curr, "/Volumes/") || isSymlink
 
@@ -93,7 +93,10 @@ func (p *GoProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 }
 
 func (p *GoProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
-	running := fsutil.CheckRunningProcesses("go")
+	running, err := fsutil.CheckRunningProcesses("go")
+	if err != nil {
+		return err
+	}
 	if len(running) > 0 {
 		return fmt.Errorf("go tool is running (PID: %s): stop active go processes before migration", running[0].PID)
 	}

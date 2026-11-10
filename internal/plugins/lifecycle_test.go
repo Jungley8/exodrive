@@ -54,8 +54,8 @@ func setupMockEnv(t *testing.T) *mockEnv {
 	t.Setenv("YARN_CACHE_FOLDER", filepath.Join(home, "Library", "Caches", "Yarn"))
 	t.Setenv("ORBSTACK_DATA_DIR", filepath.Join(home, "Library", "Application Support", "OrbStack", "data"))
 
-	// Provide hermetic pgrep by default that reports no running processes (exit code 1)
-	writeMockCLI(t, bin, "pgrep", "exit 1")
+	// Provide a hermetic process table that holds no tool processes.
+	writeMockCLI(t, bin, "ps", "exit 0")
 
 	return &mockEnv{
 		home:       home,
@@ -798,9 +798,9 @@ func TestPreflightCheck_ProcessRunning(t *testing.T) {
 	env := setupMockEnv(t)
 	ctx := context.Background()
 
-	// Configure mock pgrep to report active running process
-	writeMockCLI(t, env.bin, "pgrep", `
-echo "99999 $2"
+	// Configure the mock process table to report an active npm process.
+	writeMockCLI(t, env.bin, "ps", `
+echo "99999 node /usr/local/lib/node_modules/npm/bin/npm-cli.js install"
 exit 0
 `)
 

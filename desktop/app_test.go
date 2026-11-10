@@ -49,7 +49,7 @@ func (f *fakeProvider) Migrate(ctx context.Context, item exoCore.CacheItem, targ
 }
 
 func (f *fakeProvider) Rollback(ctx context.Context, item exoCore.CacheItem) error {
-	return nil
+	return exoCore.RemoveRecord(item.ID)
 }
 
 func newFakeEngine(item exoCore.CacheItem) *exoCore.Engine {
@@ -194,5 +194,64 @@ func TestWindowRescanRecovers(t *testing.T) {
 	}
 	if !app.Exists("text:Fake Cache") {
 		t.Fatalf("the rescan lost the cache list:\n%s", app.Dump())
+	}
+}
+
+// TestWindowRollsBackMigratedCache drives the rollback path: migrate a cache,
+// press Roll back, confirm. The ledger record must be gone and the row must
+// show the cache as local again.
+func TestWindowRollsBackMigratedCache(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	target := t.TempDir()
+
+	item := exoCore.CacheItem{
+		ID:          "fake.cache",
+		ToolName:    "fake",
+		Title:       "Fake Cache",
+		Category:    exoCore.CategoryPackageStore,
+		CurrentPath: "/tmp/fake-cache",
+		SizeBytes:   4096,
+		IsActive:    true,
+	}
+
+	app := nsgotest.Start(t, NewMain(newFakeEngine(item)), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
+	app.Settle()
+
+	// No rollback control on a cache that is still local.
+	if app.Exists("id:rollback-fake.cache") {
+		t.Fatalf("a local cache offers a rollback:\n%s", app.Dump())
+	}
+
+	app.Type("id:target", target)
+	app.Settle()
+	app.Press("id:migrate")
+	app.Settle()
+	app.Press("id:confirm-move")
+	app.WaitUntil(2*time.Second, func() bool { return badgeText(app, item.ID) == "Migrated" })
+
+	if !app.Exists("id:rollback-fake.cache") {
+		t.Fatalf("a migrated cache offers no rollback:\n%s", app.Dump())
+	}
+
+	app.Press("id:rollback-fake.cache")
+	app.Settle()
+	if !app.Exists("id:rollback-dialog") {
+		t.Fatalf("Roll back did not ask for confirmation:\n%s", app.Dump())
+	}
+
+	app.Press("id:rollback-confirm")
+	app.WaitUntil(2*time.Second, func() bool {
+		m, err := exoCore.LoadManifest()
+		if err != nil {
+			return false
+		}
+		_, ok := m.Records[item.ID]
+		return !ok
+	})
+
+	app.WaitUntil(2*time.Second, func() bool { return badgeText(app, item.ID) == "Local SSD" })
+	if got := badgeText(app, item.ID); got != "Local SSD" {
+		t.Fatalf("row badge is %q after rollback, want Local SSD:\n%s", got, app.Dump())
 	}
 }

@@ -51,7 +51,7 @@ func (p *YarnProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 		seen[path] = true
 
 		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
-			size, _ := fsutil.DirSize(path)
+			size, _ := fsutil.DirSize(ctx, path)
 			isSymlink := fsutil.IsSymlink(path)
 			isMigrated := strings.HasPrefix(path, "/Volumes/") || isSymlink
 
@@ -77,7 +77,10 @@ func (p *YarnProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 }
 
 func (p *YarnProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
-	running := fsutil.CheckRunningProcesses("yarn")
+	running, err := fsutil.CheckRunningProcesses("yarn")
+	if err != nil {
+		return err
+	}
 	if len(running) > 0 {
 		return fmt.Errorf("yarn is running (PID: %s): stop active yarn tasks before migration", running[0].PID)
 	}

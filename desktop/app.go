@@ -29,6 +29,11 @@ type AppState struct {
 	IsMigrating *core.Signal[bool]
 	ProgressPct *core.Signal[float32]
 
+	// IsRollingBack blocks a second rollback and the other long actions.
+	IsRollingBack *core.Signal[bool]
+	// RollbackTarget holds the item ID that waits for confirmation, or "".
+	RollbackTarget *core.Signal[string]
+
 	PickerOpen   *core.Signal[bool]
 	ConfirmOpen  *core.Signal[bool]
 	Picker       *filepicker.State
@@ -62,18 +67,20 @@ func Root(cx *core.Scope) core.Node { return root(cx, NewEngine()) }
 
 func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
 	state := &AppState{
-		Items:       core.NewSignalFunc(cx, []exoCore.CacheItem{}, nil),
-		Selected:    core.NewSignalFunc(cx, map[string]bool{}, nil),
-		TargetDir:   core.NewSignal(cx, ""),
-		StatusMsg:   core.NewSignal(cx, "Ready. Choose a target folder, then scan."),
-		IsScanning:  core.NewSignal(cx, false),
-		IsMigrating: core.NewSignal(cx, false),
-		ProgressPct: core.NewSignal[float32](cx, 0),
-		PickerOpen:  core.NewSignal(cx, false),
-		ConfirmOpen: core.NewSignal(cx, false),
-		Picker:      filepicker.NewState(cx, filepicker.List, false, 0),
-		Root:        cx,
-		Engine:      engine,
+		Items:          core.NewSignalFunc(cx, []exoCore.CacheItem{}, nil),
+		Selected:       core.NewSignalFunc(cx, map[string]bool{}, nil),
+		TargetDir:      core.NewSignal(cx, ""),
+		StatusMsg:      core.NewSignal(cx, "Ready. Choose a target folder, then scan."),
+		IsScanning:     core.NewSignal(cx, false),
+		IsMigrating:    core.NewSignal(cx, false),
+		ProgressPct:    core.NewSignal[float32](cx, 0),
+		PickerOpen:     core.NewSignal(cx, false),
+		ConfirmOpen:    core.NewSignal(cx, false),
+		IsRollingBack:  core.NewSignal(cx, false),
+		RollbackTarget: core.NewSignal(cx, ""),
+		Picker:         filepicker.NewState(cx, filepicker.List, false, 0),
+		Root:           cx,
+		Engine:         engine,
 	}
 	state.Picker.Load = loadFolder
 	state.PickerDevice, _ = os.Hostname()
@@ -91,6 +98,7 @@ func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
 			renderFooter(cx, state),
 			renderPicker(state),
 			renderConfirm(cx, state),
+			renderRollbackConfirm(state),
 		},
 	}
 }
@@ -217,7 +225,7 @@ func renderToolbar(cx *core.Scope, state *AppState) core.Node {
 				Text:     scanLabel,
 				Variant:  ui.ButtonSecondary,
 				Icon:     lucide.RefreshCw,
-				Disabled: func() bool { return isScanning || isMigrating },
+				Disabled: func() bool { return busy(state) },
 				OnPress:  func() { triggerScan(state) },
 				TestID:   "rescan",
 			},
@@ -225,7 +233,7 @@ func renderToolbar(cx *core.Scope, state *AppState) core.Node {
 				Text:     migrateLabel,
 				Variant:  ui.ButtonPrimary,
 				Icon:     lucide.ArrowUpRight,
-				Disabled: func() bool { return isScanning || isMigrating || !hasTarget || selected == 0 },
+				Disabled: func() bool { return busy(state) || !hasTarget || selected == 0 },
 				OnPress:  func() { state.ConfirmOpen.Set(true) },
 				TestID:   "migrate",
 			},
@@ -346,6 +354,19 @@ func renderItemRow(state *AppState, item func() exoCore.CacheItem) core.Node {
 								ContentFunc: statusBadge,
 								TestID:      "badge-" + id,
 							},
+							core.Show{
+								When: func() bool { return item().IsMigrated },
+								Then: func(cx *core.Scope) core.Node {
+									return ui.Button{
+										Text:     "Roll back",
+										Variant:  ui.ButtonSecondary,
+										Icon:     lucide.Undo2,
+										TestID:   "rollback-" + id,
+										Disabled: func() bool { return busy(state) },
+										OnPress:  func() { state.RollbackTarget.Set(id) },
+									}
+								},
+							},
 						},
 					},
 				},
@@ -436,6 +457,11 @@ func renderConfirm(cx *core.Scope, state *AppState) core.Node {
 	})
 }
 
+// busy reports whether a long action runs. A second action waits for it.
+func busy(state *AppState) bool {
+	return state.IsScanning.Get() || state.IsMigrating.Get() || state.IsRollingBack.Get()
+}
+
 func countSelected(state *AppState) int {
 	selected := state.Selected.Get()
 	count := 0
@@ -445,6 +471,38 @@ func countSelected(state *AppState) int {
 		}
 	}
 	return count
+}
+
+// migrationDestination returns the external path that holds the migrated copy.
+func migrationDestination(id string) string {
+	m, err := exoCore.LoadManifest()
+	if err != nil {
+		return "the external volume"
+	}
+	if rec, ok := m.Records[id]; ok {
+		return rec.DestinationDir
+	}
+	return "the external volume"
+}
+
+func renderRollbackConfirm(state *AppState) core.Node {
+	return core.Dynamic(func(cx *core.Scope) core.Node {
+		id := state.RollbackTarget.Get()
+		return ui.AlertDialog{
+			Open:  func() bool { return state.RollbackTarget.Get() != "" },
+			Title: "Move this cache back?",
+			Description: fmt.Sprintf(
+				"Exodrive copies the cache from %s back to its original place. It checks the copy, then removes the external copy. The ledger record is removed.",
+				migrationDestination(id)),
+			Actions: []ui.AlertAction{
+				{Text: "Cancel", Variant: ui.ButtonSecondary, TestID: "rollback-cancel",
+					OnPress: func() { state.RollbackTarget.Set("") }},
+				{Text: "Move back", Variant: ui.ButtonPrimary, TestID: "rollback-confirm",
+					OnPress: func() { state.RollbackTarget.Set(""); triggerRollback(state, id) }},
+			},
+			TestID: "rollback-dialog",
+		}
+	})
 }
 
 func toggleSelected(state *AppState, id string) {
@@ -457,7 +515,7 @@ func toggleSelected(state *AppState, id string) {
 }
 
 func triggerScan(state *AppState) {
-	if state.IsScanning.Get() || state.IsMigrating.Get() {
+	if busy(state) {
 		return
 	}
 	state.IsScanning.Set(true)
@@ -492,7 +550,7 @@ func triggerScan(state *AppState) {
 }
 
 func triggerMigration(state *AppState) {
-	if state.IsScanning.Get() || state.IsMigrating.Get() {
+	if busy(state) {
 		return
 	}
 
@@ -565,6 +623,33 @@ func triggerMigration(state *AppState) {
 			} else {
 				state.StatusMsg.Set(fmt.Sprintf("Migrated %d cache(s) to %s.", successCount, targetDir))
 			}
+		})
+	}()
+}
+
+func triggerRollback(state *AppState, id string) {
+	if busy(state) {
+		return
+	}
+	state.IsRollingBack.Set(true)
+	state.StatusMsg.Set("Moving the cache back...")
+
+	go func() {
+		ctx := context.Background()
+		err := state.Engine.Rollback(ctx, id)
+		items, scanErr := state.Engine.ScanAll(ctx)
+
+		state.Root.Post(func() {
+			state.IsRollingBack.Set(false)
+			if scanErr == nil {
+				state.Items.Set(items)
+				state.Selected.Set(map[string]bool{})
+			}
+			if err != nil {
+				state.StatusMsg.Set(fmt.Sprintf("Rollback failed: %v", err))
+				return
+			}
+			state.StatusMsg.Set("Cache moved back. The ledger record is removed.")
 		})
 	}()
 }

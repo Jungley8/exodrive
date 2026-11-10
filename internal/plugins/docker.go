@@ -103,7 +103,7 @@ func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	}
 
 	if _, err := os.Stat(orbDataDirPath); err == nil {
-		size, _ := fsutil.DirSize(orbDataDirPath)
+		size, _ := fsutil.DirSize(ctx, orbDataDirPath)
 		items = append(items, core.CacheItem{
 			ID:             "docker.orbstack",
 			ToolName:       "docker",
@@ -143,7 +143,7 @@ func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	// 3. Detect Colima
 	colimaDir := filepath.Join(home, ".colima")
 	if fi, err := os.Stat(colimaDir); err == nil && fi.IsDir() {
-		size, _ := fsutil.DirSize(colimaDir)
+		size, _ := fsutil.DirSize(ctx, colimaDir)
 		items = append(items, core.CacheItem{
 			ID:             "docker.colima",
 			ToolName:       "docker",
@@ -164,7 +164,10 @@ func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 }
 
 func (p *DockerProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
-	running := fsutil.CheckRunningProcesses("Docker", "com.docker.backend", "OrbStack", "orbstack", "colima")
+	running, err := fsutil.CheckRunningProcesses("Docker", "com.docker.backend", "OrbStack", "orbstack", "colima")
+	if err != nil {
+		return err
+	}
 	if len(running) > 0 {
 		return fmt.Errorf("container engine is running (%s, PID: %s): stop the container engine before migration", running[0].Name, running[0].PID)
 	}

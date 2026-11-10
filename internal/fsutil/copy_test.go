@@ -1,6 +1,7 @@
 package fsutil
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,7 +28,7 @@ func TestCopyDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	totalSize, err := DirSize(src)
+	totalSize, err := DirSize(context.Background(), src)
 	if err != nil {
 		t.Fatalf("DirSize failed: %v", err)
 	}

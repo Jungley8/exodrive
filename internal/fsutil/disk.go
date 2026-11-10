@@ -1,6 +1,7 @@
 package fsutil
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,7 +45,11 @@ func IsSameDevice(path1, path2 string) (bool, error) {
 // A symlinked root is resolved, so a migrated cache reports the size of the
 // data it now points to. Symlinks inside the tree are not followed, to avoid
 // cycles and double counting.
-func DirSize(root string) (int64, error) {
+func DirSize(ctx context.Context, root string) (int64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil {
 		return 0, err
@@ -52,6 +57,9 @@ func DirSize(root string) (int64, error) {
 
 	var total int64
 	err = filepath.Walk(resolved, func(path string, info os.FileInfo, err error) error {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
 		if err != nil {
 			// Skip unreadable files or transient sockets
 			return nil

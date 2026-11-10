@@ -187,3 +187,89 @@ func TestVersionLabel(t *testing.T) {
 		}
 	}
 }
+
+// runCLIEnv runs the CLI with the given variables replacing any inherited
+// value, so a test never reads the developer's caches.
+func runCLIEnv(t *testing.T, overrides map[string]string, args ...string) (string, int) {
+	t.Helper()
+	cmd := exec.Command(testBinary, args...)
+
+	env := make([]string, 0, len(os.Environ())+len(overrides))
+	for _, entry := range os.Environ() {
+		key := strings.SplitN(entry, "=", 2)[0]
+		if _, replaced := overrides[key]; replaced {
+			continue
+		}
+		env = append(env, entry)
+	}
+	for key, value := range overrides {
+		env = append(env, key+"="+value)
+	}
+	cmd.Env = env
+
+	out, err := cmd.CombinedOutput()
+	exitCode := 0
+	if err != nil {
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("command failed with non-exit error: %v", err)
+		}
+		exitCode = exitErr.ExitCode()
+	}
+	return string(out), exitCode
+}
+
+// TestCLI_MigrateDryRunMovesNothing pins the rule that --dry-run reports the
+// plan and changes nothing: no copy, no link, no ledger record.
+func TestCLI_MigrateDryRunMovesNothing(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	cargoHome := filepath.Join(tmp, "cargo")
+	registry := filepath.Join(cargoHome, "registry")
+	target := filepath.Join(tmp, "target")
+	ledger := filepath.Join(tmp, "manifest.json")
+
+	for _, dir := range []string{home, registry, target} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(registry, "crate"), []byte("crate-bytes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	env := map[string]string{
+		"HOME":                   home,
+		"CARGO_HOME":             cargoHome,
+		"EXODRIVE_MANIFEST_PATH": ledger,
+		"GOCACHE":                filepath.Join(home, "gocache"),
+		"GOMODCACHE":             filepath.Join(home, "gomodcache"),
+		"UV_CACHE_DIR":           filepath.Join(home, "uv"),
+		"PIP_CACHE_DIR":          filepath.Join(home, "pip"),
+		"BUN_INSTALL":            filepath.Join(home, "bun"),
+		"YARN_CACHE_FOLDER":      filepath.Join(home, "yarn"),
+		"ORBSTACK_DATA_DIR":      filepath.Join(home, "orbstack"),
+	}
+
+	out, code := runCLIEnv(t, env, "migrate", "--dry-run", "--tools=cargo", "--target="+target)
+	if code != 0 {
+		t.Fatalf("dry run exited %d:\n%s", code, out)
+	}
+	if !strings.Contains(out, "Dry run.") {
+		t.Fatalf("dry run did not report the plan:\n%s", out)
+	}
+
+	info, err := os.Lstat(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("dry run replaced the local cache with a symlink")
+	}
+	if _, err := os.Stat(filepath.Join(target, "cargo", "registry")); !os.IsNotExist(err) {
+		t.Fatal("dry run copied data to the target")
+	}
+	if data, err := os.ReadFile(ledger); err == nil && strings.Contains(string(data), "cargo.registry") {
+		t.Fatalf("dry run wrote a ledger record:\n%s", data)
+	}
+}

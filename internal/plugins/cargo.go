@@ -57,7 +57,7 @@ func (p *CargoProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	for _, s := range subdirs {
 		path := filepath.Join(cargoHome, s.sub)
 		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
-			size, _ := fsutil.DirSize(path)
+			size, _ := fsutil.DirSize(ctx, path)
 			isSymlink := fsutil.IsSymlink(path)
 			isMigrated := strings.HasPrefix(path, "/Volumes/") || isSymlink
 
@@ -83,7 +83,10 @@ func (p *CargoProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 }
 
 func (p *CargoProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
-	running := fsutil.CheckRunningProcesses("cargo", "rustc")
+	running, err := fsutil.CheckRunningProcesses("cargo", "rustc")
+	if err != nil {
+		return err
+	}
 	if len(running) > 0 {
 		return fmt.Errorf("cargo or rustc is running (PID: %s): stop active builds before migration", running[0].PID)
 	}

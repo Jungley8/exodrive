@@ -42,7 +42,7 @@ func (p *OrphanProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	activeGocache := goEnvVar(ctx, "GOCACHE")
 	if activeGocache != localGoBuild && activeGocache != "" {
 		if fi, err := os.Stat(localGoBuild); err == nil && fi.IsDir() {
-			size, _ := fsutil.DirSize(localGoBuild)
+			size, _ := fsutil.DirSize(ctx, localGoBuild)
 			if size > 1024*1024 { // larger than 1MB
 				items = append(items, core.CacheItem{
 					ID:             "orphan.go-build",
@@ -66,7 +66,7 @@ func (p *OrphanProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	// Check for orphaned local pnpm caches
 	localPnpmCache := filepath.Join(home, "Library", "Caches", "pnpm")
 	if fi, err := os.Stat(localPnpmCache); err == nil && fi.IsDir() {
-		size, _ := fsutil.DirSize(localPnpmCache)
+		size, _ := fsutil.DirSize(ctx, localPnpmCache)
 		if size > 1024*1024 && !fsutil.IsSymlink(localPnpmCache) && !strings.HasPrefix(localPnpmCache, "/Volumes/") {
 			items = append(items, core.CacheItem{
 				ID:             "orphan.pnpm-cache",

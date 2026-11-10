@@ -45,7 +45,7 @@ func (p *NPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	}
 
 	if fi, err := os.Stat(activePath); err == nil && fi.IsDir() {
-		size, _ := fsutil.DirSize(activePath)
+		size, _ := fsutil.DirSize(ctx, activePath)
 		isSymlink := fsutil.IsSymlink(activePath)
 		isMigrated := strings.HasPrefix(activePath, "/Volumes/") || isSymlink
 
@@ -69,7 +69,10 @@ func (p *NPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 }
 
 func (p *NPMProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
-	running := fsutil.CheckRunningProcesses("npm", "npx")
+	running, err := fsutil.CheckRunningProcesses("npm", "npx")
+	if err != nil {
+		return err
+	}
 	if len(running) > 0 {
 		return fmt.Errorf("npm is running (PID: %s): stop active npm processes before migration", running[0].PID)
 	}
