@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,9 +54,12 @@ func loadManifestLocked() (*Manifest, error) {
 }
 
 // saveManifestLocked atomically writes the manifest to disk. Caller MUST hold manifestMu.
+// The temporary file is flushed before the rename, and the directory is flushed
+// after it, so a power loss cannot leave an empty or half-written ledger.
 func saveManifestLocked(m *Manifest) error {
 	p := GetManifestPath()
-	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+	dir := filepath.Dir(p)
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
@@ -65,11 +69,43 @@ func saveManifestLocked(m *Manifest) error {
 		return err
 	}
 
-	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	tmp, err := os.CreateTemp(dir, filepath.Base(p)+".tmp-*")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, p)
+	tmpName := tmp.Name()
+	cleanup := func() { _ = os.Remove(tmpName) }
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Chmod(0644); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := os.Rename(tmpName, p); err != nil {
+		cleanup()
+		return err
+	}
+
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
+	return d.Sync()
 }
 
 // LoadManifest reads the manifest file from ~/.exodrive/manifest.json (or EXODRIVE_MANIFEST_PATH).
@@ -86,9 +122,16 @@ func SaveManifest(m *Manifest) error {
 	return saveManifestLocked(m)
 }
 
-// ModifyManifest executes fn within an exclusive transaction, holding manifestMu
-// across the load, mutation, and save cycle.
+// ModifyManifest executes fn within an exclusive transaction, holding the
+// in-process mutex and the cross-process file lock across the load, mutation,
+// and save cycle.
 func ModifyManifest(fn func(m *Manifest) error) error {
+	unlock, err := lockManifest()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	manifestMu.Lock()
 	defer manifestMu.Unlock()
 
@@ -102,9 +145,14 @@ func ModifyManifest(fn func(m *Manifest) error) error {
 	return saveManifestLocked(m)
 }
 
-// RecordMigration saves a migration record atomically under manifestMu.
+// RecordMigration saves a migration record atomically under the ledger lock.
+// It refuses a record that the ledger already holds, so two runs cannot
+// overwrite the paths that a rollback needs.
 func RecordMigration(rec MigrationRecord) error {
 	return ModifyManifest(func(m *Manifest) error {
+		if existing, ok := m.Records[rec.ID]; ok {
+			return fmt.Errorf("ledger already records %s at %s: run 'exodrive rollback %s' first", rec.ID, existing.DestinationDir, rec.ID)
+		}
 		m.Records[rec.ID] = rec
 		return nil
 	})

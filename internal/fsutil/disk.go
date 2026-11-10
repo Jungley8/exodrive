@@ -8,23 +8,15 @@ import (
 )
 
 // IsSafeFilesystem returns true if the filesystem supports POSIX permissions,
-// locking, and symlinks reliably.
+// locking, and symlinks reliably. The list is an allowlist: an unknown
+// filesystem is refused, so a migration can never silently lose metadata.
 func IsSafeFilesystem(fstype string) bool {
 	norm := strings.ToLower(strings.TrimSpace(fstype))
-	if norm == "" {
-		return false
-	}
 	switch norm {
-	case "apfs", "hfs", "hfs+", "ext4", "ext3", "btrfs", "zfs", "xfs", "unix":
+	case "apfs", "hfs", "hfs+", "ext4", "ext3", "ext2", "btrfs", "zfs", "xfs", "f2fs", "bcachefs":
 		return true
-	case "msdos", "fat", "fat32", "exfat", "ntfs", "smbfs", "cifs":
-		return false
 	default:
-		// Default to allowing Unix filesystems if unknown, but flag FAT/NTFS
-		if strings.Contains(norm, "fat") || strings.Contains(norm, "ntfs") {
-			return false
-		}
-		return true
+		return false
 	}
 }
 
@@ -49,10 +41,17 @@ func IsSameDevice(path1, path2 string) (bool, error) {
 }
 
 // DirSize calculates the total size of files under root.
-// It skips symlink targets to avoid cycles or counting external drives.
+// A symlinked root is resolved, so a migrated cache reports the size of the
+// data it now points to. Symlinks inside the tree are not followed, to avoid
+// cycles and double counting.
 func DirSize(root string) (int64, error) {
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return 0, err
+	}
+
 	var total int64
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(resolved, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			// Skip unreadable files or transient sockets
 			return nil

@@ -88,7 +88,7 @@ func (p *PNPMProvider) PreflightCheck(ctx context.Context, item core.CacheItem, 
 	if len(running) > 0 {
 		return fmt.Errorf("pnpm is running (PID: %s): stop active pnpm tasks before migration", running[0].PID)
 	}
-	return nil
+	return envOverride("npm_config_store_dir", "NPM_CONFIG_STORE_DIR")
 }
 
 func (p *PNPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
@@ -100,13 +100,11 @@ func (p *PNPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetR
 	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
 		return fmt.Errorf("copy pnpm store: %w", err)
 	}
-
-	cmd := exec.CommandContext(ctx, "pnpm", "config", "set", "store-dir", dest, "--global")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("pnpm config set store-dir failed (%s): %w", string(out), err)
+	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+		return fmt.Errorf("pnpm store: %w", err)
 	}
 
-	return core.RecordMigration(core.MigrationRecord{
+	if err := core.RecordMigration(core.MigrationRecord{
 		ID:             item.ID,
 		ToolName:       p.Name(),
 		OriginalPath:   item.CurrentPath,
@@ -115,25 +113,36 @@ func (p *PNPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetR
 		OriginalConfig: item.ConfiguredPath,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
-	})
+	}); err != nil {
+		return err
+	}
+
+	cmd := exec.CommandContext(ctx, "pnpm", "config", "set", "store-dir", dest, "--global")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return switchFailed(item.ID, fmt.Errorf("pnpm config set store-dir failed (%s): %w", string(out), err))
+	}
+
+	return removeLocalSource(item.CurrentPath, dest)
 }
 
 func (p *PNPMProvider) Rollback(ctx context.Context, item core.CacheItem) error {
-	m, err := core.LoadManifest()
+	rec, err := loadRecord(item.ID)
 	if err != nil {
 		return err
 	}
-	rec, ok := m.Records[item.ID]
-	if !ok {
-		return fmt.Errorf("no migration record for %s", item.ID)
-	}
 
 	if rec.OriginalConfig != "" && rec.OriginalConfig != rec.DestinationDir {
-		cmd := exec.CommandContext(ctx, "pnpm", "config", "set", "store-dir", rec.OriginalConfig, "--global")
-		_ = cmd.Run()
+		if err := runCommand(ctx, "pnpm", "config", "set", "store-dir", rec.OriginalConfig, "--global"); err != nil {
+			return err
+		}
 	} else {
-		cmd := exec.CommandContext(ctx, "pnpm", "config", "delete", "store-dir", "--global")
-		_ = cmd.Run()
+		if err := runCommand(ctx, "pnpm", "config", "delete", "store-dir", "--global"); err != nil {
+			return err
+		}
+	}
+
+	if err := restoreNativeData(rec); err != nil {
+		return err
 	}
 
 	return core.RemoveRecord(item.ID)

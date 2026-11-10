@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -14,7 +15,9 @@ import (
 	"exodrive/internal/ui"
 )
 
-const version = "1.0.0"
+// version is set at build time:
+// go build -ldflags "-X main.version=0.1.0" ./cmd/exodrive
+var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -56,11 +59,14 @@ func printHelp() {
 Usage:
   exodrive check [--json]             Scan and list detected developer caches
   exodrive preflight <item> --target  Run safety checks before migration
-  exodrive migrate --target=<dir>     Migrate caches to external storage
+  exodrive migrate --target=<dir>     Move caches to external storage
   exodrive orphans [--clean]          Detect or delete abandoned caches
-  exodrive rollback <item_id>         Restore a migrated cache to internal storage
+  exodrive rollback <item_id>         Move a migrated cache back
   exodrive version                    Display version information
   exodrive help                       Display this help message
+
+A migration copies the cache, checks the copy, then removes the local copy.
+A rollback copies the cache back and removes the external copy.
 
 Options for check:
   --json     Output scan results as formatted JSON
@@ -80,18 +86,29 @@ func buildEngine() *core.Engine {
 	return core.NewEngine(accessors...)
 }
 
+// scanCaches returns every detected cache. It stops when the ledger cannot be
+// read. A toolchain that fails to detect prints a warning, and the other items
+// stay usable.
+func scanCaches(engine *core.Engine) []core.CacheItem {
+	items, err := engine.ScanAll(context.Background())
+	if err == nil {
+		return items
+	}
+	if errors.Is(err, core.ErrLedger) {
+		fmt.Printf("Scan failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stderr, "Warning: some toolchains could not be detected: %v\n", err)
+	return items
+}
+
 func runCheck(args []string) {
 	fs := flag.NewFlagSet("check", flag.ExitOnError)
 	jsonOutput := fs.Bool("json", false, "Output results in JSON format")
 	_ = fs.Parse(args)
 
 	engine := buildEngine()
-	ctx := context.Background()
-	items, err := engine.ScanAll(ctx)
-	if err != nil {
-		fmt.Printf("Scan failed: %v\n", err)
-		os.Exit(1)
-	}
+	items := scanCaches(engine)
 
 	if *jsonOutput {
 		enc := json.NewEncoder(os.Stdout)
@@ -134,11 +151,7 @@ func runPreflight(args []string) {
 
 	engine := buildEngine()
 	ctx := context.Background()
-	items, err := engine.ScanAll(ctx)
-	if err != nil {
-		fmt.Printf("Scan failed: %v\n", err)
-		os.Exit(1)
-	}
+	items := scanCaches(engine)
 
 	var targetItem *core.CacheItem
 	for _, it := range items {
@@ -175,11 +188,7 @@ func runMigrate(args []string) {
 
 	engine := buildEngine()
 	ctx := context.Background()
-	items, err := engine.ScanAll(ctx)
-	if err != nil {
-		fmt.Printf("Scan failed: %v\n", err)
-		os.Exit(1)
-	}
+	items := scanCaches(engine)
 
 	toolFilter := make(map[string]bool)
 	if *tools != "" {
@@ -211,6 +220,7 @@ func runMigrate(args []string) {
 
 	var failureCount int
 	var successCount int
+	var reclaimedBytes int64
 
 	for _, it := range candidates {
 		fmt.Printf("==> Migrating %s (%s, %s)...\n", it.Title, it.CurrentPath, ui.FormatBytes(it.SizeBytes))
@@ -226,6 +236,7 @@ func runMigrate(args []string) {
 		} else {
 			fmt.Printf("✅ Migrated %s.\n\n", it.Title)
 			successCount++
+			reclaimedBytes += it.SizeBytes
 		}
 	}
 
@@ -236,7 +247,8 @@ func runMigrate(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Migration completed. Ledger updated at %s.\n", manifestPath)
+	fmt.Printf("Migration completed. Reclaimed %s on the local disk.\n", ui.FormatBytes(reclaimedBytes))
+	fmt.Printf("Ledger updated at %s.\n", manifestPath)
 }
 
 func runOrphans(args []string) {
@@ -245,12 +257,7 @@ func runOrphans(args []string) {
 	_ = fs.Parse(args)
 
 	engine := buildEngine()
-	ctx := context.Background()
-	items, err := engine.ScanAll(ctx)
-	if err != nil {
-		fmt.Printf("Scan failed: %v\n", err)
-		os.Exit(1)
-	}
+	items := scanCaches(engine)
 
 	var orphans []core.CacheItem
 	for _, it := range items {
@@ -299,10 +306,10 @@ func runRollback(args []string) {
 	engine := buildEngine()
 	ctx := context.Background()
 
-	fmt.Printf("Reverting migration for %s...\n", itemID)
+	fmt.Printf("Moving %s back to its original location...\n", itemID)
 	if err := engine.Rollback(ctx, itemID); err != nil {
 		fmt.Printf("Rollback failed: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Restored %s to default internal configuration.\n", itemID)
+	fmt.Printf("Restored %s. The ledger record is removed.\n", itemID)
 }

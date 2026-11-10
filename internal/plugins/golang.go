@@ -97,7 +97,10 @@ func (p *GoProvider) PreflightCheck(ctx context.Context, item core.CacheItem, ta
 	if len(running) > 0 {
 		return fmt.Errorf("go tool is running (PID: %s): stop active go processes before migration", running[0].PID)
 	}
-	return nil
+	if item.ID == "go.mod" {
+		return envOverride("GOMODCACHE")
+	}
+	return envOverride("GOCACHE")
 }
 
 func (p *GoProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
@@ -109,18 +112,16 @@ func (p *GoProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoo
 	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
 		return fmt.Errorf("copy %s: %w", item.Title, err)
 	}
+	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+		return fmt.Errorf("%s: %w", item.Title, err)
+	}
 
 	varName := "GOCACHE"
 	if item.ID == "go.mod" {
 		varName = "GOMODCACHE"
 	}
 
-	cmd := exec.CommandContext(ctx, "go", "env", "-w", fmt.Sprintf("%s=%s", varName, dest))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("go env -w failed (%s): %w", string(out), err)
-	}
-
-	return core.RecordMigration(core.MigrationRecord{
+	if err := core.RecordMigration(core.MigrationRecord{
 		ID:             item.ID,
 		ToolName:       p.Name(),
 		OriginalPath:   item.CurrentPath,
@@ -129,17 +130,22 @@ func (p *GoProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoo
 		OriginalConfig: item.ConfiguredPath,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
-	})
+	}); err != nil {
+		return err
+	}
+
+	cmd := exec.CommandContext(ctx, "go", "env", "-w", fmt.Sprintf("%s=%s", varName, dest))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return switchFailed(item.ID, fmt.Errorf("go env -w failed (%s): %w", string(out), err))
+	}
+
+	return removeLocalSource(item.CurrentPath, dest)
 }
 
 func (p *GoProvider) Rollback(ctx context.Context, item core.CacheItem) error {
-	m, err := core.LoadManifest()
+	rec, err := loadRecord(item.ID)
 	if err != nil {
 		return err
-	}
-	rec, ok := m.Records[item.ID]
-	if !ok {
-		return fmt.Errorf("no migration record for %s", item.ID)
 	}
 
 	varName := "GOCACHE"
@@ -148,11 +154,17 @@ func (p *GoProvider) Rollback(ctx context.Context, item core.CacheItem) error {
 	}
 
 	if rec.OriginalConfig != "" && rec.OriginalConfig != rec.DestinationDir {
-		cmd := exec.CommandContext(ctx, "go", "env", "-w", fmt.Sprintf("%s=%s", varName, rec.OriginalConfig))
-		_ = cmd.Run()
+		if err := runCommand(ctx, "go", "env", "-w", fmt.Sprintf("%s=%s", varName, rec.OriginalConfig)); err != nil {
+			return err
+		}
 	} else {
-		cmd := exec.CommandContext(ctx, "go", "env", "-u", varName)
-		_ = cmd.Run()
+		if err := runCommand(ctx, "go", "env", "-u", varName); err != nil {
+			return err
+		}
+	}
+
+	if err := restoreNativeData(rec); err != nil {
+		return err
 	}
 
 	return core.RemoveRecord(item.ID)

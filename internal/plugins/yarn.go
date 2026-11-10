@@ -81,7 +81,7 @@ func (p *YarnProvider) PreflightCheck(ctx context.Context, item core.CacheItem, 
 	if len(running) > 0 {
 		return fmt.Errorf("yarn is running (PID: %s): stop active yarn tasks before migration", running[0].PID)
 	}
-	return nil
+	return envOverride("YARN_CACHE_FOLDER")
 }
 
 func (p *YarnProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
@@ -93,11 +93,11 @@ func (p *YarnProvider) Migrate(ctx context.Context, item core.CacheItem, targetR
 	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
 		return fmt.Errorf("copy yarn cache: %w", err)
 	}
+	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+		return fmt.Errorf("yarn cache: %w", err)
+	}
 
-	cmd := exec.CommandContext(ctx, "yarn", "config", "set", "cache-folder", dest)
-	_ = cmd.Run()
-
-	return core.RecordMigration(core.MigrationRecord{
+	if err := core.RecordMigration(core.MigrationRecord{
 		ID:             item.ID,
 		ToolName:       p.Name(),
 		OriginalPath:   item.CurrentPath,
@@ -106,22 +106,37 @@ func (p *YarnProvider) Migrate(ctx context.Context, item core.CacheItem, targetR
 		OriginalConfig: item.ConfiguredPath,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
-	})
+	}); err != nil {
+		return err
+	}
+
+	// Yarn writes a project .yarnrc without --global, which would leave the
+	// global cache unchanged.
+	if err := runCommand(ctx, "yarn", "config", "set", "cache-folder", dest, "--global"); err != nil {
+		return switchFailed(item.ID, err)
+	}
+
+	return removeLocalSource(item.CurrentPath, dest)
 }
 
 func (p *YarnProvider) Rollback(ctx context.Context, item core.CacheItem) error {
-	m, err := core.LoadManifest()
+	rec, err := loadRecord(item.ID)
 	if err != nil {
 		return err
 	}
-	rec, ok := m.Records[item.ID]
-	if !ok {
-		return fmt.Errorf("no migration record for %s", item.ID)
+
+	if rec.OriginalConfig != "" && rec.OriginalConfig != rec.DestinationDir {
+		if err := runCommand(ctx, "yarn", "config", "set", "cache-folder", rec.OriginalConfig, "--global"); err != nil {
+			return err
+		}
+	} else {
+		if err := runCommand(ctx, "yarn", "config", "delete", "cache-folder", "--global"); err != nil {
+			return err
+		}
 	}
 
-	if rec.OriginalConfig != "" {
-		cmd := exec.CommandContext(ctx, "yarn", "config", "set", "cache-folder", rec.OriginalConfig)
-		_ = cmd.Run()
+	if err := restoreNativeData(rec); err != nil {
+		return err
 	}
 
 	return core.RemoveRecord(item.ID)

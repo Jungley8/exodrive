@@ -2,8 +2,10 @@ package core
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -173,12 +175,27 @@ func TestCleanOrphanDefensiveGuards(t *testing.T) {
 	if err := e.CleanOrphan("/tmp"); err == nil {
 		t.Errorf("expected error on shallow path '/tmp', got nil")
 	}
+	// A mount root holds more than a cache.
+	if err := e.CleanOrphan("/Volumes/ExternalDrive"); err == nil {
+		t.Errorf("expected error on mount root '/Volumes/ExternalDrive', got nil")
+	}
 
 	// User home directory
 	if home, err := os.UserHomeDir(); err == nil {
 		if err := e.CleanOrphan(home); err == nil {
 			t.Errorf("expected error on home directory %q, got nil", home)
 		}
+	}
+
+	// A top-level home folder such as ~/Library holds unrelated data. Use a
+	// temporary home so a guard regression cannot touch the real one.
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	if err := os.MkdirAll(filepath.Join(fakeHome, "Library"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.CleanOrphan(filepath.Join(fakeHome, "Library")); err == nil {
+		t.Errorf("expected error on top-level home folder, got nil")
 	}
 
 	// Legitimate deeply nested orphan directory
@@ -196,5 +213,115 @@ func TestCleanOrphanDefensiveGuards(t *testing.T) {
 	}
 	if _, err := os.Stat(orphanTarget); !os.IsNotExist(err) {
 		t.Errorf("expected orphanTarget to be deleted")
+	}
+}
+
+// TestEngineUnknownProviderFailsClosed checks that an item whose toolchain has
+// no provider stops the run instead of passing the preflight.
+func TestEngineUnknownProviderFailsClosed(t *testing.T) {
+	t.Setenv(ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	ctx := context.Background()
+
+	engine := NewEngine(&MockProvider{name: "mock"})
+	item := CacheItem{ID: "ghost.item", ToolName: "ghost", CurrentPath: "/tmp/ghost"}
+
+	if err := engine.Preflight(ctx, item, t.TempDir()); err == nil {
+		t.Fatalf("expected Preflight to fail for an unknown toolchain, got nil")
+	}
+	if err := engine.Migrate(ctx, item, t.TempDir(), nil); err == nil {
+		t.Fatalf("expected Migrate to fail for an unknown toolchain, got nil")
+	}
+}
+
+// TestEngineRefusesRepeatedMigration checks that the ledger guards a second
+// migration of the same item.
+func TestEngineRefusesRepeatedMigration(t *testing.T) {
+	t.Setenv(ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	ctx := context.Background()
+	targetDir := t.TempDir()
+
+	item := CacheItem{
+		ID:          "test.repeat",
+		ToolName:    "mock",
+		CurrentPath: filepath.Join(targetDir, "src"),
+		SizeBytes:   1,
+		IsActive:    true,
+	}
+	mockP := &MockProvider{name: "mock", items: []CacheItem{item}}
+	engine := NewEngine(mockP)
+
+	if err := engine.Migrate(ctx, item, targetDir, nil); err != nil {
+		t.Fatalf("first Migrate failed: %v", err)
+	}
+	if err := engine.Migrate(ctx, item, targetDir, nil); err == nil {
+		t.Fatalf("expected the second Migrate to be refused, got nil")
+	}
+}
+
+// TestEngineScanMarksLedgerItems checks that a scan reports an item as
+// migrated when the ledger holds its record.
+func TestEngineScanMarksLedgerItems(t *testing.T) {
+	t.Setenv(ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	ctx := context.Background()
+
+	item := CacheItem{ID: "test.ledger", ToolName: "mock", CurrentPath: "/tmp/ledger", IsActive: true}
+	engine := NewEngine(&MockProvider{name: "mock", items: []CacheItem{item}})
+
+	if err := RecordMigration(MigrationRecord{
+		ID:             item.ID,
+		ToolName:       "mock",
+		OriginalPath:   item.CurrentPath,
+		DestinationDir: "/Volumes/External/exodrive-caches/mock",
+		RedirectMethod: RedirectSymlink,
+		MigratedAt:     time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := engine.ScanAll(ctx)
+	if err != nil {
+		t.Fatalf("ScanAll failed: %v", err)
+	}
+	if len(items) != 1 || !items[0].IsMigrated {
+		t.Fatalf("expected the scanned item to be marked migrated, got %+v", items)
+	}
+}
+
+type failingProvider struct{ name string }
+
+func (f *failingProvider) Name() string { return f.name }
+
+func (f *failingProvider) Detect(ctx context.Context) ([]CacheItem, error) {
+	return nil, errors.New("scan failed")
+}
+
+func (f *failingProvider) PreflightCheck(ctx context.Context, item CacheItem, targetRoot string) error {
+	return nil
+}
+
+func (f *failingProvider) Migrate(ctx context.Context, item CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+	return nil
+}
+
+func (f *failingProvider) Rollback(ctx context.Context, item CacheItem) error { return nil }
+
+func TestScanAllReportsDetectErrors(t *testing.T) {
+	t.Setenv(ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	good := &MockProvider{
+		name:  "mock",
+		items: []CacheItem{{ID: "mock.test", ToolName: "mock", Title: "Mock", CurrentPath: "/tmp/mock"}},
+	}
+	eng := NewEngine(good, &failingProvider{name: "broken"})
+
+	items, err := eng.ScanAll(context.Background())
+	if err == nil {
+		t.Fatal("expected a detect error from the failing provider")
+	}
+	if !strings.Contains(err.Error(), "broken") {
+		t.Fatalf("error does not name the failing provider: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "mock.test" {
+		t.Fatalf("items from a working provider must survive: %+v", items)
 	}
 }

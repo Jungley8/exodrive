@@ -123,3 +123,33 @@ func TestManifestConcurrentRecordMigration(t *testing.T) {
 		t.Fatalf("lost updates detected! expected %d records, got %d", total, len(loaded.Records))
 	}
 }
+
+func TestRecordMigrationRefusesDuplicate(t *testing.T) {
+	t.Setenv(ManifestEnvVar, filepath.Join(t.TempDir(), "duplicate_ledger.json"))
+
+	first := MigrationRecord{
+		ID:             "npm.cache",
+		ToolName:       "npm",
+		OriginalPath:   "/home/user/.npm",
+		DestinationDir: "/Volumes/External/npm-cache",
+		RedirectMethod: RedirectNativeConfig,
+		MigratedAt:     time.Now(),
+	}
+	if err := RecordMigration(first); err != nil {
+		t.Fatalf("first RecordMigration failed: %v", err)
+	}
+
+	second := first
+	second.DestinationDir = "/Volumes/Other/npm-cache"
+	if err := RecordMigration(second); err == nil {
+		t.Fatal("expected RecordMigration to refuse a duplicate id")
+	}
+
+	loaded, err := LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest failed: %v", err)
+	}
+	if got := loaded.Records["npm.cache"].DestinationDir; got != first.DestinationDir {
+		t.Fatalf("duplicate record overwrote the ledger: destination is %q, want %q", got, first.DestinationDir)
+	}
+}

@@ -3,18 +3,23 @@ package desktop
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/icons/lucide"
 	"github.com/oneo-me/nsgo/ui"
+	"github.com/oneo-me/nsgo/ui/filepicker"
 
 	exoCore "exodrive/internal/core"
 	"exodrive/internal/plugins"
 	internalUi "exodrive/internal/ui"
 )
 
+// AppState holds everything the window shows. The signals live for the life of
+// the window; each view reads them through Dynamic or a ...Func field, so a
+// change repaints only the part that shows it.
 type AppState struct {
 	Items       *core.Signal[[]exoCore.CacheItem]
 	Selected    *core.Signal[map[string]bool]
@@ -23,46 +28,106 @@ type AppState struct {
 	IsScanning  *core.Signal[bool]
 	IsMigrating *core.Signal[bool]
 	ProgressPct *core.Signal[float32]
-	Engine      *exoCore.Engine
+
+	PickerOpen   *core.Signal[bool]
+	ConfirmOpen  *core.Signal[bool]
+	Picker       *filepicker.State
+	PickerDevice string
+
+	// Root is the window scope. Background work posts through it, because the
+	// scope of a Dynamic branch is gone as soon as that branch re-renders.
+	Root *core.Scope
+
+	Engine *exoCore.Engine
 }
 
-func NewAppState(cx *core.Scope) *AppState {
+// NewEngine builds the engine over every registered toolchain provider.
+func NewEngine() *exoCore.Engine {
 	reg := plugins.NewRegistry()
-	var accessors []exoCore.ProviderAccessor
+	accessors := make([]exoCore.ProviderAccessor, 0, len(reg.All()))
 	for _, p := range reg.All() {
 		accessors = append(accessors, p)
 	}
-
-	defaultTarget := "/Volumes/ExternalDrive/exodrive-caches"
-
-	return &AppState{
-		Items:       core.NewSignalFunc(cx, []exoCore.CacheItem{}, nil),
-		Selected:    core.NewSignalFunc(cx, make(map[string]bool), nil),
-		TargetDir:   core.NewSignal(cx, defaultTarget),
-		StatusMsg:   core.NewSignal(cx, "Ready to scan caches."),
-		IsScanning:  core.NewSignal(cx, false),
-		IsMigrating: core.NewSignal(cx, false),
-		ProgressPct: core.NewSignal[float32](cx, 0.0),
-		Engine:      exoCore.NewEngine(accessors...),
-	}
+	return exoCore.NewEngine(accessors...)
 }
 
-func Root(cx *core.Scope) core.Node {
-	state := NewAppState(cx)
+// NewMain builds the window for engine. Tests use it to mount the window with
+// a stand-in engine.
+func NewMain(engine *exoCore.Engine) func(*core.Scope) core.Node {
+	return func(cx *core.Scope) core.Node { return root(cx, engine) }
+}
 
-	// Trigger initial scan on load
-	triggerScan(cx, state)
+// Root is the window the binary opens.
+func Root(cx *core.Scope) core.Node { return root(cx, NewEngine()) }
+
+func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
+	state := &AppState{
+		Items:       core.NewSignalFunc(cx, []exoCore.CacheItem{}, nil),
+		Selected:    core.NewSignalFunc(cx, map[string]bool{}, nil),
+		TargetDir:   core.NewSignal(cx, ""),
+		StatusMsg:   core.NewSignal(cx, "Ready. Choose a target folder, then scan."),
+		IsScanning:  core.NewSignal(cx, false),
+		IsMigrating: core.NewSignal(cx, false),
+		ProgressPct: core.NewSignal[float32](cx, 0),
+		PickerOpen:  core.NewSignal(cx, false),
+		ConfirmOpen: core.NewSignal(cx, false),
+		Picker:      filepicker.NewState(cx, filepicker.List, false, 0),
+		Root:        cx,
+		Engine:      engine,
+	}
+	state.Picker.Load = loadFolder
+	state.PickerDevice, _ = os.Hostname()
+
+	triggerScan(state)
 
 	return core.View{
 		Class: "flex-col w-full h-full bg-slate-50 dark:bg-zinc-900 p-5 gap-4",
 		Children: []core.Node{
 			renderHeader(cx, state),
-			renderStats(cx, state),
-			renderToolbar(cx, state),
-			renderItemList(cx, state),
+			core.Dynamic(func(cx *core.Scope) core.Node { return renderStats(cx, state) }),
+			core.Dynamic(func(cx *core.Scope) core.Node { return renderToolbar(cx, state) }),
+			renderTargetRow(cx, state),
+			core.Dynamic(func(cx *core.Scope) core.Node { return renderItemList(cx, state) }),
 			renderFooter(cx, state),
+			renderPicker(state),
+			renderConfirm(cx, state),
 		},
 	}
+}
+
+// loadFolder lists a directory for the folder picker.
+func loadFolder(path string, done func(filepicker.Folder, error)) {
+	if strings.TrimSpace(path) == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			done(filepicker.Folder{}, err)
+			return
+		}
+		path = home
+	}
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		done(filepicker.Folder{}, err)
+		return
+	}
+
+	folder := filepicker.Folder{Path: path}
+	for _, entry := range entries {
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			continue
+		}
+		folder.Entries = append(folder.Entries, filepicker.Entry{
+			Name:     entry.Name(),
+			Path:     filepath.Join(path, entry.Name()),
+			Dir:      entry.IsDir(),
+			Size:     info.Size(),
+			Modified: info.ModTime(),
+			Hidden:   strings.HasPrefix(entry.Name(), "."),
+		})
+	}
+	done(folder, nil)
 }
 
 func renderHeader(cx *core.Scope, state *AppState) core.Node {
@@ -78,37 +143,27 @@ func renderHeader(cx *core.Scope, state *AppState) core.Node {
 					},
 					core.Text{
 						Class:   "text-xs text-slate-500 dark:text-zinc-400",
-						Content: "Detect and migrate developer tool caches to external storage",
+						Content: "Move developer caches to external storage and reclaim local disk space",
 					},
 				},
 			},
-			core.View{
-				Class: "flex-row gap-2 items-center",
-				Children: []core.Node{
-					core.Text{
-						Class:   "text-xs font-semibold text-slate-600 dark:text-zinc-300",
-						Content: "Target Volume:",
-					},
-					core.Text{
-						Class:   "text-xs font-mono bg-white dark:bg-zinc-800 px-2 py-1 rounded border border-slate-300 dark:border-zinc-700 text-slate-700 dark:text-zinc-200",
-						Content: state.TargetDir.Get(),
-					},
-				},
+			core.Text{
+				Class:       "text-xs text-slate-500 dark:text-zinc-400 italic",
+				ContentFunc: func() string { return state.StatusMsg.Get() },
 			},
 		},
 	}
 }
 
 func renderStats(cx *core.Scope, state *AppState) core.Node {
-	items := state.Items.Get()
 	var localBytes, migratedBytes, orphanBytes int64
-
-	for _, it := range items {
-		if it.Category == exoCore.CategoryOrphan {
+	for _, it := range state.Items.Get() {
+		switch {
+		case it.Category == exoCore.CategoryOrphan:
 			orphanBytes += it.SizeBytes
-		} else if it.IsMigrated {
+		case it.IsMigrated:
 			migratedBytes += it.SizeBytes
-		} else {
+		default:
 			localBytes += it.SizeBytes
 		}
 	}
@@ -142,13 +197,15 @@ func statCard(title, value, colorClass string) core.Node {
 func renderToolbar(cx *core.Scope, state *AppState) core.Node {
 	isScanning := state.IsScanning.Get()
 	isMigrating := state.IsMigrating.Get()
+	hasTarget := strings.TrimSpace(state.TargetDir.Get()) != ""
+	selected := countSelected(state)
 
 	scanLabel := "Rescan Caches"
 	if isScanning {
 		scanLabel = "Scanning..."
 	}
 
-	migrateLabel := "Migrate Selected"
+	migrateLabel := fmt.Sprintf("Migrate %d Selected", selected)
 	if isMigrating {
 		migrateLabel = "Migrating..."
 	}
@@ -156,112 +213,149 @@ func renderToolbar(cx *core.Scope, state *AppState) core.Node {
 	return core.View{
 		Class: "flex-row justify-between items-center gap-3 py-1",
 		Children: []core.Node{
-			core.View{
-				Class: "flex-row gap-2",
-				Children: []core.Node{
-					ui.Button{
-						Text:     scanLabel,
-						Variant:  ui.ButtonSecondary,
-						Icon:     lucide.RefreshCw,
-						Disabled: func() bool { return isScanning || isMigrating },
-						OnPress: func() {
-							triggerScan(cx, state)
-						},
-					},
-					ui.Button{
-						Text:     migrateLabel,
-						Variant:  ui.ButtonPrimary,
-						Icon:     lucide.ArrowUpRight,
-						Disabled: func() bool { return isScanning || isMigrating },
-						OnPress: func() {
-							triggerMigration(cx, state)
-						},
-					},
-				},
+			ui.Button{
+				Text:     scanLabel,
+				Variant:  ui.ButtonSecondary,
+				Icon:     lucide.RefreshCw,
+				Disabled: func() bool { return isScanning || isMigrating },
+				OnPress:  func() { triggerScan(state) },
+				TestID:   "rescan",
 			},
+			ui.Button{
+				Text:     migrateLabel,
+				Variant:  ui.ButtonPrimary,
+				Icon:     lucide.ArrowUpRight,
+				Disabled: func() bool { return isScanning || isMigrating || !hasTarget || selected == 0 },
+				OnPress:  func() { state.ConfirmOpen.Set(true) },
+				TestID:   "migrate",
+			},
+		},
+	}
+}
+
+func renderTargetRow(cx *core.Scope, state *AppState) core.Node {
+	return core.View{
+		Class: "flex-row items-center gap-2",
+		Children: []core.Node{
 			core.Text{
-				Class:   "text-xs text-slate-500 dark:text-zinc-400 italic",
-				Content: state.StatusMsg.Get(),
+				Class:   "text-xs font-semibold text-slate-600 dark:text-zinc-300",
+				Content: "Target folder",
+			},
+			ui.Input{Input: core.Input{
+				Class:       "flex-1",
+				Value:       func() string { return state.TargetDir.Get() },
+				Placeholder: "Choose an empty folder on the external volume",
+				OnChange:    func(text string) { state.TargetDir.Set(strings.TrimSpace(text)) },
+				TestID:      "target",
+			}},
+			ui.Button{
+				Text:    "Browse...",
+				Variant: ui.ButtonSecondary,
+				Icon:    lucide.Folder,
+				OnPress: func() { state.PickerOpen.Set(true) },
+				TestID:  "browse",
 			},
 		},
 	}
 }
 
 func renderItemList(cx *core.Scope, state *AppState) core.Node {
-	items := state.Items.Get()
-	selectedMap := state.Selected.Get()
+	return core.Scroll{
+		Class: "flex-1 flex-col gap-2 w-full",
+		Children: []core.Node{
+			core.Each(
+				func() []exoCore.CacheItem { return state.Items.Get() },
+				func(it exoCore.CacheItem) string { return it.ID },
+				func(cx *core.Scope, item func() exoCore.CacheItem, _ func() int) core.Node {
+					return renderItemRow(state, item)
+				},
+			),
+			core.Dynamic(func(cx *core.Scope) core.Node {
+				if len(state.Items.Get()) > 0 {
+					return core.View{}
+				}
+				return core.Text{
+					Class:   "text-sm text-slate-500 dark:text-zinc-400 text-center py-8",
+					Content: "No caches detected. Press Rescan Caches.",
+				}
+			}),
+		},
+	}
+}
 
-	var rows []core.Node
-	for _, it := range items {
-		itemCopy := it
-		isSelected := selectedMap[it.ID]
+func renderItemRow(state *AppState, item func() exoCore.CacheItem) core.Node {
+	id := item().ID
 
-		statusBadge := "Local SSD"
-		badgeClass := "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-		if it.IsMigrated {
-			statusBadge = "Migrated"
-			badgeClass = "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-		} else if !it.IsActive {
-			statusBadge = "Abandoned"
-			badgeClass = "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+	// The row reads the item through funcs. A migration changes the item in
+	// place, so a value read at build time would keep the old badge.
+	statusBadge := func() string {
+		switch it := item(); {
+		case it.IsMigrated:
+			return "Migrated"
+		case !it.IsActive:
+			return "Abandoned"
+		default:
+			return "Local SSD"
 		}
-
-		checkLabel := "[ ]"
-		if isSelected {
-			checkLabel = "[✓]"
+	}
+	badgeClass := func() string {
+		switch it := item(); {
+		case it.IsMigrated:
+			return "text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+		case !it.IsActive:
+			return "text-xs px-2 py-0.5 rounded-full font-medium bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
+		default:
+			return "text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
 		}
+	}
+	selectable := func() bool {
+		it := item()
+		return !it.IsMigrated && it.IsActive
+	}
 
-		rows = append(rows, core.View{
-			Class: "flex-col p-3 bg-white dark:bg-zinc-800 rounded-md border border-slate-200 dark:border-zinc-700 gap-1",
-			Children: []core.Node{
-				core.View{
-					Class: "flex-row justify-between items-center",
-					Children: []core.Node{
-						core.View{
-							Class: "flex-row items-center gap-2",
-							Children: []core.Node{
-								core.Text{
-									Class:   "font-mono font-bold text-sm cursor-pointer text-indigo-600 dark:text-indigo-400",
-									Content: checkLabel,
-									OnPress: func(core.PressEvent) {
-										cur := state.Selected.Get()
-										cur[itemCopy.ID] = !cur[itemCopy.ID]
-										state.Selected.Set(cur)
-									},
-								},
-								core.Text{
-									Class:   "font-semibold text-sm text-slate-800 dark:text-zinc-100",
-									Content: it.Title,
-								},
+	return core.View{
+		Class:  "flex-col p-3 bg-white dark:bg-zinc-800 rounded-md border border-slate-200 dark:border-zinc-700 gap-1",
+		TestID: "row-" + id,
+		Children: []core.Node{
+			core.View{
+				Class: "flex-row justify-between items-center",
+				Children: []core.Node{
+					core.View{
+						Class: "flex-row items-center gap-2",
+						Children: []core.Node{
+							ui.Checkbox{Checked: func() bool {
+								return state.Selected.Get()[id]
+							}, Disabled: func() bool { return !selectable() }, TestID: "select-" + id, OnChange: func(bool) {
+								toggleSelected(state, id)
+							}},
+							core.Text{
+								Class:       "font-semibold text-sm text-slate-800 dark:text-zinc-100",
+								ContentFunc: func() string { return item().Title },
 							},
 						},
-						core.View{
-							Class: "flex-row items-center gap-2",
-							Children: []core.Node{
-								core.Text{
-									Class:   "text-xs font-bold text-slate-700 dark:text-zinc-300",
-									Content: internalUi.FormatBytes(it.SizeBytes),
-								},
-								core.Text{
-									Class:   "text-xs px-2 py-0.5 rounded font-medium " + badgeClass,
-									Content: statusBadge,
-								},
+					},
+					core.View{
+						Class: "flex-row items-center gap-2",
+						Children: []core.Node{
+							core.Text{
+								Class:       "text-xs font-bold text-slate-700 dark:text-zinc-300",
+								ContentFunc: func() string { return internalUi.FormatBytes(item().SizeBytes) },
+							},
+							core.Text{
+								ClassFunc:   badgeClass,
+								ContentFunc: statusBadge,
+								TestID:      "badge-" + id,
 							},
 						},
 					},
 				},
-				core.Text{
-					Class:   "text-xs font-mono text-slate-400 dark:text-zinc-500 truncate",
-					Content: it.CurrentPath,
-				},
-				renderWarningText(it.Warning),
 			},
-		})
-	}
-
-	return core.Scroll{
-		Class:    "flex-1 flex-col gap-2 w-full",
-		Children: rows,
+			core.Text{
+				Class:       "text-xs font-mono text-slate-400 dark:text-zinc-500 truncate",
+				ContentFunc: func() string { return item().CurrentPath },
+			},
+			renderWarningText(item().Warning),
+		},
 	}
 }
 
@@ -271,7 +365,7 @@ func renderWarningText(warning string) core.Node {
 	}
 	return core.Text{
 		Class:   "text-xs text-amber-600 dark:text-amber-400",
-		Content: "⚠️ " + warning,
+		Content: "Warning: " + warning,
 	}
 }
 
@@ -280,64 +374,149 @@ func renderFooter(cx *core.Scope, state *AppState) core.Node {
 		Class: "flex-row justify-between items-center pt-2 border-t border-slate-200 dark:border-zinc-800",
 		Children: []core.Node{
 			core.Text{
-				Class:   "text-xs text-slate-400 dark:text-zinc-500",
-				Content: "Exodrive v1.0 • APFS / ext4",
+				Class:       "text-xs text-slate-400 dark:text-zinc-500",
+				ContentFunc: func() string { return progressText(state) },
 			},
 			core.Text{
 				Class:   "text-xs font-mono text-slate-500 dark:text-zinc-400",
-				Content: fmt.Sprintf("Manifest: %s", exoCore.GetManifestPath()),
+				Content: fmt.Sprintf("Ledger: %s", exoCore.GetManifestPath()),
 			},
 		},
 	}
 }
 
-func triggerScan(cx *core.Scope, state *AppState) {
+func progressText(state *AppState) string {
+	if state.IsMigrating.Get() {
+		return fmt.Sprintf("Migrating... %.0f%%", state.ProgressPct.Get()*100)
+	}
+	return "Exodrive. Ledger keeps every migration for rollback."
+}
+
+func renderPicker(state *AppState) core.Node {
+	return filepicker.Dialog{
+		State:  state.Picker,
+		Open:   func() bool { return state.PickerOpen.Get() },
+		OnOpen: func(open bool) { state.PickerOpen.Set(open) },
+		Labels: filepicker.Labels{
+			Title:   "Choose target folder",
+			Address: "Folder",
+			Icons:   "Icons",
+			List:    "List",
+			Name:    "Name",
+			Close:   "Close",
+			Empty:   "This folder is empty",
+			Cancel:  "Cancel",
+			Choose:  "Choose",
+		},
+		Device: state.PickerDevice,
+		Hint:   "Exodrive copies each selected cache into this folder.",
+		Choose: func(path string) { state.TargetDir.Set(path) },
+		TestID: "target-picker",
+	}
+}
+
+func renderConfirm(cx *core.Scope, state *AppState) core.Node {
+	// The description reads the selection and the target folder, so it lives
+	// in a Dynamic: a signal read at build time would not repaint.
+	return core.Dynamic(func(cx *core.Scope) core.Node {
+		return ui.AlertDialog{
+			Open:  func() bool { return state.ConfirmOpen.Get() },
+			Title: "Move selected caches?",
+			Description: fmt.Sprintf(
+				"Exodrive copies %d cache(s) to %s, checks every copy, then removes the local copy. Run 'exodrive rollback' to move a cache back.",
+				countSelected(state), state.TargetDir.Get()),
+			Actions: []ui.AlertAction{
+				{Text: "Cancel", Variant: ui.ButtonSecondary, TestID: "confirm-cancel",
+					OnPress: func() { state.ConfirmOpen.Set(false) }},
+				{Text: "Move caches", Variant: ui.ButtonPrimary, TestID: "confirm-move",
+					OnPress: func() { state.ConfirmOpen.Set(false); triggerMigration(state) }},
+			},
+			TestID: "confirm",
+		}
+	})
+}
+
+func countSelected(state *AppState) int {
+	selected := state.Selected.Get()
+	count := 0
+	for _, it := range state.Items.Get() {
+		if selected[it.ID] && !it.IsMigrated && it.IsActive {
+			count++
+		}
+	}
+	return count
+}
+
+func toggleSelected(state *AppState, id string) {
+	next := make(map[string]bool, len(state.Selected.GetUntracked()))
+	for key, value := range state.Selected.GetUntracked() {
+		next[key] = value
+	}
+	next[id] = !next[id]
+	state.Selected.Set(next)
+}
+
+func triggerScan(state *AppState) {
+	if state.IsScanning.Get() || state.IsMigrating.Get() {
+		return
+	}
 	state.IsScanning.Set(true)
 	state.StatusMsg.Set("Scanning developer caches...")
 
 	go func() {
-		ctx := context.Background()
-		items, err := state.Engine.ScanAll(ctx)
-		cx.Post(func() {
+		items, err := state.Engine.ScanAll(context.Background())
+		state.Root.Post(func() {
 			state.IsScanning.Set(false)
-			if err != nil {
+			if err != nil && len(items) == 0 {
 				state.StatusMsg.Set(fmt.Sprintf("Scan failed: %v", err))
 				return
 			}
 			state.Items.Set(items)
 
-			// Default selection: select all unmigrated active items
-			sel := make(map[string]bool)
+			// Select every active, unmigrated cache.
+			selected := make(map[string]bool)
 			for _, it := range items {
 				if !it.IsMigrated && it.IsActive {
-					sel[it.ID] = true
+					selected[it.ID] = true
 				}
 			}
-			state.Selected.Set(sel)
-			state.StatusMsg.Set(fmt.Sprintf("Scan completed. Found %d caches.", len(items)))
+			state.Selected.Set(selected)
+
+			if err != nil {
+				state.StatusMsg.Set(fmt.Sprintf("Scan complete. Found %d cache(s). Some toolchains failed: %v", len(items), err))
+				return
+			}
+			state.StatusMsg.Set(fmt.Sprintf("Scan complete. Found %d cache(s).", len(items)))
 		})
 	}()
 }
 
-func triggerMigration(cx *core.Scope, state *AppState) {
-	selectedMap := state.Selected.Get()
-	items := state.Items.Get()
-	targetDir := state.TargetDir.Get()
+func triggerMigration(state *AppState) {
+	if state.IsScanning.Get() || state.IsMigrating.Get() {
+		return
+	}
 
+	targetDir := strings.TrimSpace(state.TargetDir.Get())
+	if targetDir == "" {
+		state.StatusMsg.Set("Choose a target folder first.")
+		return
+	}
+
+	selected := state.Selected.Get()
 	var toMigrate []exoCore.CacheItem
-	for _, it := range items {
-		if selectedMap[it.ID] && !it.IsMigrated {
+	for _, it := range state.Items.Get() {
+		if selected[it.ID] && !it.IsMigrated && it.IsActive {
 			toMigrate = append(toMigrate, it)
 		}
 	}
-
 	if len(toMigrate) == 0 {
-		state.StatusMsg.Set("No unmigrated items selected.")
+		state.StatusMsg.Set("No cache is selected for migration.")
 		return
 	}
 
 	state.IsMigrating.Set(true)
-	state.StatusMsg.Set(fmt.Sprintf("Migrating %d item(s)...", len(toMigrate)))
+	state.ProgressPct.Set(0)
+	state.StatusMsg.Set(fmt.Sprintf("Migrating %d cache(s)...", len(toMigrate)))
 
 	go func() {
 		ctx := context.Background()
@@ -345,7 +524,23 @@ func triggerMigration(cx *core.Scope, state *AppState) {
 		var errs []string
 
 		for _, it := range toMigrate {
-			err := state.Engine.Migrate(ctx, it, targetDir, nil)
+			// Report 1% steps: a large file copies in 1 MiB chunks and would
+			// otherwise post thousands of updates.
+			lastPct := float32(-1)
+			err := state.Engine.Migrate(ctx, it, targetDir, func(copied, total int64) {
+				if total <= 0 {
+					return
+				}
+				pct := float32(copied) / float32(total)
+				if pct > 1 {
+					pct = 1
+				}
+				if pct-lastPct < 0.01 && pct < 1 {
+					return
+				}
+				lastPct = pct
+				state.Root.Post(func() { state.ProgressPct.Set(pct) })
+			})
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("%s: %v", it.Title, err))
 			} else {
@@ -353,16 +548,22 @@ func triggerMigration(cx *core.Scope, state *AppState) {
 			}
 		}
 
-		// Rescan after migration
-		updatedItems, _ := state.Engine.ScanAll(ctx)
+		items, scanErr := state.Engine.ScanAll(ctx)
+		if scanErr != nil {
+			errs = append(errs, fmt.Sprintf("rescan: %v", scanErr))
+		}
 
-		cx.Post(func() {
+		state.Root.Post(func() {
+			if scanErr == nil {
+				state.Items.Set(items)
+				state.Selected.Set(map[string]bool{})
+			}
 			state.IsMigrating.Set(false)
-			state.Items.Set(updatedItems)
+			state.ProgressPct.Set(0)
 			if len(errs) > 0 {
-				state.StatusMsg.Set(fmt.Sprintf("Migrated %d with errors: %s", successCount, strings.Join(errs, "; ")))
+				state.StatusMsg.Set(fmt.Sprintf("Migrated %d cache(s). %d failed: %s", successCount, len(errs), strings.Join(errs, "; ")))
 			} else {
-				state.StatusMsg.Set(fmt.Sprintf("Migrated %d cache(s) to %s.", successCount, filepath.Base(targetDir)))
+				state.StatusMsg.Set(fmt.Sprintf("Migrated %d cache(s) to %s.", successCount, targetDir))
 			}
 		})
 	}()

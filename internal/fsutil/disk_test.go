@@ -44,14 +44,20 @@ func TestIsSafeFilesystemFailClosed(t *testing.T) {
 		{"ntfs", false},
 		{"cifs", false},
 		{"smbfs", false},
+		{"nfs", false},
+		{"webdav", false},
+		{"overlayfs", false},
+		{"unknownfs", false},
 		{"apfs", true},
 		{"APFS", true},
 		{"hfs+", true},
 		{"ext4", true},
+		{"ext2", true},
 		{"btrfs", true},
 		{"zfs", true},
 		{"xfs", true},
-		{"unix", true},
+		{"f2fs", true},
+		{"unix", false},
 	}
 
 	for _, tc := range cases {

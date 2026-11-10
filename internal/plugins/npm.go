@@ -73,7 +73,7 @@ func (p *NPMProvider) PreflightCheck(ctx context.Context, item core.CacheItem, t
 	if len(running) > 0 {
 		return fmt.Errorf("npm is running (PID: %s): stop active npm processes before migration", running[0].PID)
 	}
-	return nil
+	return envOverride("npm_config_cache", "NPM_CONFIG_CACHE")
 }
 
 func (p *NPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
@@ -86,15 +86,13 @@ func (p *NPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetRo
 	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
 		return fmt.Errorf("failed copying npm cache: %w", err)
 	}
-
-	// Update npm global config
-	cmd := exec.CommandContext(ctx, "npm", "config", "set", "cache", dest, "--global")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("npm config set cache failed (%s): %w", string(out), err)
+	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+		return fmt.Errorf("npm cache: %w", err)
 	}
 
-	// Record migration in manifest
-	return core.RecordMigration(core.MigrationRecord{
+	// Record the move before the switch. If the process stops between the two
+	// steps, the record tells rollback where the data is.
+	if err := core.RecordMigration(core.MigrationRecord{
 		ID:             item.ID,
 		ToolName:       p.Name(),
 		OriginalPath:   item.CurrentPath,
@@ -103,26 +101,38 @@ func (p *NPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetRo
 		OriginalConfig: item.ConfiguredPath,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
-	})
+	}); err != nil {
+		return err
+	}
+
+	// Update npm global config
+	cmd := exec.CommandContext(ctx, "npm", "config", "set", "cache", dest, "--global")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return switchFailed(item.ID, fmt.Errorf("npm config set cache failed (%s): %w", string(out), err))
+	}
+
+	return removeLocalSource(item.CurrentPath, dest)
 }
 
 func (p *NPMProvider) Rollback(ctx context.Context, item core.CacheItem) error {
-	m, err := core.LoadManifest()
+	rec, err := loadRecord(item.ID)
 	if err != nil {
 		return err
-	}
-	rec, ok := m.Records[item.ID]
-	if !ok {
-		return fmt.Errorf("no migration record found for %s", item.ID)
 	}
 
 	// Reset npm config
 	if rec.OriginalConfig != "" && rec.OriginalConfig != rec.DestinationDir {
-		cmd := exec.CommandContext(ctx, "npm", "config", "set", "cache", rec.OriginalConfig, "--global")
-		_ = cmd.Run()
+		if err := runCommand(ctx, "npm", "config", "set", "cache", rec.OriginalConfig, "--global"); err != nil {
+			return err
+		}
 	} else {
-		cmd := exec.CommandContext(ctx, "npm", "config", "delete", "cache", "--global")
-		_ = cmd.Run()
+		if err := runCommand(ctx, "npm", "config", "delete", "cache", "--global"); err != nil {
+			return err
+		}
+	}
+
+	if err := restoreNativeData(rec); err != nil {
+		return err
 	}
 
 	return core.RemoveRecord(item.ID)

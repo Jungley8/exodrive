@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,13 +23,23 @@ func (p *OrphanProvider) Name() string {
 	return "orphan"
 }
 
+// goEnvVar reads a Go setting from the tool itself. `go env -w` stores a value
+// that the shell does not export, so the environment alone is not reliable.
+func goEnvVar(ctx context.Context, name string) string {
+	out, err := exec.CommandContext(ctx, "go", "env", name).Output()
+	if err != nil {
+		return strings.TrimSpace(os.Getenv(name))
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func (p *OrphanProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	var items []core.CacheItem
 	home, _ := os.UserHomeDir()
 
 	// Check for orphaned go-build cache on local SSD when GOCACHE points to external
 	localGoBuild := filepath.Join(home, "Library", "Caches", "go-build")
-	activeGocache := os.Getenv("GOCACHE")
+	activeGocache := goEnvVar(ctx, "GOCACHE")
 	if activeGocache != localGoBuild && activeGocache != "" {
 		if fi, err := os.Stat(localGoBuild); err == nil && fi.IsDir() {
 			size, _ := fsutil.DirSize(localGoBuild)
@@ -90,10 +101,11 @@ func (p *OrphanProvider) Migrate(ctx context.Context, item core.CacheItem, targe
 	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
 		return fmt.Errorf("archive orphan: %w", err)
 	}
+	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+		return fmt.Errorf("archive orphan: %w", err)
+	}
 
-	_ = os.RemoveAll(item.CurrentPath)
-
-	return core.RecordMigration(core.MigrationRecord{
+	if err := core.RecordMigration(core.MigrationRecord{
 		ID:             item.ID,
 		ToolName:       p.Name(),
 		OriginalPath:   item.CurrentPath,
@@ -101,20 +113,20 @@ func (p *OrphanProvider) Migrate(ctx context.Context, item core.CacheItem, targe
 		RedirectMethod: core.RedirectManual,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
-	})
+	}); err != nil {
+		return err
+	}
+
+	return removeLocalSource(item.CurrentPath, dest)
 }
 
 func (p *OrphanProvider) Rollback(ctx context.Context, item core.CacheItem) error {
-	m, err := core.LoadManifest()
+	rec, err := loadRecord(item.ID)
 	if err != nil {
 		return err
 	}
-	rec, ok := m.Records[item.ID]
-	if !ok {
-		return fmt.Errorf("no migration record for %s", item.ID)
-	}
 
-	if err := fsutil.CopyDir(rec.DestinationDir, rec.OriginalPath, rec.SizeBytes, nil); err != nil {
+	if err := restoreNativeData(rec); err != nil {
 		return err
 	}
 

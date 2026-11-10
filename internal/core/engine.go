@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,11 @@ import (
 
 	"exodrive/internal/fsutil"
 )
+
+// ErrLedger marks a scan that could not read the migration ledger. A caller
+// must stop: without the ledger, Exodrive cannot tell a migrated cache from a
+// local one.
+var ErrLedger = errors.New("read migration ledger")
 
 // ProviderAccessor is an interface to avoid circular dependency with plugins package.
 type ProviderAccessor interface {
@@ -30,10 +36,15 @@ func NewEngine(providers ...ProviderAccessor) *Engine {
 	}
 }
 
-// ScanAll scans across all registered providers in parallel.
+// ScanAll scans across all registered providers in parallel. It marks an item
+// as migrated when the ledger holds a record for it, so a migration is never
+// repeated for an item the user already moved. A provider that detects no items
+// reports nothing. A provider that fails returns an error beside the items that
+// the other providers found.
 func (e *Engine) ScanAll(ctx context.Context) ([]CacheItem, error) {
 	var mu sync.Mutex
 	var allItems []CacheItem
+	var detectErrs []error
 
 	var wg sync.WaitGroup
 	for _, p := range e.providers {
@@ -41,27 +52,54 @@ func (e *Engine) ScanAll(ctx context.Context) ([]CacheItem, error) {
 		go func(prov ProviderAccessor) {
 			defer wg.Done()
 			items, err := prov.Detect(ctx)
-			if err == nil && len(items) > 0 {
-				mu.Lock()
-				allItems = append(allItems, items...)
-				mu.Unlock()
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				detectErrs = append(detectErrs, fmt.Errorf("%s: %w", prov.Name(), err))
 			}
+			allItems = append(allItems, items...)
 		}(p)
 	}
 
 	wg.Wait()
-	return allItems, nil
+
+	manifest, err := LoadManifest()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrLedger, err)
+	}
+	for i := range allItems {
+		if _, ok := manifest.Records[allItems[i].ID]; ok {
+			allItems[i].IsMigrated = true
+		}
+	}
+	return allItems, errors.Join(detectErrs...)
+}
+
+// provider returns the registered provider for an item. It fails closed: an
+// item whose toolchain has no provider is an error, never a silent pass.
+func (e *Engine) provider(item CacheItem) (ProviderAccessor, error) {
+	for _, p := range e.providers {
+		if p.Name() == item.ToolName {
+			return p, nil
+		}
+	}
+	return nil, fmt.Errorf("no provider registered for toolchain %q (item %s)", item.ToolName, item.ID)
 }
 
 // Preflight evaluates whether targetRoot is valid and has sufficient space.
 func (e *Engine) Preflight(ctx context.Context, item CacheItem, targetRoot string) error {
+	p, err := e.provider(item)
+	if err != nil {
+		return err
+	}
+
 	freeBytes, _, fstype, err := fsutil.GetDiskUsage(targetRoot)
 	if err != nil {
 		return fmt.Errorf("target volume inaccessible: %w", err)
 	}
 
 	if !fsutil.IsSafeFilesystem(fstype) {
-		return fmt.Errorf("incompatible filesystem '%s': target storage requires APFS, HFS+, ext4, or btrfs", fstype)
+		return fmt.Errorf("incompatible filesystem '%s': target storage requires APFS, HFS+, ext2/3/4, btrfs, zfs, xfs, f2fs, or bcachefs", fstype)
 	}
 
 	required := int64(float64(item.SizeBytes) * 1.1) // 10% headroom
@@ -69,26 +107,29 @@ func (e *Engine) Preflight(ctx context.Context, item CacheItem, targetRoot strin
 		return fmt.Errorf("insufficient space on destination: need %d MB, only %d MB available", required/1024/1024, freeBytes/1024/1024)
 	}
 
-	for _, p := range e.providers {
-		if p.Name() == item.ToolName {
-			return p.PreflightCheck(ctx, item, targetRoot)
-		}
-	}
-	return nil
+	return p.PreflightCheck(ctx, item, targetRoot)
 }
 
 // Migrate executes migration for the item matching itemID.
 func (e *Engine) Migrate(ctx context.Context, item CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+	p, err := e.provider(item)
+	if err != nil {
+		return err
+	}
+
+	manifest, err := LoadManifest()
+	if err != nil {
+		return fmt.Errorf("read migration ledger: %w", err)
+	}
+	if rec, ok := manifest.Records[item.ID]; ok {
+		return fmt.Errorf("%s is already migrated to %s (run 'exodrive rollback %s' first)", item.ID, rec.DestinationDir, item.ID)
+	}
+
 	if err := e.Preflight(ctx, item, targetRoot); err != nil {
 		return fmt.Errorf("preflight failed: %w", err)
 	}
 
-	for _, p := range e.providers {
-		if p.Name() == item.ToolName {
-			return p.Migrate(ctx, item, targetRoot, onProgress)
-		}
-	}
-	return fmt.Errorf("no provider found for %s", item.ToolName)
+	return p.Migrate(ctx, item, targetRoot, onProgress)
 }
 
 // Rollback restores a previously migrated item using its manifest record.
@@ -134,18 +175,28 @@ func (e *Engine) CleanOrphan(path string) error {
 		return fmt.Errorf("clean orphan: refusing to delete root filesystem: %q", path)
 	}
 
-	// Refuse user home directory
-	if home, err := os.UserHomeDir(); err == nil && cleanPath == filepath.Clean(home) {
-		return fmt.Errorf("clean orphan: refusing to delete user home directory: %q", path)
+	// Refuse user home directory and anything that holds more than a cache.
+	home, err := os.UserHomeDir()
+	if err == nil {
+		home = filepath.Clean(home)
+		if cleanPath == home {
+			return fmt.Errorf("clean orphan: refusing to delete user home directory: %q", path)
+		}
+		if strings.HasPrefix(cleanPath, home+string(filepath.Separator)) {
+			relHome, relErr := filepath.Rel(home, cleanPath)
+			if relErr != nil || len(strings.Split(relHome, string(filepath.Separator))) < 2 {
+				return fmt.Errorf("clean orphan: refusing to delete top-level home directory: %q", path)
+			}
+		}
 	}
 
-	// Guard against shallow/top-level directories (e.g. /Users, /var, /etc, /tmp)
+	// Guard against shallow/top-level directories (e.g. /Users, /var, /etc, /tmp, /Volumes/disk).
 	rel, err := filepath.Rel("/", cleanPath)
 	if err != nil || rel == "." {
 		return fmt.Errorf("clean orphan: invalid path hierarchy: %q", path)
 	}
 	segments := strings.Split(rel, string(filepath.Separator))
-	if len(segments) < 2 {
+	if len(segments) < 3 {
 		return fmt.Errorf("clean orphan: refusing to delete shallow root directory: %q", path)
 	}
 

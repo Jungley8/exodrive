@@ -80,7 +80,7 @@ func (p *PipProvider) PreflightCheck(ctx context.Context, item core.CacheItem, t
 	if len(running) > 0 {
 		return fmt.Errorf("pip is running (PID: %s): stop active pip tasks before migration", running[0].PID)
 	}
-	return nil
+	return envOverride("PIP_CACHE_DIR")
 }
 
 func (p *PipProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
@@ -92,11 +92,11 @@ func (p *PipProvider) Migrate(ctx context.Context, item core.CacheItem, targetRo
 	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
 		return fmt.Errorf("copy pip cache: %w", err)
 	}
+	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+		return fmt.Errorf("pip cache: %w", err)
+	}
 
-	cmd := exec.CommandContext(ctx, "pip", "config", "set", "global.cache-dir", dest)
-	_ = cmd.Run()
-
-	return core.RecordMigration(core.MigrationRecord{
+	if err := core.RecordMigration(core.MigrationRecord{
 		ID:             item.ID,
 		ToolName:       p.Name(),
 		OriginalPath:   item.CurrentPath,
@@ -105,25 +105,35 @@ func (p *PipProvider) Migrate(ctx context.Context, item core.CacheItem, targetRo
 		OriginalConfig: item.ConfiguredPath,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
-	})
+	}); err != nil {
+		return err
+	}
+
+	if err := runCommand(ctx, "pip", "config", "set", "global.cache-dir", dest); err != nil {
+		return switchFailed(item.ID, err)
+	}
+
+	return removeLocalSource(item.CurrentPath, dest)
 }
 
 func (p *PipProvider) Rollback(ctx context.Context, item core.CacheItem) error {
-	m, err := core.LoadManifest()
+	rec, err := loadRecord(item.ID)
 	if err != nil {
 		return err
 	}
-	rec, ok := m.Records[item.ID]
-	if !ok {
-		return fmt.Errorf("no migration record for %s", item.ID)
-	}
 
 	if rec.OriginalConfig != "" && rec.OriginalConfig != rec.DestinationDir {
-		cmd := exec.CommandContext(ctx, "pip", "config", "set", "global.cache-dir", rec.OriginalConfig)
-		_ = cmd.Run()
+		if err := runCommand(ctx, "pip", "config", "set", "global.cache-dir", rec.OriginalConfig); err != nil {
+			return err
+		}
 	} else {
-		cmd := exec.CommandContext(ctx, "pip", "config", "unset", "global.cache-dir")
-		_ = cmd.Run()
+		if err := runCommand(ctx, "pip", "config", "unset", "global.cache-dir"); err != nil {
+			return err
+		}
+	}
+
+	if err := restoreNativeData(rec); err != nil {
+		return err
 	}
 
 	return core.RemoveRecord(item.ID)

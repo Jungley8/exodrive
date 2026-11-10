@@ -110,18 +110,18 @@ func (p *UVProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoo
 		return err
 	}
 
-	if !item.IsSymlink {
-		if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
-			return fmt.Errorf("copy uv %s: %w", item.Title, err)
-		}
-
-		backupDir := item.CurrentPath + ".bak"
-		if err := fsutil.ReplaceDirWithSymlink(item.CurrentPath, dest, backupDir); err != nil {
-			return err
-		}
+	if item.IsSymlink {
+		return fmt.Errorf("%s is already a symlink: nothing to migrate", item.CurrentPath)
 	}
 
-	return core.RecordMigration(core.MigrationRecord{
+	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+		return fmt.Errorf("copy uv %s: %w", item.Title, err)
+	}
+	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+		return fmt.Errorf("uv %s: %w", item.Title, err)
+	}
+
+	if err := core.RecordMigration(core.MigrationRecord{
 		ID:             item.ID,
 		ToolName:       p.Name(),
 		OriginalPath:   item.CurrentPath,
@@ -130,23 +130,26 @@ func (p *UVProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoo
 		OriginalConfig: item.ConfiguredPath,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
-	})
+	}); err != nil {
+		return err
+	}
+
+	backupDir := item.CurrentPath + ".bak"
+	if err := fsutil.ReplaceDirWithSymlink(item.CurrentPath, dest, backupDir); err != nil {
+		return switchFailed(item.ID, err)
+	}
+
+	return discardLocalBackup(item.CurrentPath)
 }
 
 func (p *UVProvider) Rollback(ctx context.Context, item core.CacheItem) error {
-	m, err := core.LoadManifest()
+	rec, err := loadRecord(item.ID)
 	if err != nil {
 		return err
 	}
-	rec, ok := m.Records[item.ID]
-	if !ok {
-		return fmt.Errorf("no migration record for %s", item.ID)
-	}
 
-	backupDir := rec.OriginalPath + ".bak"
-	if fi, err := os.Stat(backupDir); err == nil && fi.IsDir() {
-		_ = os.Remove(rec.OriginalPath)
-		_ = os.Rename(backupDir, rec.OriginalPath)
+	if err := restoreSymlink(rec.OriginalPath, rec.DestinationDir); err != nil {
+		return err
 	}
 
 	return core.RemoveRecord(item.ID)

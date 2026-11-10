@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -25,45 +24,97 @@ func (p *DockerProvider) Name() string {
 	return "docker"
 }
 
+// orbStackConfigPath returns the file that holds OrbStack's data_dir setting.
+func orbStackConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("locate home directory: %w", err)
+	}
+	return filepath.Join(home, ".orbstack", "config.json"), nil
+}
+
+// readOrbStackConfig reads OrbStack's configuration, keeping every key it holds.
+func readOrbStackConfig(path string) (map[string]any, error) {
+	cfg := make(map[string]any)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return cfg, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return cfg, nil
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	return cfg, nil
+}
+
+// writeOrbStackConfig replaces OrbStack's configuration atomically.
+func writeOrbStackConfig(path string, cfg map[string]any) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
+}
+
+// dataDir returns the configured data_dir, empty when OrbStack does not set one.
+func orbDataDir(cfg map[string]any) string {
+	dir, _ := cfg["data_dir"].(string)
+	return strings.TrimSpace(dir)
+}
+
 func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	var items []core.CacheItem
 	home, _ := os.UserHomeDir()
 
 	// 1. Detect OrbStack
-	orbConfigPath := filepath.Join(home, ".orbstack", "config.json")
-	var orbDataDir string
-	if data, err := os.ReadFile(orbConfigPath); err == nil {
-		var cfg struct {
-			DataDir string `json:"data_dir"`
-		}
-		if json.Unmarshal(data, &cfg) == nil && cfg.DataDir != "" {
-			orbDataDir = cfg.DataDir
-		}
+	cfgPath, err := orbStackConfigPath()
+	if err != nil {
+		return nil, err
 	}
-	if orbDataDir == "" {
-		orbDataDir = filepath.Join(home, "Library", "Application Support", "OrbStack", "data")
+	cfg, err := readOrbStackConfig(cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	orbDataDirPath := orbDataDir(cfg)
+	if orbDataDirPath == "" {
+		orbDataDirPath = filepath.Join(home, "Library", "Application Support", "OrbStack", "data")
 	}
 
 	if envDir := os.Getenv("ORBSTACK_DATA_DIR"); envDir != "" {
 		if fi, err := os.Stat(envDir); err == nil && fi.IsDir() {
-			orbDataDir = envDir
+			orbDataDirPath = envDir
 		}
 	}
 
-	if _, err := os.Stat(orbDataDir); err == nil {
-		size, _ := fsutil.DirSize(orbDataDir)
-		isMigrated := strings.HasPrefix(orbDataDir, "/Volumes/")
+	if _, err := os.Stat(orbDataDirPath); err == nil {
+		size, _ := fsutil.DirSize(orbDataDirPath)
 		items = append(items, core.CacheItem{
 			ID:             "docker.orbstack",
 			ToolName:       "docker",
 			Title:          "OrbStack VM Data & Images",
 			Category:       core.CategoryVirtualDisk,
-			CurrentPath:    orbDataDir,
-			ConfiguredPath: orbDataDir,
+			CurrentPath:    orbDataDirPath,
+			ConfiguredPath: orbDataDir(cfg),
 			SizeBytes:      size,
 			IsActive:       true,
-			IsMigrated:     isMigrated,
-			IsSymlink:      fsutil.IsSymlink(orbDataDir),
+			IsMigrated:     fsutil.IsSymlink(orbDataDirPath),
+			IsSymlink:      fsutil.IsSymlink(orbDataDirPath),
 			RedirectMethod: core.RedirectNativeConfig,
 			TargetSubdir:   filepath.Join("Docker", "orbstack"),
 			Warning:        "Stop OrbStack before migration to prevent disk image corruption.",
@@ -81,7 +132,7 @@ func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			CurrentPath:    dockerRaw,
 			SizeBytes:      fi.Size(),
 			IsActive:       true,
-			IsMigrated:     strings.HasPrefix(dockerRaw, "/Volumes/") || fsutil.IsSymlink(dockerRaw),
+			IsMigrated:     fsutil.IsSymlink(dockerRaw),
 			IsSymlink:      fsutil.IsSymlink(dockerRaw),
 			RedirectMethod: core.RedirectSymlink,
 			TargetSubdir:   filepath.Join("Docker", "docker-desktop"),
@@ -101,7 +152,7 @@ func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			CurrentPath:    colimaDir,
 			SizeBytes:      size,
 			IsActive:       true,
-			IsMigrated:     strings.HasPrefix(colimaDir, "/Volumes/") || fsutil.IsSymlink(colimaDir),
+			IsMigrated:     fsutil.IsSymlink(colimaDir),
 			IsSymlink:      fsutil.IsSymlink(colimaDir),
 			RedirectMethod: core.RedirectSymlink,
 			TargetSubdir:   filepath.Join("Docker", "colima"),
@@ -117,6 +168,11 @@ func (p *DockerProvider) PreflightCheck(ctx context.Context, item core.CacheItem
 	if len(running) > 0 {
 		return fmt.Errorf("container engine is running (%s, PID: %s): stop the container engine before migration", running[0].Name, running[0].PID)
 	}
+	if item.ID == "docker.orbstack" {
+		// The variable wins over data_dir in the config file, so the switch
+		// would not take effect.
+		return envOverride("ORBSTACK_DATA_DIR")
+	}
 	return nil
 }
 
@@ -127,84 +183,176 @@ func (p *DockerProvider) Migrate(ctx context.Context, item core.CacheItem, targe
 	}
 
 	if item.ID == "docker.orbstack" {
-		// Try using orb CLI if available
-		cmd := exec.CommandContext(ctx, "orb", "config", "set", "data_dir", dest)
-		var out bytes.Buffer
-		cmd.Stdout = &out
-		if err := cmd.Run(); err == nil {
-			return core.RecordMigration(core.MigrationRecord{
-				ID:             item.ID,
-				ToolName:       p.Name(),
-				OriginalPath:   item.CurrentPath,
-				DestinationDir: dest,
-				RedirectMethod: core.RedirectNativeConfig,
-				OriginalConfig: item.ConfiguredPath,
-				MigratedAt:     time.Now(),
-				SizeBytes:      item.SizeBytes,
-			})
-		}
+		return p.migrateOrbStack(ctx, item, dest, onProgress)
+	}
+	return p.migrateLinked(ctx, item, dest, onProgress)
+}
+
+// migrateOrbStack copies the data first and points OrbStack at the copy only
+// after the copy verifies, so the engine never starts on an empty directory.
+func (p *DockerProvider) migrateOrbStack(ctx context.Context, item core.CacheItem, dest string, onProgress fsutil.CopyProgressCallback) error {
+	if fsutil.IsSymlink(item.CurrentPath) {
+		return fmt.Errorf("%s is already a symlink: nothing to migrate", item.CurrentPath)
 	}
 
-	// Copy and symlink fallback
-	if !item.IsSymlink {
-		fi, err := os.Stat(item.CurrentPath)
-		if err != nil {
-			return err
-		}
-
-		if fi.IsDir() {
-			if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
-				return fmt.Errorf("copy %s: %w", item.Title, err)
-			}
-			backupDir := item.CurrentPath + ".bak"
-			if err := fsutil.ReplaceDirWithSymlink(item.CurrentPath, dest, backupDir); err != nil {
-				return err
-			}
-		} else {
-			// Single-file image (Docker.raw)
-			destFile := filepath.Join(dest, filepath.Base(item.CurrentPath))
-			if err := fsutil.CopyFile(item.CurrentPath, destFile, item.SizeBytes, onProgress); err != nil {
-				return fmt.Errorf("copy %s: %w", item.Title, err)
-			}
-			backupFile := item.CurrentPath + ".bak"
-			if err := fsutil.ReplaceDirWithSymlink(item.CurrentPath, destFile, backupFile); err != nil {
-				return err
-			}
-		}
+	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+		return fmt.Errorf("copy %s: %w", item.Title, err)
+	}
+	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+		return fmt.Errorf("%s: %w", item.Title, err)
 	}
 
-	return core.RecordMigration(core.MigrationRecord{
+	cfgPath, err := orbStackConfigPath()
+	if err != nil {
+		return err
+	}
+	cfg, err := readOrbStackConfig(cfgPath)
+	if err != nil {
+		return err
+	}
+	originalDir := orbDataDir(cfg)
+
+	if err := core.RecordMigration(core.MigrationRecord{
 		ID:             item.ID,
 		ToolName:       p.Name(),
 		OriginalPath:   item.CurrentPath,
 		DestinationDir: dest,
-		RedirectMethod: core.RedirectSymlink,
-		OriginalConfig: item.ConfiguredPath,
+		RedirectMethod: core.RedirectNativeConfig,
+		OriginalConfig: originalDir,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
-	})
+	}); err != nil {
+		return err
+	}
+
+	cfg["data_dir"] = dest
+	if err := writeOrbStackConfig(cfgPath, cfg); err != nil {
+		return switchFailed(item.ID, fmt.Errorf("set data_dir in %s: %w", cfgPath, err))
+	}
+
+	return removeLocalSource(item.CurrentPath, dest)
 }
 
-func (p *DockerProvider) Rollback(ctx context.Context, item core.CacheItem) error {
-	m, err := core.LoadManifest()
+// migrateLinked moves a directory or file to dest and replaces it with a
+// symlink. Docker Desktop and Colima read their data through the path.
+func (p *DockerProvider) migrateLinked(ctx context.Context, item core.CacheItem, dest string, onProgress fsutil.CopyProgressCallback) error {
+	if item.IsSymlink {
+		return fmt.Errorf("%s is already a symlink: nothing to migrate", item.CurrentPath)
+	}
+
+	info, err := os.Stat(item.CurrentPath)
 	if err != nil {
 		return err
 	}
-	rec, ok := m.Records[item.ID]
-	if !ok {
-		return fmt.Errorf("no migration record for %s", item.ID)
+
+	// destination is the migrated copy: the directory, or the single file.
+	destination := dest
+	if !info.IsDir() {
+		destination = filepath.Join(dest, filepath.Base(item.CurrentPath))
 	}
 
-	if item.ID == "docker.orbstack" && rec.OriginalConfig != "" {
-		cmd := exec.CommandContext(ctx, "orb", "config", "set", "data_dir", rec.OriginalConfig)
-		_ = cmd.Run()
+	if info.IsDir() {
+		if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+			return fmt.Errorf("copy %s: %w", item.Title, err)
+		}
+		if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+			return fmt.Errorf("%s: %w", item.Title, err)
+		}
+	} else {
+		if err := fsutil.CopyFile(item.CurrentPath, destination, item.SizeBytes, onProgress); err != nil {
+			return fmt.Errorf("copy %s: %w", item.Title, err)
+		}
+		destInfo, err := os.Stat(destination)
+		if err != nil {
+			return err
+		}
+		if destInfo.Size() != info.Size() {
+			return fmt.Errorf("%s: copied %d bytes, expected %d", item.Title, destInfo.Size(), info.Size())
+		}
 	}
 
-	backupDir := rec.OriginalPath + ".bak"
-	if _, err := os.Stat(backupDir); err == nil {
-		_ = os.Remove(rec.OriginalPath)
-		_ = os.Rename(backupDir, rec.OriginalPath)
+	if err := core.RecordMigration(core.MigrationRecord{
+		ID:             item.ID,
+		ToolName:       p.Name(),
+		OriginalPath:   item.CurrentPath,
+		DestinationDir: destination,
+		RedirectMethod: core.RedirectSymlink,
+		MigratedAt:     time.Now(),
+		SizeBytes:      item.SizeBytes,
+	}); err != nil {
+		return err
 	}
 
-	return core.RemoveRecord(item.ID)
+	if err := fsutil.ReplaceDirWithSymlink(item.CurrentPath, destination, item.CurrentPath+".bak"); err != nil {
+		return switchFailed(item.ID, err)
+	}
+
+	return discardLocalBackup(item.CurrentPath)
+}
+
+func (p *DockerProvider) Rollback(ctx context.Context, item core.CacheItem) error {
+	rec, err := loadRecord(item.ID)
+	if err != nil {
+		return err
+	}
+
+	switch rec.RedirectMethod {
+	case core.RedirectNativeConfig:
+		return rollbackOrbStack(rec)
+	case core.RedirectSymlink:
+		if err := restoreSymlink(rec.OriginalPath, rec.DestinationDir); err != nil {
+			return err
+		}
+		return core.RemoveRecord(item.ID)
+	default:
+		return fmt.Errorf("rollback: unsupported redirect method %q for %s", rec.RedirectMethod, item.ID)
+	}
+}
+
+// rollbackOrbStack copies the data back, then points OrbStack at it, then
+// removes the external copy. OrbStack always reads an existing directory.
+// A local directory that already matches the external copy comes from an
+// interrupted rollback, so Exodrive keeps it and skips the copy.
+func rollbackOrbStack(rec core.MigrationRecord) error {
+	if _, err := os.Stat(rec.DestinationDir); err != nil {
+		return fmt.Errorf("rollback: destination %s is unavailable: %w", rec.DestinationDir, err)
+	}
+
+	switch _, err := os.Stat(rec.OriginalPath); {
+	case err == nil:
+		if err := fsutil.VerifyTree(rec.DestinationDir, rec.OriginalPath); err != nil {
+			return fmt.Errorf("rollback: %s exists and differs from %s: %w", rec.OriginalPath, rec.DestinationDir, err)
+		}
+	case os.IsNotExist(err):
+		if err := fsutil.CopyDir(rec.DestinationDir, rec.OriginalPath, 0, nil); err != nil {
+			return fmt.Errorf("rollback: copy %s back: %w", rec.DestinationDir, err)
+		}
+		if err := fsutil.VerifyTree(rec.DestinationDir, rec.OriginalPath); err != nil {
+			return fmt.Errorf("rollback: %w", err)
+		}
+	default:
+		return fmt.Errorf("rollback: inspect %s: %w", rec.OriginalPath, err)
+	}
+
+	cfgPath, err := orbStackConfigPath()
+	if err != nil {
+		return err
+	}
+	cfg, err := readOrbStackConfig(cfgPath)
+	if err != nil {
+		return err
+	}
+	if rec.OriginalConfig != "" {
+		cfg["data_dir"] = rec.OriginalConfig
+	} else {
+		delete(cfg, "data_dir")
+	}
+	if err := writeOrbStackConfig(cfgPath, cfg); err != nil {
+		return fmt.Errorf("restore data_dir in %s: %w", cfgPath, err)
+	}
+
+	if err := os.RemoveAll(rec.DestinationDir); err != nil {
+		return fmt.Errorf("rollback: remove %s: %w", rec.DestinationDir, err)
+	}
+	return core.RemoveRecord(rec.ID)
 }
