@@ -34,6 +34,11 @@ type AppState struct {
 	// RollbackTarget holds the item ID that waits for confirmation, or "".
 	RollbackTarget *core.Signal[string]
 
+	// IsCleaning blocks a second delete and the other long actions.
+	IsCleaning *core.Signal[bool]
+	// CleanTarget holds the abandoned item ID that waits for confirmation, or "".
+	CleanTarget *core.Signal[string]
+
 	PickerOpen   *core.Signal[bool]
 	ConfirmOpen  *core.Signal[bool]
 	Picker       *filepicker.State
@@ -78,6 +83,8 @@ func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
 		ConfirmOpen:    core.NewSignal(cx, false),
 		IsRollingBack:  core.NewSignal(cx, false),
 		RollbackTarget: core.NewSignal(cx, ""),
+		IsCleaning:     core.NewSignal(cx, false),
+		CleanTarget:    core.NewSignal(cx, ""),
 		Picker:         filepicker.NewState(cx, filepicker.List, false, 0),
 		Root:           cx,
 		Engine:         engine,
@@ -99,6 +106,7 @@ func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
 			renderPicker(state),
 			renderConfirm(cx, state),
 			renderRollbackConfirm(state),
+			renderCleanConfirm(state),
 		},
 	}
 }
@@ -367,6 +375,19 @@ func renderItemRow(state *AppState, item func() exoCore.CacheItem) core.Node {
 									}
 								},
 							},
+							core.Show{
+								When: func() bool { return item().Category == exoCore.CategoryOrphan },
+								Then: func(cx *core.Scope) core.Node {
+									return ui.Button{
+										Text:     "Delete",
+										Variant:  ui.ButtonSecondary,
+										Icon:     lucide.Trash,
+										TestID:   "clean-" + id,
+										Disabled: func() bool { return busy(state) },
+										OnPress:  func() { state.CleanTarget.Set(id) },
+									}
+								},
+							},
 						},
 					},
 				},
@@ -459,7 +480,7 @@ func renderConfirm(cx *core.Scope, state *AppState) core.Node {
 
 // busy reports whether a long action runs. A second action waits for it.
 func busy(state *AppState) bool {
-	return state.IsScanning.Get() || state.IsMigrating.Get() || state.IsRollingBack.Get()
+	return state.IsScanning.Get() || state.IsMigrating.Get() || state.IsRollingBack.Get() || state.IsCleaning.Get()
 }
 
 func countSelected(state *AppState) int {
@@ -501,6 +522,42 @@ func renderRollbackConfirm(state *AppState) core.Node {
 					OnPress: func() { state.RollbackTarget.Set(""); triggerRollback(state, id) }},
 			},
 			TestID: "rollback-dialog",
+		}
+	})
+}
+
+// itemByID returns the item with this ID, and false when the scan no longer
+// holds it.
+func itemByID(state *AppState, id string) (exoCore.CacheItem, bool) {
+	for _, it := range state.Items.GetUntracked() {
+		if it.ID == id {
+			return it, true
+		}
+	}
+	return exoCore.CacheItem{}, false
+}
+
+func renderCleanConfirm(state *AppState) core.Node {
+	return core.Dynamic(func(cx *core.Scope) core.Node {
+		id := state.CleanTarget.Get()
+		item, found := itemByID(state, id)
+		description := "Exodrive deletes this folder from the internal disk. This action cannot be undone."
+		if found {
+			description = fmt.Sprintf(
+				"Exodrive deletes %s (%s) from the internal disk. This action cannot be undone.",
+				item.CurrentPath, internalUi.FormatBytes(item.SizeBytes))
+		}
+		return ui.AlertDialog{
+			Open:        func() bool { return state.CleanTarget.Get() != "" },
+			Title:       "Delete this abandoned cache?",
+			Description: description,
+			Actions: []ui.AlertAction{
+				{Text: "Cancel", Variant: ui.ButtonSecondary, TestID: "clean-cancel",
+					OnPress: func() { state.CleanTarget.Set("") }},
+				{Text: "Delete", Variant: ui.ButtonPrimary, TestID: "clean-confirm",
+					OnPress: func() { state.CleanTarget.Set(""); triggerClean(state, id) }},
+			},
+			TestID: "clean-dialog",
 		}
 	})
 }
@@ -623,6 +680,39 @@ func triggerMigration(state *AppState) {
 			} else {
 				state.StatusMsg.Set(fmt.Sprintf("Migrated %d cache(s) to %s.", successCount, targetDir))
 			}
+		})
+	}()
+}
+
+func triggerClean(state *AppState, id string) {
+	if busy(state) {
+		return
+	}
+	item, found := itemByID(state, id)
+	if !found {
+		state.StatusMsg.Set("This cache is no longer in the list. Scan again.")
+		return
+	}
+
+	state.IsCleaning.Set(true)
+	state.StatusMsg.Set(fmt.Sprintf("Deleting %s...", item.Title))
+
+	go func() {
+		ctx := context.Background()
+		err := state.Engine.CleanOrphan(item.CurrentPath)
+		items, scanErr := state.Engine.ScanAll(ctx)
+
+		state.Root.Post(func() {
+			state.IsCleaning.Set(false)
+			if scanErr == nil {
+				state.Items.Set(items)
+				state.Selected.Set(map[string]bool{})
+			}
+			if err != nil {
+				state.StatusMsg.Set(fmt.Sprintf("Delete failed: %v", err))
+				return
+			}
+			state.StatusMsg.Set(fmt.Sprintf("Deleted %s. %s is free.", item.Title, internalUi.FormatBytes(item.SizeBytes)))
 		})
 	}()
 }

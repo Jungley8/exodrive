@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -253,5 +254,65 @@ func TestWindowRollsBackMigratedCache(t *testing.T) {
 	app.WaitUntil(2*time.Second, func() bool { return badgeText(app, item.ID) == "Local SSD" })
 	if got := badgeText(app, item.ID); got != "Local SSD" {
 		t.Fatalf("row badge is %q after rollback, want Local SSD:\n%s", got, app.Dump())
+	}
+}
+
+// TestWindowDeletesAbandonedCache mounts the window, asks to delete an
+// abandoned cache, confirms, and checks that the folder is gone.
+func TestWindowDeletesAbandonedCache(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	orphanDir := filepath.Join(t.TempDir(), "Library", "Caches", "pnpm")
+	if err := os.MkdirAll(orphanDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(orphanDir, "cache.dat"), []byte("dead"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	item := exoCore.CacheItem{
+		ID:          "orphan.pnpm",
+		ToolName:    "pnpm",
+		Title:       "Legacy Local PNPM Cache",
+		Category:    exoCore.CategoryOrphan,
+		CurrentPath: orphanDir,
+		SizeBytes:   4,
+	}
+	local := exoCore.CacheItem{
+		ID:          "fake.cache",
+		ToolName:    "fake",
+		Title:       "Fake Cache",
+		Category:    exoCore.CategoryPackageStore,
+		CurrentPath: "/tmp/fake-cache",
+		SizeBytes:   4096,
+		IsActive:    true,
+	}
+
+	engine := exoCore.NewEngine(&fakeProvider{name: "fake", items: []exoCore.CacheItem{local, item}})
+	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Legacy Local PNPM Cache") })
+	app.Settle()
+
+	// A cache that still sits on the internal disk gets no Delete button.
+	if app.Exists("id:clean-fake.cache") {
+		t.Fatalf("a package cache offers Delete:\n%s", app.Dump())
+	}
+	if !app.Exists("id:clean-orphan.pnpm") {
+		t.Fatalf("an abandoned cache offers no Delete:\n%s", app.Dump())
+	}
+
+	app.Press("id:clean-orphan.pnpm")
+	app.Settle()
+	if !app.Exists("id:clean-dialog") {
+		t.Fatalf("Delete did not ask for confirmation:\n%s", app.Dump())
+	}
+
+	app.Press("id:clean-confirm")
+	app.WaitUntil(2*time.Second, func() bool {
+		_, err := os.Stat(orphanDir)
+		return os.IsNotExist(err)
+	})
+	if _, err := os.Stat(orphanDir); !os.IsNotExist(err) {
+		t.Fatalf("the abandoned cache still exists: %v", err)
 	}
 }
