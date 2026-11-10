@@ -121,23 +121,30 @@ func (p *DockerProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 		})
 	}
 
-	// 2. Detect Docker Desktop
-	dockerRaw := filepath.Join(home, "Library", "Containers", "com.docker.docker", "Data", "vms", "0", "data", "Docker.raw")
-	if fi, err := os.Stat(dockerRaw); err == nil && !fi.IsDir() {
+	// 2. Detect Docker Desktop. Version 4.15 and later hold Docker.raw. Earlier
+	// versions hold Docker.qcow2, so both names count.
+	vmDataDir := filepath.Join(home, "Library", "Containers", "com.docker.docker", "Data", "vms", "0", "data")
+	for _, diskName := range []string{"Docker.raw", "Docker.qcow2"} {
+		diskPath := filepath.Join(vmDataDir, diskName)
+		fi, statErr := os.Stat(diskPath)
+		if statErr != nil || fi.IsDir() {
+			continue
+		}
 		items = append(items, core.CacheItem{
 			ID:             "docker.desktop",
 			ToolName:       "docker",
-			Title:          "Docker Desktop Virtual Disk (Docker.raw)",
+			Title:          fmt.Sprintf("Docker Desktop Virtual Disk (%s)", diskName),
 			Category:       core.CategoryVirtualDisk,
-			CurrentPath:    dockerRaw,
+			CurrentPath:    diskPath,
 			SizeBytes:      fi.Size(),
 			IsActive:       true,
-			IsMigrated:     fsutil.IsSymlink(dockerRaw),
-			IsSymlink:      fsutil.IsSymlink(dockerRaw),
+			IsMigrated:     fsutil.IsSymlink(diskPath),
+			IsSymlink:      fsutil.IsSymlink(diskPath),
 			RedirectMethod: core.RedirectSymlink,
 			TargetSubdir:   filepath.Join("Docker", "docker-desktop"),
-			Warning:        "Stop Docker Desktop before migrating Docker.raw.",
+			Warning:        fmt.Sprintf("Stop Docker Desktop before migrating %s.", diskName),
 		})
+		break
 	}
 
 	// 3. Detect Colima
@@ -179,29 +186,29 @@ func (p *DockerProvider) PreflightCheck(ctx context.Context, item core.CacheItem
 	return nil
 }
 
-func (p *DockerProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (p *DockerProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	dest := filepath.Join(targetRoot, item.TargetSubdir)
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
 	}
 
 	if item.ID == "docker.orbstack" {
-		return p.migrateOrbStack(ctx, item, dest, onProgress)
+		return p.migrateOrbStack(ctx, item, dest, progress)
 	}
-	return p.migrateLinked(ctx, item, dest, onProgress)
+	return p.migrateLinked(ctx, item, dest, progress)
 }
 
 // migrateOrbStack copies the data first and points OrbStack at the copy only
 // after the copy verifies, so the engine never starts on an empty directory.
-func (p *DockerProvider) migrateOrbStack(ctx context.Context, item core.CacheItem, dest string, onProgress fsutil.CopyProgressCallback) error {
+func (p *DockerProvider) migrateOrbStack(ctx context.Context, item core.CacheItem, dest string, progress fsutil.MigrateProgress) error {
 	if fsutil.IsSymlink(item.CurrentPath) {
 		return fmt.Errorf("%s is already a symlink: nothing to migrate", item.CurrentPath)
 	}
 
-	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("copy %s: %w", item.Title, err)
 	}
-	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
 		return fmt.Errorf("%s: %w", item.Title, err)
 	}
 
@@ -238,7 +245,7 @@ func (p *DockerProvider) migrateOrbStack(ctx context.Context, item core.CacheIte
 
 // migrateLinked moves a directory or file to dest and replaces it with a
 // symlink. Docker Desktop and Colima read their data through the path.
-func (p *DockerProvider) migrateLinked(ctx context.Context, item core.CacheItem, dest string, onProgress fsutil.CopyProgressCallback) error {
+func (p *DockerProvider) migrateLinked(ctx context.Context, item core.CacheItem, dest string, progress fsutil.MigrateProgress) error {
 	if item.IsSymlink {
 		return fmt.Errorf("%s is already a symlink: nothing to migrate", item.CurrentPath)
 	}
@@ -255,14 +262,14 @@ func (p *DockerProvider) migrateLinked(ctx context.Context, item core.CacheItem,
 	}
 
 	if info.IsDir() {
-		if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+		if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 			return fmt.Errorf("copy %s: %w", item.Title, err)
 		}
-		if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+		if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
 			return fmt.Errorf("%s: %w", item.Title, err)
 		}
 	} else {
-		if err := fsutil.CopyFile(item.CurrentPath, destination, item.SizeBytes, onProgress); err != nil {
+		if err := fsutil.CopyFile(item.CurrentPath, destination, item.SizeBytes, progress.Copy); err != nil {
 			return fmt.Errorf("copy %s: %w", item.Title, err)
 		}
 		if err := fsutil.VerifyFile(item.CurrentPath, destination); err != nil {

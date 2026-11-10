@@ -1,7 +1,6 @@
 package plugins
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -28,20 +27,19 @@ func (p *NPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	var items []core.CacheItem
 
 	// 1. Query npm CLI
-	var configPath string
-	cmd := exec.CommandContext(ctx, "npm", "config", "get", "cache")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err == nil {
-		configPath = strings.TrimSpace(out.String())
-	}
+	configPath, answered := toolQuery(ctx, "npm", "config", "get", "cache")
 
 	home, _ := os.UserHomeDir()
 	defaultPath := filepath.Join(home, ".npm")
 
 	activePath := configPath
-	if activePath == "" {
+	blocked := ""
+	if !answered {
+		// Without an answer, ~/.npm is a guess. A cache that npm does not read
+		// would move and leave the real cache behind, so the item stays visible
+		// and refuses to move.
 		activePath = defaultPath
+		blocked = toolMissingReason("npm", "npm config get cache")
 	}
 
 	if fi, err := os.Stat(activePath); err == nil && fi.IsDir() {
@@ -63,6 +61,7 @@ func (p *NPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			IsSymlink:      isSymlink,
 			RedirectMethod: core.RedirectNativeConfig,
 			TargetSubdir:   "npm-cache",
+			BlockedReason:  blocked,
 		})
 	}
 
@@ -80,17 +79,17 @@ func (p *NPMProvider) PreflightCheck(ctx context.Context, item core.CacheItem, t
 	return envOverride("npm_config_cache", "NPM_CONFIG_CACHE")
 }
 
-func (p *NPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (p *NPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	dest := filepath.Join(targetRoot, item.TargetSubdir)
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
 	}
 
 	// Copy cache files
-	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("failed copying npm cache: %w", err)
 	}
-	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
 		return fmt.Errorf("npm cache: %w", err)
 	}
 

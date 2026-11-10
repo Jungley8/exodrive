@@ -115,7 +115,7 @@ fi
 		t.Fatalf("PreflightCheck failed: %v", err)
 	}
 
-	if err := p.Migrate(ctx, item, env.targetRoot, nil); err != nil {
+	if err := p.Migrate(ctx, item, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 		t.Fatalf("Migrate failed: %v", err)
 	}
 
@@ -187,7 +187,7 @@ fi
 		t.Fatalf("PreflightCheck failed: %v", err)
 	}
 
-	if err := p.Migrate(ctx, item, env.targetRoot, nil); err != nil {
+	if err := p.Migrate(ctx, item, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 		t.Fatalf("Migrate failed: %v", err)
 	}
 
@@ -297,7 +297,7 @@ fi
 		t.Fatalf("PreflightCheck failed: %v", err)
 	}
 
-	if err := p.Migrate(ctx, item, env.targetRoot, nil); err != nil {
+	if err := p.Migrate(ctx, item, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 		t.Fatalf("Migrate failed: %v", err)
 	}
 
@@ -359,7 +359,7 @@ func TestLifecycle_Cargo_PreservesBin(t *testing.T) {
 		if err := p.PreflightCheck(ctx, it, env.targetRoot); err != nil {
 			t.Fatalf("PreflightCheck failed: %v", err)
 		}
-		if err := p.Migrate(ctx, it, env.targetRoot, nil); err != nil {
+		if err := p.Migrate(ctx, it, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 			t.Fatalf("Migrate failed on %s: %v", it.ID, err)
 		}
 		if !fsutil.IsSymlink(it.CurrentPath) {
@@ -435,7 +435,7 @@ fi
 		if err := p.PreflightCheck(ctx, it, env.targetRoot); err != nil {
 			t.Fatalf("PreflightCheck failed: %v", err)
 		}
-		if err := p.Migrate(ctx, it, env.targetRoot, nil); err != nil {
+		if err := p.Migrate(ctx, it, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 			t.Fatalf("Migrate failed: %v", err)
 		}
 	}
@@ -495,7 +495,7 @@ fi
 		t.Fatalf("PreflightCheck failed: %v", err)
 	}
 
-	if err := p.Migrate(ctx, item, env.targetRoot, nil); err != nil {
+	if err := p.Migrate(ctx, item, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 		t.Fatalf("Migrate failed: %v", err)
 	}
 
@@ -554,7 +554,7 @@ fi
 		if err := p.PreflightCheck(ctx, it, env.targetRoot); err != nil {
 			t.Fatalf("PreflightCheck failed: %v", err)
 		}
-		if err := p.Migrate(ctx, it, env.targetRoot, nil); err != nil {
+		if err := p.Migrate(ctx, it, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 			t.Fatalf("Migrate failed: %v", err)
 		}
 		if !fsutil.IsSymlink(it.CurrentPath) {
@@ -617,7 +617,7 @@ fi
 		t.Fatalf("PreflightCheck failed: %v", err)
 	}
 
-	if err := p.Migrate(ctx, item, env.targetRoot, nil); err != nil {
+	if err := p.Migrate(ctx, item, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 		t.Fatalf("Migrate failed: %v", err)
 	}
 
@@ -673,8 +673,8 @@ func TestLifecycle_Docker_DockerRawSingleFile(t *testing.T) {
 	}
 
 	var progressCalled bool
-	if err := p.Migrate(ctx, *desktopItem, env.targetRoot, func(copied, total int64) {
-		progressCalled = true
+	if err := p.Migrate(ctx, *desktopItem, env.targetRoot, fsutil.MigrateProgress{
+		Copy: func(copied, total int64) { progressCalled = true },
 	}); err != nil {
 		t.Fatalf("Migrate failed: %v", err)
 	}
@@ -767,7 +767,7 @@ func TestLifecycle_Docker_Colima(t *testing.T) {
 		t.Fatalf("docker.colima not detected")
 	}
 
-	if err := p.Migrate(ctx, *colimaItem, env.targetRoot, nil); err != nil {
+	if err := p.Migrate(ctx, *colimaItem, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 		t.Fatalf("Migrate failed: %v", err)
 	}
 
@@ -823,7 +823,7 @@ func TestLifecycle_Orphan(t *testing.T) {
 		if err := p.PreflightCheck(ctx, it, env.targetRoot); err != nil {
 			t.Fatalf("PreflightCheck failed: %v", err)
 		}
-		if err := p.Migrate(ctx, it, env.targetRoot, nil); err != nil {
+		if err := p.Migrate(ctx, it, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 			t.Fatalf("Migrate failed: %v", err)
 		}
 
@@ -922,7 +922,7 @@ func TestLifecycle_Docker_OrbStackCopiesBeforeRedirect(t *testing.T) {
 		t.Fatalf("docker.orbstack not detected: %+v", items)
 	}
 
-	if err := p.Migrate(ctx, *orb, env.targetRoot, nil); err != nil {
+	if err := p.Migrate(ctx, *orb, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 		t.Fatalf("Migrate failed: %v", err)
 	}
 
@@ -1007,7 +1007,7 @@ fi
 		t.Fatalf("expected one npm item, got %+v", items)
 	}
 
-	if err := p.Migrate(ctx, items[0], env.targetRoot, nil); err != nil {
+	if err := p.Migrate(ctx, items[0], env.targetRoot, fsutil.MigrateProgress{}); err != nil {
 		t.Fatalf("Migrate failed: %v", err)
 	}
 
@@ -1067,7 +1067,7 @@ func TestMigrateRefusesExistingSymlink(t *testing.T) {
 		t.Fatalf("cargo.registry not detected: %+v", items)
 	}
 
-	if err := p.Migrate(ctx, *registry, env.targetRoot, nil); err == nil {
+	if err := p.Migrate(ctx, *registry, env.targetRoot, fsutil.MigrateProgress{}); err == nil {
 		t.Fatalf("expected Migrate to refuse an already linked cache")
 	}
 

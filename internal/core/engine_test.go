@@ -31,7 +31,7 @@ func (m *MockProvider) PreflightCheck(ctx context.Context, item CacheItem, targe
 	return nil
 }
 
-func (m *MockProvider) Migrate(ctx context.Context, item CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (m *MockProvider) Migrate(ctx context.Context, item CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	m.migrated = true
 	return RecordMigration(MigrationRecord{
 		ID:             item.ID,
@@ -110,7 +110,7 @@ func TestEngineMigrateAndRollback(t *testing.T) {
 	engine := NewEngine(mockP)
 
 	// Test Migrate
-	if err := engine.Migrate(ctx, mockItem, targetDir, nil); err != nil {
+	if err := engine.Migrate(ctx, mockItem, targetDir, fsutil.MigrateProgress{}); err != nil {
 		t.Fatalf("Migrate failed: %v", err)
 	}
 	if !mockP.migrated {
@@ -228,7 +228,7 @@ func TestEngineUnknownProviderFailsClosed(t *testing.T) {
 	if err := engine.Preflight(ctx, item, t.TempDir()); err == nil {
 		t.Fatalf("expected Preflight to fail for an unknown toolchain, got nil")
 	}
-	if err := engine.Migrate(ctx, item, t.TempDir(), nil); err == nil {
+	if err := engine.Migrate(ctx, item, t.TempDir(), fsutil.MigrateProgress{}); err == nil {
 		t.Fatalf("expected Migrate to fail for an unknown toolchain, got nil")
 	}
 }
@@ -250,10 +250,10 @@ func TestEngineRefusesRepeatedMigration(t *testing.T) {
 	mockP := &MockProvider{name: "mock", items: []CacheItem{item}}
 	engine := NewEngine(mockP)
 
-	if err := engine.Migrate(ctx, item, targetDir, nil); err != nil {
+	if err := engine.Migrate(ctx, item, targetDir, fsutil.MigrateProgress{}); err != nil {
 		t.Fatalf("first Migrate failed: %v", err)
 	}
-	if err := engine.Migrate(ctx, item, targetDir, nil); err == nil {
+	if err := engine.Migrate(ctx, item, targetDir, fsutil.MigrateProgress{}); err == nil {
 		t.Fatalf("expected the second Migrate to be refused, got nil")
 	}
 }
@@ -299,7 +299,7 @@ func (f *failingProvider) PreflightCheck(ctx context.Context, item CacheItem, ta
 	return nil
 }
 
-func (f *failingProvider) Migrate(ctx context.Context, item CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (f *failingProvider) Migrate(ctx context.Context, item CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	return nil
 }
 

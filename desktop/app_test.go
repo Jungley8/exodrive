@@ -22,6 +22,11 @@ type fakeProvider struct {
 	delay time.Duration
 	// migrateDelay holds each Migrate call, so a test can act while it runs.
 	migrateDelay time.Duration
+	// verifyPause holds the check step open, so a test can read its label.
+	verifyPause time.Duration
+	// hold keeps Migrate open until the test closes it, so a cancel press
+	// cannot race the end of the first move.
+	hold chan struct{}
 }
 
 func (f *fakeProvider) Name() string { return f.name }
@@ -37,12 +42,21 @@ func (f *fakeProvider) PreflightCheck(ctx context.Context, item exoCore.CacheIte
 	return nil
 }
 
-func (f *fakeProvider) Migrate(ctx context.Context, item exoCore.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (f *fakeProvider) Migrate(ctx context.Context, item exoCore.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	if f.migrateDelay > 0 {
 		time.Sleep(f.migrateDelay)
 	}
-	if onProgress != nil {
-		onProgress(1, 1)
+	if f.hold != nil {
+		<-f.hold
+	}
+	if progress.Copy != nil {
+		progress.Copy(1, 1)
+	}
+	if f.verifyPause > 0 {
+		if progress.Verify != nil {
+			progress.Verify(1, 1)
+		}
+		time.Sleep(f.verifyPause)
 	}
 	return exoCore.RecordMigration(exoCore.MigrationRecord{
 		ID:             item.ID,
@@ -65,6 +79,15 @@ func newFakeEngine(item exoCore.CacheItem) *exoCore.Engine {
 
 func newSlowFakeEngine(item exoCore.CacheItem, delay time.Duration) *exoCore.Engine {
 	return exoCore.NewEngine(&fakeProvider{name: "fake", items: []exoCore.CacheItem{item}, delay: delay})
+}
+
+// useVolumesRoot points the volume lookup at a temporary folder for one test.
+func useVolumesRoot(t *testing.T, root string) string {
+	t.Helper()
+	previous := exoCore.VolumesRoot
+	exoCore.VolumesRoot = root
+	t.Cleanup(func() { exoCore.VolumesRoot = previous })
+	return root
 }
 
 // badgeText returns the status badge of a row, or "" when the row is not shown.
@@ -363,6 +386,76 @@ func TestWindowShowsWhyACacheCannotMove(t *testing.T) {
 
 // The first run shows three steps, and the window replaces them with the volume
 // summary as soon as the user picks a folder.
+// The first run must name a missing external volume. The folder picker lists
+// only the internal disk, so the guide is the only place that says what to do.
+func TestWindowGuidesWhenNoVolumeIsConnected(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	useVolumesRoot(t, t.TempDir())
+
+	item := exoCore.CacheItem{
+		ID: "fake.cache", ToolName: "fake", Title: "Fake Cache",
+		Category: exoCore.CategoryPackageStore, CurrentPath: "/tmp/fake-cache",
+		SizeBytes: 4096, IsActive: true,
+	}
+
+	app := nsgotest.Start(t, NewMain(newFakeEngine(item)), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:guide") })
+	app.WaitUntil(2*time.Second, func() bool {
+		return strings.Contains(app.Dump(), "No external volume is connected")
+	})
+}
+
+// A connected volume turns the same line into a ready state.
+func TestWindowGuidesWhenAVolumeIsReady(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	root := useVolumesRoot(t, t.TempDir())
+	if err := os.Mkdir(filepath.Join(root, "SSD"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	item := exoCore.CacheItem{
+		ID: "fake.cache", ToolName: "fake", Title: "Fake Cache",
+		Category: exoCore.CategoryPackageStore, CurrentPath: "/tmp/fake-cache",
+		SizeBytes: 4096, IsActive: true,
+	}
+
+	app := nsgotest.Start(t, NewMain(newFakeEngine(item)), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:guide") })
+	app.WaitUntil(2*time.Second, func() bool {
+		return strings.Contains(app.Dump(), "External volume ready: SSD")
+	})
+}
+
+// The check steps through every byte, so the window must name it. A footer
+// that still says "Moving ... 100%" looks frozen.
+func TestWindowShowsTheCheckStep(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	item := exoCore.CacheItem{
+		ID: "fake.cache", ToolName: "fake", Title: "Fake Cache",
+		Category: exoCore.CategoryPackageStore, CurrentPath: "/tmp/fake-cache",
+		SizeBytes: 4096, IsActive: true,
+	}
+
+	engine := exoCore.NewEngine(&fakeProvider{
+		name: "fake", items: []exoCore.CacheItem{item},
+		verifyPause: 800 * time.Millisecond,
+	})
+
+	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
+
+	app.Type("id:target", t.TempDir())
+	app.Settle()
+	app.Press("id:migrate")
+	app.Settle()
+	app.Press("id:confirm-move")
+
+	app.WaitUntil(2*time.Second, func() bool {
+		return strings.Contains(app.Dump(), "Checking 1 of 1")
+	})
+}
+
 func TestWindowGuidesTheFirstRun(t *testing.T) {
 	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
 
@@ -405,9 +498,10 @@ func TestWindowStopsAfterTheCancelledMove(t *testing.T) {
 		SizeBytes: 2048, IsActive: true,
 	}
 
+	hold := make(chan struct{})
 	engine := exoCore.NewEngine(&fakeProvider{
 		name: "fake", items: []exoCore.CacheItem{first, second},
-		migrateDelay: 600 * time.Millisecond,
+		hold: hold,
 	})
 
 	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
@@ -421,22 +515,21 @@ func TestWindowStopsAfterTheCancelledMove(t *testing.T) {
 
 	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:cancel-move") })
 	app.Press("id:cancel-move")
-
-	app.WaitUntil(3*time.Second, func() bool {
-		m, err := exoCore.LoadManifest()
-		return err == nil && len(m.Records) == 1
+	// The footer must answer the press before the current cache ends.
+	app.WaitUntil(2*time.Second, func() bool {
+		return strings.Contains(app.Dump(), "Stopping after cache 1 of 2")
 	})
-	app.WaitUntil(3*time.Second, func() bool { return strings.Contains(app.Dump(), "Stopped after 1 of 2 moves") })
+	// Let the first move finish. The loop must see the cancel before it starts
+	// the second cache.
+	close(hold)
 
-	m, err := exoCore.LoadManifest()
-	if err != nil {
-		t.Fatal(err)
+	app.WaitUntil(3*time.Second, func() bool { return strings.Contains(app.Dump(), "Stopped after 1 of 2 moves") })
+	// The first cache moved; the second stayed local.
+	if got := badgeText(app, first.ID); got != "Migrated" {
+		t.Fatalf("the first cache shows %q, want Migrated", got)
 	}
-	if len(m.Records) != 1 {
-		t.Fatalf("the run moved %d caches, want 1", len(m.Records))
-	}
-	if _, ok := m.Records[first.ID]; !ok {
-		t.Fatalf("the run did not keep the first move: %+v", m.Records)
+	if got := badgeText(app, second.ID); got == "Migrated" {
+		t.Fatalf("the second cache moved after the cancel")
 	}
 }
 

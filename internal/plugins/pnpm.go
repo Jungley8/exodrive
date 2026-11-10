@@ -150,16 +150,16 @@ func (p *PNPMProvider) PreflightCheck(ctx context.Context, item core.CacheItem, 
 	return envOverride("npm_config_store_dir", "NPM_CONFIG_STORE_DIR")
 }
 
-func (p *PNPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (p *PNPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	dest := filepath.Join(targetRoot, item.TargetSubdir)
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
 	}
 
-	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("copy pnpm store: %w", err)
 	}
-	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
 		return fmt.Errorf("pnpm store: %w", err)
 	}
 

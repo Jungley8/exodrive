@@ -303,6 +303,32 @@ func TestSpecialFilesAreRefused(t *testing.T) {
 	})
 }
 
+// The window and the command line show the check as its own step, so the check
+// must report the bytes it reads.
+func TestVerifyTreeProgressReportsEveryByte(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "a.bin"), []byte("1234"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "b.bin"), []byte("567"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	dst := t.TempDir()
+	if err := CopyDir(src, dst, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	var last, total int64
+	if err := VerifyTreeProgress(src, dst, func(done, bytes int64) {
+		last, total = done, bytes
+	}); err != nil {
+		t.Fatalf("VerifyTreeProgress failed: %v", err)
+	}
+	if last != 7 || total != 7 {
+		t.Fatalf("progress ended at %d of %d bytes, want 7 of 7", last, total)
+	}
+}
+
 func TestCopyDirPreservesDirectoryMode(t *testing.T) {
 	src := t.TempDir()
 	dst := filepath.Join(t.TempDir(), "target")

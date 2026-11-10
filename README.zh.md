@@ -59,6 +59,8 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 | 环境变量检查 | 缓存路径的环境变量优先于工具配置。Exodrive 拒绝迁移，并指出该变量。清除后再执行。 |
 | 二进制隔离 | 只迁移缓存，不迁移 `~/.cargo/bin`、`~/.bun/bin`、`$GOPATH/bin`。 |
 | 账本校验 | 先读取两侧全部文件、比对内容，通过后才写入账本。回滚只认账本记录，没有记录就拒绝执行。 |
+| 工具自报路径 | 只迁移工具自己报告的目录。工具不回答时，该缓存显示 Blocked，不做任何移动。 |
+| 目标目录检查 | 目标目录不存在时拒绝执行。外置盘未连接时，提示先连接磁盘。 |
 
 账本已有记录的条目不能再次迁移。先执行 `exodrive rollback <item>`。
 
@@ -71,11 +73,11 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 | yarn（1.x） | 缓存目录 | `yarn config set cache-folder --global` | 只写全局配置，不改项目文件。 |
 | Cargo | `registry/` 与 `git/` | 分别建立软链接 | `~/.cargo/bin` 保留在内置磁盘。 |
 | Go | `GOCACHE`、`GOMODCACHE` | `go env -w` | 模块缓存和构建缓存都迁移。 |
-| Bun | `install/cache` | 软链接 | `~/.bun/bin` 保留在内置磁盘。 |
+| Bun | `install/cache` | 软链接 | `~/.bun/bin` 保留在内置磁盘。安装根目录由 `BUN_INSTALL` 指定。 |
 | uv | 缓存与 Python 工具链 | 软链接 | 跨磁盘创建虚拟环境时使用复制。 |
 | pip | 缓存 | `pip config set global.cache-dir` | 使用 pip 官方配置项。 |
 | Docker（OrbStack） | VM 数据与镜像 | `~/.orbstack/config.json` 的 `data_dir` | 先停止 OrbStack。 |
-| Docker Desktop | `Docker.raw` | 指向文件的软链接 | 先停止 Docker Desktop。 |
+| Docker Desktop | `Docker.raw`，4.15 之前的版本为 `Docker.qcow2` | 指向文件的软链接 | 先停止 Docker Desktop。 |
 | Colima | VM 磁盘 | 指向 `~/.colima` 的软链接 | 先执行 `colima stop`。 |
 | 孤儿缓存 | 配置变更后遗留的本地缓存 | `exodrive orphans --clean` 删除 | 先执行 `exodrive orphans` 查看列表。 |
 
@@ -187,9 +189,11 @@ exodrive rollback npm.cache
 
 每行写明 Exodrive 如何指向副本：改工具配置、软链接，或手动步骤。确认框按方式统计本次要迁移的条目。
 
-窗口显示本地、已迁移、孤儿三类占用。每次扫描、迁移和回滚后，列表自动刷新。首次运行显示三个步骤。选定目录后，窗口先显示该磁盘的文件系统与可用空间。
+迁移中状态栏显示当前步骤：拷贝时显示 `Moving 2 of 4: ...`，校验时显示 `Checking 2 of 4: ...`。
 
-Exodrive 无法迁移的缓存显示 Blocked 状态和原因。yarn 2 及更高版本会被阻止：它们的 `cacheFolder` 写在每个项目的 `.yarnrc.yml` 里，全局切换无法覆盖。可删除该缓存，或保留。
+窗口显示本地、已迁移、孤儿三类占用。每次扫描、迁移和回滚后，列表自动刷新。首次运行显示三个步骤，并列出已连接的外置磁盘。没有外置磁盘时会直接说明，接上磁盘后再点 Browse。选定目录后，窗口先显示该磁盘的文件系统与可用空间。
+
+Exodrive 无法迁移的缓存显示 Blocked 状态和原因。yarn 2 及更高版本会被阻止：它们的 `cacheFolder` 写在每个项目的 `.yarnrc.yml` 里，全局切换无法覆盖。可删除该缓存，或保留。工具没有报告缓存目录时同样显示 Blocked：把该工具加入 PATH，再点 Rescan Caches。
 
 ## 账本
 

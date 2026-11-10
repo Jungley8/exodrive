@@ -72,6 +72,7 @@ Exodrive stops before it damages data. It never continues in a weaker mode.
 | Environment check | A set cache variable wins over the tool settings. Exodrive refuses the move and names the variable. Unset it, then run again. |
 | Binary isolation | Exodrive moves caches only. It never moves `~/.cargo/bin`, `~/.bun/bin`, or `$GOPATH/bin`. |
 | Verified ledger | Exodrive reads both trees and compares the content of every file. It records a move only after the copy verifies. A rollback reads the record. A missing record stops the rollback. |
+| Tool answer | Exodrive moves the folder that the tool reports. When the tool does not answer, the cache shows Blocked and Exodrive moves nothing. |
 
 Exodrive also refuses a second migration of an item that the ledger already
 holds. Run `exodrive rollback <item>` first.
@@ -85,11 +86,11 @@ holds. Run `exodrive rollback <item>` first.
 | yarn (1.x) | Cache folder | `yarn config set cache-folder --global` | Exodrive writes the global config, not a project file. |
 | Cargo | `registry/` and `git/` | Symbolic link for each folder | `~/.cargo/bin` stays on the internal disk. |
 | Go | `GOCACHE`, `GOMODCACHE` | `go env -w` | Exodrive moves the module cache and the build cache. |
-| Bun | `install/cache` | Symbolic link | `~/.bun/bin` stays on the internal disk. |
+| Bun | `install/cache` | Symbolic link | `~/.bun/bin` stays on the internal disk. `BUN_INSTALL` names the install root. |
 | uv | Cache and Python toolchains | Symbolic link | Cross-volume virtual environments use copies. |
 | pip | Cache | `pip config set global.cache-dir` | Exodrive uses the official pip setting. |
 | Docker (OrbStack) | VM data and images | `data_dir` in `~/.orbstack/config.json` | Stop OrbStack first. |
-| Docker Desktop | `Docker.raw` | Symbolic link to the file | Stop Docker Desktop first. |
+| Docker Desktop | `Docker.raw`, or `Docker.qcow2` before version 4.15 | Symbolic link to the file | Stop Docker Desktop first. |
 | Colima | VM disks | Symbolic link to `~/.colima` | Run `colima stop` first. |
 | Orphans | Local caches left by an earlier change | `exodrive orphans --clean` deletes them | Run `exodrive orphans` first to review the list. |
 
@@ -214,17 +215,24 @@ exodrive check
 6. To delete an abandoned cache, press **Delete** on its row. Confirm the
    delete. This action cannot be undone.
 
+During a move the footer names the step. It reads `Moving 2 of 4: npm cache,
+45%` while Exodrive copies. It reads `Checking 2 of 4: npm cache, 45%` while
+Exodrive compares the copy.
+
 Every row names how Exodrive reaches the copy: a tool configuration, a symbolic
 link, or a manual step. The confirmation counts the selected caches by method.
 
 The window shows local, migrated, and abandoned bytes. It updates the list after
-every scan, every move, and every rollback. The first run shows three steps. A
-chosen folder shows its filesystem and free space before you move anything.
+every scan, every move, and every rollback. The first run shows three steps, and
+names the external volumes that are connected. With none connected it says so;
+connect a volume, then press Browse. A chosen folder shows its filesystem and
+free space before you move anything.
 
 A cache that Exodrive cannot move shows the state Blocked and the reason. Yarn 2
 and later are blocked: they read `cacheFolder` from each project's
 `.yarnrc.yml`, so a global move does not reach them. Delete that cache, or keep
-it.
+it. A cache is also blocked when its tool does not report the cache folder. Put
+the tool on PATH, then press Rescan Caches.
 
 ## The ledger
 

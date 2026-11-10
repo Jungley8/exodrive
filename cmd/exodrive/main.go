@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"exodrive/internal/core"
+	"exodrive/internal/fsutil"
 	"exodrive/internal/plugins"
 	"exodrive/internal/ui"
 )
@@ -257,8 +258,19 @@ func runMigrate(args []string) {
 	for _, it := range candidates {
 		fmt.Printf("==> Migrating %s (%s, %s) by %s...\n", it.Title, it.CurrentPath, ui.FormatBytes(it.SizeBytes), ui.RedirectLabel(it.RedirectMethod))
 
-		err := engine.Migrate(ctx, it, *target, func(copied, total int64) {
-			ui.RenderProgressBar(it.ToolName, copied, total)
+		checking := false
+		err := engine.Migrate(ctx, it, *target, fsutil.MigrateProgress{
+			Copy: func(copied, total int64) {
+				ui.RenderProgressBar(it.ToolName, copied, total)
+			},
+			Verify: func(done, total int64) {
+				if !checking {
+					checking = true
+					fmt.Println()
+					fmt.Println("    Checking the copy...")
+				}
+				ui.RenderProgressBar(it.ToolName+" check", done, total)
+			},
 		})
 		fmt.Println()
 

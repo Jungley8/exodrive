@@ -106,16 +106,16 @@ func (p *GoProvider) PreflightCheck(ctx context.Context, item core.CacheItem, ta
 	return envOverride("GOCACHE")
 }
 
-func (p *GoProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (p *GoProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	dest := filepath.Join(targetRoot, item.TargetSubdir)
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
 	}
 
-	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("copy %s: %w", item.Title, err)
 	}
-	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
 		return fmt.Errorf("%s: %w", item.Title, err)
 	}
 

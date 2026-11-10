@@ -13,6 +13,15 @@ import (
 // CopyProgressCallback reports the cumulative copied bytes.
 type CopyProgressCallback func(copiedBytes, totalBytes int64)
 
+// MigrateProgress holds the callbacks for the two steps that report progress.
+// Either field may be nil.
+type MigrateProgress struct {
+	// Copy reports the bytes copied.
+	Copy CopyProgressCallback
+	// Verify reports the bytes verified.
+	Verify CopyProgressCallback
+}
+
 // CopyDir recursively copies src directory to dst directory.
 // It preserves each entry's permissions and modification time. A failed copy
 // leaves the partial destination in place for inspection; callers must not
@@ -275,6 +284,11 @@ func copyFile(src, dst string, info os.FileInfo) (err error) {
 // targets. A provider calls it before it replaces the source with a link. It
 // reads every file in both trees, so a damaged byte stops the migration.
 func VerifyTree(src, dst string) error {
+	return VerifyTreeProgress(src, dst, nil)
+}
+
+// VerifyTreeProgress runs the VerifyTree check and reports the bytes verified.
+func VerifyTreeProgress(src, dst string, progress CopyProgressCallback) error {
 	srcTree, err := scanTree(src)
 	if err != nil {
 		return err
@@ -289,7 +303,7 @@ func VerifyTree(src, dst string) error {
 	if srcTree.bytes != dstTree.bytes {
 		return fmt.Errorf("verification failed: %s has %d bytes, %s has %d", dst, dstTree.bytes, src, srcTree.bytes)
 	}
-	if err := compareContent(src, dst, srcTree.sizes, dstTree.sizes); err != nil {
+	if err := compareContent(src, dst, srcTree, dstTree, progress); err != nil {
 		return err
 	}
 	if len(srcTree.links) != len(dstTree.links) {
@@ -358,9 +372,10 @@ func scanTree(root string) (treeSummary, error) {
 // compareContent reads every regular file in both trees and compares the
 // bytes. File count and total size alone pass a copy that swapped one file for
 // another of the same length.
-func compareContent(src, dst string, srcSizes, dstSizes map[string]int64) error {
-	for rel, size := range srcSizes {
-		copiedSize, ok := dstSizes[rel]
+func compareContent(src, dst string, srcTree, dstTree treeSummary, progress CopyProgressCallback) error {
+	var verified int64
+	for rel, size := range srcTree.sizes {
+		copiedSize, ok := dstTree.sizes[rel]
 		if !ok {
 			return fmt.Errorf("verification failed: %s is missing the file %s", dst, rel)
 		}
@@ -373,6 +388,10 @@ func compareContent(src, dst string, srcSizes, dstSizes map[string]int64) error 
 		}
 		if !same {
 			return fmt.Errorf("verification failed: %s differs from the source file", filepath.Join(dst, rel))
+		}
+		verified += size
+		if progress != nil {
+			progress(verified, srcTree.bytes)
 		}
 	}
 	return nil

@@ -1,11 +1,9 @@
 package plugins
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -27,19 +25,19 @@ func (p *UVProvider) Name() string {
 func (p *UVProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	var items []core.CacheItem
 
-	var cacheDir string
-	cmd := exec.CommandContext(ctx, "uv", "cache", "dir")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err == nil {
-		cacheDir = strings.TrimSpace(out.String())
-	}
+	cacheDir, answered := toolQuery(ctx, "uv", "cache", "dir")
 
 	home, _ := os.UserHomeDir()
 	candidatePaths := []string{
 		cacheDir,
 		filepath.Join(home, "Library", "Caches", "uv"),
 		filepath.Join(home, ".cache", "uv"),
+	}
+
+	blocked := ""
+	if !answered {
+		// A guessed folder would move a cache that uv does not read.
+		blocked = toolMissingReason("uv", "uv cache dir")
 	}
 
 	for _, path := range candidatePaths {
@@ -65,6 +63,7 @@ func (p *UVProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 				RedirectMethod: core.RedirectSymlink,
 				TargetSubdir:   "uv-cache",
 				Warning:        "Cross-disk notice: venv creation uses copy fallback across separate volumes.",
+				BlockedReason:  blocked,
 			})
 			break
 		}
@@ -109,7 +108,7 @@ func (p *UVProvider) PreflightCheck(ctx context.Context, item core.CacheItem, ta
 	return envOverride("UV_CACHE_DIR")
 }
 
-func (p *UVProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (p *UVProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	dest := filepath.Join(targetRoot, item.TargetSubdir)
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
@@ -119,10 +118,10 @@ func (p *UVProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoo
 		return fmt.Errorf("%s is already a symlink: nothing to migrate", item.CurrentPath)
 	}
 
-	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("copy uv %s: %w", item.Title, err)
 	}
-	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
 		return fmt.Errorf("uv %s: %w", item.Title, err)
 	}
 

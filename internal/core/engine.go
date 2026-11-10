@@ -22,7 +22,7 @@ type ProviderAccessor interface {
 	Name() string
 	Detect(ctx context.Context) ([]CacheItem, error)
 	PreflightCheck(ctx context.Context, item CacheItem, targetRoot string) error
-	Migrate(ctx context.Context, item CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error
+	Migrate(ctx context.Context, item CacheItem, targetRoot string, progress fsutil.MigrateProgress) error
 	Rollback(ctx context.Context, item CacheItem) error
 }
 
@@ -99,6 +99,9 @@ type TargetInfo struct {
 // refuses a folder it cannot read and a filesystem outside the allowlist, so
 // the window and the command line show the same reason.
 func (e *Engine) CheckTarget(targetRoot string) (TargetInfo, error) {
+	if info, err := os.Stat(targetRoot); err != nil || !info.IsDir() {
+		return TargetInfo{}, targetMissingError(targetRoot)
+	}
 	freeBytes, totalBytes, fstype, err := fsutil.GetDiskUsage(targetRoot)
 	if err != nil {
 		return TargetInfo{}, fmt.Errorf("target folder is not available: %w", err)
@@ -119,6 +122,10 @@ func (e *Engine) Preflight(ctx context.Context, item CacheItem, targetRoot strin
 		return err
 	}
 
+	if info, statErr := os.Stat(targetRoot); statErr != nil || !info.IsDir() {
+		return targetMissingError(targetRoot)
+	}
+
 	freeBytes, _, fstype, err := fsutil.GetDiskUsage(targetRoot)
 	if err != nil {
 		return fmt.Errorf("target volume inaccessible: %w", err)
@@ -137,7 +144,7 @@ func (e *Engine) Preflight(ctx context.Context, item CacheItem, targetRoot strin
 }
 
 // Migrate executes migration for the item matching itemID.
-func (e *Engine) Migrate(ctx context.Context, item CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (e *Engine) Migrate(ctx context.Context, item CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	p, err := e.provider(item)
 	if err != nil {
 		return err
@@ -155,7 +162,7 @@ func (e *Engine) Migrate(ctx context.Context, item CacheItem, targetRoot string,
 		return fmt.Errorf("preflight failed: %w", err)
 	}
 
-	return p.Migrate(ctx, item, targetRoot, onProgress)
+	return p.Migrate(ctx, item, targetRoot, progress)
 }
 
 // Rollback restores a previously migrated item using its manifest record.

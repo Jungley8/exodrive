@@ -1,7 +1,6 @@
 package plugins
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -30,6 +29,8 @@ func (p *YarnProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 
 	version := yarnVersion(ctx)
 	major := yarnMajor(version)
+	// An empty version means yarn did not answer, so the layout is unknown.
+	answered := version != ""
 
 	// Yarn 1 keeps one global cache and reads it from cache-folder. Yarn 2 and
 	// later keep the cacheFolder in a project .yarnrc.yml, so a global switch
@@ -37,13 +38,8 @@ func (p *YarnProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	var cacheDir string
 	if major >= 2 {
 		cacheDir = yarnConfigValue(ctx, "cacheFolder")
-	} else {
-		cmd := exec.CommandContext(ctx, "yarn", "cache", "dir")
-		var out bytes.Buffer
-		cmd.Stdout = &out
-		if err := cmd.Run(); err == nil {
-			cacheDir = strings.TrimSpace(out.String())
-		}
+	} else if answered {
+		cacheDir, _ = toolQuery(ctx, "yarn", "cache", "dir")
 	}
 
 	home, _ := os.UserHomeDir()
@@ -69,6 +65,9 @@ func (p *YarnProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			blocked := ""
 			if major >= 2 {
 				blocked = fmt.Sprintf("Yarn %s reads cacheFolder from each project's .yarnrc.yml, so a global move does not reach it. Delete this cache, or keep it.", version)
+			} else if !answered {
+				// A guessed folder would move a cache that yarn does not read.
+				blocked = toolMissingReason("yarn", "yarn --version")
 			}
 
 			items = append(items, core.CacheItem{
@@ -143,16 +142,16 @@ func (p *YarnProvider) PreflightCheck(ctx context.Context, item core.CacheItem, 
 	return envOverride("YARN_CACHE_FOLDER")
 }
 
-func (p *YarnProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (p *YarnProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	dest := filepath.Join(targetRoot, item.TargetSubdir)
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
 	}
 
-	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("copy yarn cache: %w", err)
 	}
-	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
 		return fmt.Errorf("yarn cache: %w", err)
 	}
 

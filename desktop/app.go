@@ -14,6 +14,7 @@ import (
 	"github.com/oneo-me/nsgo/ui/filepicker"
 
 	exoCore "exodrive/internal/core"
+	"exodrive/internal/fsutil"
 	"exodrive/internal/plugins"
 	internalUi "exodrive/internal/ui"
 )
@@ -44,6 +45,8 @@ type AppState struct {
 	TargetInfo *core.Signal[string]
 	// MoveCurrent is the title of the cache that the window moves now.
 	MoveCurrent *core.Signal[string]
+	// MovePhase names the step that runs now: copy or verify.
+	MovePhase *core.Signal[exoCore.MovePhase]
 	// MoveDone counts the finished moves of this run; MoveTotal is its size.
 	MoveDone  *core.Signal[int]
 	MoveTotal *core.Signal[int]
@@ -98,6 +101,7 @@ func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
 		CleanTarget:     core.NewSignal(cx, ""),
 		TargetInfo:      core.NewSignal(cx, ""),
 		MoveCurrent:     core.NewSignal(cx, ""),
+		MovePhase:       core.NewSignal(cx, exoCore.PhaseCopy),
 		MoveDone:        core.NewSignal(cx, 0),
 		MoveTotal:       core.NewSignal(cx, 0),
 		CancelRequested: core.NewSignal(cx, false),
@@ -354,9 +358,29 @@ func renderGuide(state *AppState) core.Node {
 					guideStep("1", "Choose an empty folder on the external volume."),
 					guideStep("2", "Check the caches and the space the move frees."),
 					guideStep("3", "Press Migrate, then confirm."),
+					core.Text{
+						Class:       "text-xs text-slate-500 dark:text-zinc-400 pt-1",
+						TestID:      "guide-volumes",
+						ContentFunc: func() string { return volumeHint() },
+					},
 				},
 			}
 		},
+	}
+}
+
+// volumeHint tells the first-run guide whether an external volume is ready.
+// A missing volume is a dead end without it, because the folder picker shows
+// only the internal disk.
+func volumeHint() string {
+	volumes := exoCore.ExternalVolumes()
+	switch len(volumes) {
+	case 0:
+		return "No external volume is connected. Connect one, then press Browse."
+	case 1:
+		return fmt.Sprintf("External volume ready: %s.", volumes[0])
+	default:
+		return fmt.Sprintf("%d external volumes are ready: %s.", len(volumes), strings.Join(volumes, ", "))
 	}
 }
 
@@ -553,6 +577,14 @@ func progressText(state *AppState) string {
 		current := state.MoveCurrent.Get()
 		if total == 0 {
 			return "Moving the caches..."
+		}
+		// A press must show an answer at once, even while the current cache
+		// finishes.
+		if state.CancelRequested.Get() {
+			return fmt.Sprintf("Stopping after cache %d of %d.", done+1, total)
+		}
+		if state.MovePhase.Get() == exoCore.PhaseVerify {
+			return fmt.Sprintf("Checking %d of %d: %s, %.0f%%", done+1, total, current, state.ProgressPct.Get()*100)
 		}
 		return fmt.Sprintf("Moving %d of %d: %s, %.0f%%", done+1, total, current, state.ProgressPct.Get()*100)
 	case state.IsRollingBack.Get():
@@ -863,23 +895,40 @@ func triggerMigration(state *AppState) {
 				state.MoveCurrent.Set(it.Title)
 				state.MoveDone.Set(index)
 				state.ProgressPct.Set(0)
+				state.MovePhase.Set(exoCore.PhaseCopy)
 			})
 			// Report 1% steps: a large file copies in 1 MiB chunks and would
 			// otherwise post thousands of updates.
 			lastPct := float32(-1)
-			err := state.Engine.Migrate(ctx, it, targetDir, func(copied, total int64) {
-				if total <= 0 {
-					return
+			lastPhase := exoCore.PhaseCopy
+			report := func(phase exoCore.MovePhase) fsutil.CopyProgressCallback {
+				return func(done, total int64) {
+					if total <= 0 {
+						return
+					}
+					pct := float32(done) / float32(total)
+					if pct > 1 {
+						pct = 1
+					}
+					// Each step starts at 0, so its first percent shows even
+					// when the copy ended at 100.
+					if phase != lastPhase {
+						lastPhase = phase
+						lastPct = -1
+					}
+					if pct-lastPct < 0.01 && pct < 1 {
+						return
+					}
+					lastPct = pct
+					state.Root.Post(func() {
+						state.MovePhase.Set(phase)
+						state.ProgressPct.Set(pct)
+					})
 				}
-				pct := float32(copied) / float32(total)
-				if pct > 1 {
-					pct = 1
-				}
-				if pct-lastPct < 0.01 && pct < 1 {
-					return
-				}
-				lastPct = pct
-				state.Root.Post(func() { state.ProgressPct.Set(pct) })
+			}
+			err := state.Engine.Migrate(ctx, it, targetDir, fsutil.MigrateProgress{
+				Copy:   report(exoCore.PhaseCopy),
+				Verify: report(exoCore.PhaseVerify),
 			})
 			if err != nil {
 				errs = append(errs, fmt.Sprintf("%s: %v", it.Title, err))

@@ -21,6 +21,16 @@ const (
 	RedirectManual       RedirectMethod = "manual"        // Guided manual configuration
 )
 
+// MovePhase names the step of a migration that runs now.
+type MovePhase string
+
+const (
+	// PhaseCopy copies the cache to the target volume.
+	PhaseCopy MovePhase = "copy"
+	// PhaseVerify reads both trees and compares the content.
+	PhaseVerify MovePhase = "verify"
+)
+
 // CacheItem represents a single developer cache entity.
 type CacheItem struct {
 	ID             string         `json:"id"`

@@ -58,11 +58,12 @@ type Provider interface {
 4. The provider copies the data with `fsutil.CopyDir` or `fsutil.CopyFile`.
    Both preserve the file mode and the modification time. `CopyDir` restores
    directory modes and times after the copy.
-5. The provider calls `fsutil.VerifyTree`. It reads every regular file in both
-   trees and compares the bytes by SHA-256. It also compares the file count,
-   the per-file sizes, and every symbolic link with its target. A single
-   different byte stops the migration before any switch. A single-file copy
-   goes through `fsutil.VerifyFile`, which makes the same comparison.
+5. The provider calls `fsutil.VerifyTreeProgress`. It reads every regular file
+   in both trees and compares the bytes by SHA-256. It also compares the file
+   count, the per-file sizes, and every symbolic link with its target. A single
+   different byte stops the migration before any switch. The check reports its
+   progress through `MigrateProgress.Verify`. A single-file copy goes through
+   `fsutil.VerifyFile`, which makes the same comparison.
    `CopyDir` refuses a destination that is not empty, is a symbolic link, or is
    a file, because a merge would overwrite data the copy does not own.
 6. The provider calls `core.RecordMigration`. The record exists before the
@@ -180,6 +181,30 @@ and return an error with the record intact.
       would block. `CopyDir` and `VerifyTree` refuse such a tree by path.
     - The user stops the tool that owns the file, then runs the migration
       again.
+13. **Tool answers for its own path**:
+    - npm, pip, yarn, and uv report their cache folder through their own
+      command: `npm config get cache`, `pip cache dir`, `yarn cache dir`,
+      `uv cache dir`. Each reads a configuration file that can name any folder.
+    - Exodrive moves the folder that the tool reports. It never moves a guessed
+      folder, because the tool would keep reading the other one.
+    - When no command answers, the item carries `BlockedReason` with the
+      command and the step that fixes it. A device may hold `pip`, `pip3`, or
+      only `python3 -m pip`; Exodrive asks each in turn.
+    - bun prints its cache only inside a project, so Exodrive takes the folder
+      from `BUN_INSTALL`, or `~/.bun` when the variable is unset. `bun pm cache`
+      answers first when it can.
+    - The tool version decides the layout. Yarn 2 and later are blocked (item
+      9). Docker Desktop 4.15 and later hold `Docker.raw`; earlier versions
+      hold `Docker.qcow2`. Exodrive detects both names.
+14. **Target folder check**:
+    - `Engine.CheckTarget` and `Engine.Preflight` refuse a folder that does not
+      exist.
+    - A folder under the volumes root whose volume is missing reports a
+      disconnected volume, not a missing folder. The user connects the volume,
+      then checks again.
+    - The window names the mounted external volumes on the first run. With none
+      connected, it says so, because the folder picker shows only the internal
+      disk.
 
 ## 4. Failure modes
 
@@ -190,6 +215,9 @@ and return an error with the record intact.
 | Tool is running | Preflight error, nothing copied |
 | Process table unreadable | Preflight error, nothing copied |
 | Environment variable pins the cache path | Preflight error, nothing copied |
+| Tool does not answer its path query | Item shows Blocked, nothing copied |
+| Target folder does not exist | Preflight error, nothing copied |
+| External volume is not connected | Check reports the volume, Preflight error |
 | Copy fails | Error, local data intact |
 | Cache holds a socket, a FIFO, or a device file | Error, local data intact |
 | Verification fails | Error, local data intact, partial copy stays for inspection |
@@ -224,10 +252,15 @@ and return an error with the record intact.
 - After the target changes, `Engine.CheckTarget` reports the filesystem and the
   free space, or the reason the folder fails. The window shows that line under
   the field and drops a result that a newer edit made stale.
-- The footer names the move that runs: `Moving 2 of 4: <title>, 45%`.
+- The footer names the move that runs: `Moving 2 of 4: <title>, 45%`. During
+  the check step it reads `Checking 2 of 4: <title>, 45%`, so a long check does
+  not look frozen.
+- The first-run guide names the external volumes. With none connected, it says
+  `No external volume is connected. Connect one, then press Browse.`
 - A move shows a Cancel button. Cancel stops the run after the cache that is
   copying now, then reports how many caches moved. A finished cache keeps its
-  record.
+  record. The footer reads `Stopping after cache 2 of 4.` as soon as the press
+  lands, so the press has an answer before the current cache ends.
 - Escape, or a press outside a confirmation, closes it and reports that
   nothing changed.
 - Progress comes from the provider's copy callback, posted to the UI thread
@@ -247,6 +280,8 @@ and return an error with the record intact.
   every selected cache is blocked, it exits 1. `--dry-run` runs every check
   and prints the plan. It copies no data, switches no tool, and writes no
   record. A blocked item makes the command exit 1.
+- A move prints the copy progress bar, then `Checking the copy...` with a
+  second bar. Both bars read the same source size.
 - `rollback <item>` restores one cache and removes its record.
 - `orphans [--clean]` lists or deletes abandoned caches.
 - `version` prints the build version. A release build shows its number with a

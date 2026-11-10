@@ -1,11 +1,9 @@
 package plugins
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -27,17 +25,14 @@ func (p *BunProvider) Name() string {
 func (p *BunProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	var items []core.CacheItem
 
-	var cacheDir string
-	cmd := exec.CommandContext(ctx, "bun", "pm", "cache")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err == nil {
-		cacheDir = strings.TrimSpace(out.String())
-	}
+	// bun prints its cache only inside a project, so Exodrive reads the install
+	// root instead. BUN_INSTALL names it; the default is ~/.bun.
+	cacheDir, _ := toolQuery(ctx, "bun", "pm", "cache")
 
 	home, _ := os.UserHomeDir()
 	candidatePaths := []string{
 		cacheDir,
+		filepath.Join(bunInstallRoot(home), "install", "cache"),
 		filepath.Join(home, ".bun", "install", "cache"),
 		filepath.Join(home, "Library", "Caches", "bun"),
 	}
@@ -76,6 +71,15 @@ func (p *BunProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	return items, nil
 }
 
+// bunInstallRoot returns the folder that holds the bun install. BUN_INSTALL
+// names it, and ~/.bun is the default.
+func bunInstallRoot(home string) string {
+	if install := os.Getenv("BUN_INSTALL"); install != "" {
+		return install
+	}
+	return filepath.Join(home, ".bun")
+}
+
 func (p *BunProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
 	running, err := fsutil.CheckRunningProcesses("bun")
 	if err != nil {
@@ -89,7 +93,7 @@ func (p *BunProvider) PreflightCheck(ctx context.Context, item core.CacheItem, t
 	return envOverride("BUN_INSTALL_CACHE_DIR")
 }
 
-func (p *BunProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (p *BunProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	dest := filepath.Join(targetRoot, item.TargetSubdir)
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
@@ -99,10 +103,10 @@ func (p *BunProvider) Migrate(ctx context.Context, item core.CacheItem, targetRo
 		return fmt.Errorf("%s is already a symlink: nothing to migrate", item.CurrentPath)
 	}
 
-	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("copy bun cache: %w", err)
 	}
-	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
 		return fmt.Errorf("bun cache: %w", err)
 	}
 

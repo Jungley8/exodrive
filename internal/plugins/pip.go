@@ -1,11 +1,9 @@
 package plugins
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -28,11 +26,18 @@ func (p *PipProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	var items []core.CacheItem
 
 	var cacheDir string
-	cmd := exec.CommandContext(ctx, "pip", "cache", "dir")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err == nil {
-		cacheDir = strings.TrimSpace(out.String())
+	answered := false
+	// pip, pip3, and python3 -m pip name the same tool. A ready-installed pip
+	// may answer through only one of them.
+	for _, query := range [][]string{
+		{"pip", "cache", "dir"},
+		{"pip3", "cache", "dir"},
+		{"python3", "-m", "pip", "cache", "dir"},
+	} {
+		if path, ok := toolQuery(ctx, query[0], query[1:]...); ok {
+			cacheDir, answered = path, true
+			break
+		}
 	}
 
 	home, _ := os.UserHomeDir()
@@ -40,6 +45,12 @@ func (p *PipProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 		cacheDir,
 		filepath.Join(home, "Library", "Caches", "pip"),
 		filepath.Join(home, ".cache", "pip"),
+	}
+
+	blocked := ""
+	if !answered {
+		// A guessed folder would move a cache that pip does not read.
+		blocked = toolMissingReason("pip", "pip cache dir")
 	}
 
 	seen := make(map[string]bool)
@@ -57,6 +68,7 @@ func (p *PipProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			items = append(items, core.CacheItem{
 				ID:             "pip.cache",
 				ToolName:       "pip",
+				ToolVersion:    toolVersion(ctx, "pip"),
 				Title:          "Pip Cache",
 				Category:       core.CategoryPackageStore,
 				CurrentPath:    path,
@@ -67,6 +79,7 @@ func (p *PipProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 				IsSymlink:      isSymlink,
 				RedirectMethod: core.RedirectNativeConfig,
 				TargetSubdir:   "pip-cache",
+				BlockedReason:  blocked,
 			})
 			break
 		}
@@ -86,16 +99,16 @@ func (p *PipProvider) PreflightCheck(ctx context.Context, item core.CacheItem, t
 	return envOverride("PIP_CACHE_DIR")
 }
 
-func (p *PipProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+func (p *PipProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	dest := filepath.Join(targetRoot, item.TargetSubdir)
 	if err := os.MkdirAll(dest, 0755); err != nil {
 		return err
 	}
 
-	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, onProgress); err != nil {
+	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("copy pip cache: %w", err)
 	}
-	if err := fsutil.VerifyTree(item.CurrentPath, dest); err != nil {
+	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
 		return fmt.Errorf("pip cache: %w", err)
 	}
 
