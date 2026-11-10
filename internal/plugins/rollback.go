@@ -148,14 +148,9 @@ func stageRestore(destination, original string) (staging string, err error) {
 			_ = os.RemoveAll(staging)
 			return "", fmt.Errorf("rollback: copy %s back: %w", destination, err)
 		}
-		staged, statErr := os.Stat(staging)
-		if statErr != nil {
+		if err := fsutil.VerifyFile(destination, staging); err != nil {
 			_ = os.RemoveAll(staging)
-			return "", fmt.Errorf("rollback: %w", statErr)
-		}
-		if staged.Size() != info.Size() {
-			_ = os.RemoveAll(staging)
-			return "", fmt.Errorf("rollback: copied %d bytes, expected %d", staged.Size(), info.Size())
+			return "", fmt.Errorf("rollback: %w", err)
 		}
 	}
 	return staging, nil

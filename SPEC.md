@@ -58,11 +58,13 @@ type Provider interface {
 4. The provider copies the data with `fsutil.CopyDir` or `fsutil.CopyFile`.
    Both preserve the file mode and the modification time. `CopyDir` restores
    directory modes and times after the copy.
-5. The provider calls `fsutil.VerifyTree`. It compares the regular-file count,
-   the total size, and every symbolic link with its target in both trees. A
-   mismatch stops the migration before any switch. `CopyDir` refuses a
-   destination that is not empty, is a symbolic link, or is a file, because a
-   merge would overwrite data the copy does not own.
+5. The provider calls `fsutil.VerifyTree`. It reads every regular file in both
+   trees and compares the bytes by SHA-256. It also compares the file count,
+   the per-file sizes, and every symbolic link with its target. A single
+   different byte stops the migration before any switch. A single-file copy
+   goes through `fsutil.VerifyFile`, which makes the same comparison.
+   `CopyDir` refuses a destination that is not empty, is a symbolic link, or is
+   a file, because a merge would overwrite data the copy does not own.
 6. The provider calls `core.RecordMigration`. The record exists before the
    switch, so a process that dies after the switch still has a record. The
    ledger refuses a second record for the same item ID.
@@ -163,6 +165,21 @@ and return an error with the record intact.
     - Both paths must be absolute. They must differ, must not nest, and the
       destination must not be the root, the home directory, or a path with
       fewer than three segments below `/`.
+11. **Content verification**:
+    - `VerifyTree` reads every regular file in the source tree and in the copy.
+      It compares the SHA-256 digests. A missing file, a per-file size
+      difference, or a different digest is an error.
+    - File count and total size alone pass a copy that damaged a byte, or that
+      swapped two files of the same length. Exodrive does not rely on them.
+    - `VerifyFile` checks a single copied file the same way. The Docker image
+      file and the rollback staging file use it.
+    - Verification reads both trees. A copy of a large cache therefore takes
+      about the time of a second copy before the switch runs.
+12. **Special files**:
+    - A socket, a FIFO, or a device file cannot be copied or read, and a read
+      would block. `CopyDir` and `VerifyTree` refuse such a tree by path.
+    - The user stops the tool that owns the file, then runs the migration
+      again.
 
 ## 4. Failure modes
 
@@ -174,6 +191,7 @@ and return an error with the record intact.
 | Process table unreadable | Preflight error, nothing copied |
 | Environment variable pins the cache path | Preflight error, nothing copied |
 | Copy fails | Error, local data intact |
+| Cache holds a socket, a FIFO, or a device file | Error, local data intact |
 | Verification fails | Error, local data intact, partial copy stays for inspection |
 | Switch fails | Error, the ledger record is removed, the local backup is restored |
 | Ledger write fails | Error, nothing switched |

@@ -265,12 +265,8 @@ func (p *DockerProvider) migrateLinked(ctx context.Context, item core.CacheItem,
 		if err := fsutil.CopyFile(item.CurrentPath, destination, item.SizeBytes, onProgress); err != nil {
 			return fmt.Errorf("copy %s: %w", item.Title, err)
 		}
-		destInfo, err := os.Stat(destination)
-		if err != nil {
-			return err
-		}
-		if destInfo.Size() != info.Size() {
-			return fmt.Errorf("%s: copied %d bytes, expected %d", item.Title, destInfo.Size(), info.Size())
+		if err := fsutil.VerifyFile(item.CurrentPath, destination); err != nil {
+			return fmt.Errorf("%s: %w", item.Title, err)
 		}
 	}
 

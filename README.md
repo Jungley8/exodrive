@@ -24,8 +24,9 @@ Exodrive runs the same steps for every toolchain.
 
 1. **Copy.** Exodrive copies the cache to the target volume. It keeps file
    permissions and modification times.
-2. **Verify.** Exodrive compares the file count and the total size of both
-   trees. A mismatch stops the migration. The local data stays in place.
+2. **Verify.** Exodrive reads every file in both trees and compares the
+   content. A single different byte stops the migration. The local data stays
+   in place.
 3. **Record.** Exodrive writes the move to the ledger.
 4. **Switch.** Exodrive points the tool at the copy. It uses the tool's own
    configuration, or an atomic symbolic link.
@@ -70,7 +71,7 @@ Exodrive stops before it damages data. It never continues in a weaker mode.
 | Process lock | A running package manager or container engine stops the migration. Stop the tool first. |
 | Environment check | A set cache variable wins over the tool settings. Exodrive refuses the move and names the variable. Unset it, then run again. |
 | Binary isolation | Exodrive moves caches only. It never moves `~/.cargo/bin`, `~/.bun/bin`, or `$GOPATH/bin`. |
-| Verified ledger | Exodrive records a move only after the copy verifies. A rollback reads the record. A missing record stops the rollback. |
+| Verified ledger | Exodrive reads both trees and compares the content of every file. It records a move only after the copy verifies. A rollback reads the record. A missing record stops the rollback. |
 
 Exodrive also refuses a second migration of an item that the ledger already
 holds. Run `exodrive rollback <item>` first.
@@ -241,6 +242,8 @@ Keep the ledger and the external volume together. A rollback needs both.
 ## Limitations
 
 - Exodrive copies data. A large VM disk takes time and temporary space.
+- Verification reads every file in both trees. A large cache takes about the
+  time of a second copy before the switch runs.
 - A migration needs the target volume to hold one complete copy.
 - A rollback needs the migrated copy on the external volume.
 - The process lock reads the process table. A tool that starts under an unusual

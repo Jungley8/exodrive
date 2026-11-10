@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -184,6 +186,121 @@ func TestVerifyTree(t *testing.T) {
 	if err := VerifyTree(src, dst); err == nil {
 		t.Fatalf("expected VerifyTree to report a missing file")
 	}
+}
+
+// File count and total size pass a copy that damaged a byte or swapped two
+// files of the same length. VerifyTree must read the content.
+func TestVerifyTreeChecksContent(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "a.bin"), []byte("aaaa"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "b.bin"), []byte("bbbb"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("identical trees pass", func(t *testing.T) {
+		dst := t.TempDir()
+		if err := CopyDir(src, dst, 0, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := VerifyTree(src, dst); err != nil {
+			t.Fatalf("VerifyTree on identical trees failed: %v", err)
+		}
+	})
+
+	t.Run("a changed byte fails", func(t *testing.T) {
+		dst := t.TempDir()
+		if err := CopyDir(src, dst, 0, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, "a.bin"), []byte("aaab"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		err := VerifyTree(src, dst)
+		if err == nil {
+			t.Fatal("expected VerifyTree to report the changed content")
+		}
+		if !strings.Contains(err.Error(), "a.bin") {
+			t.Fatalf("error does not name the file: %v", err)
+		}
+	})
+
+	t.Run("swapped files fail", func(t *testing.T) {
+		dst := t.TempDir()
+		if err := CopyDir(src, dst, 0, nil); err != nil {
+			t.Fatal(err)
+		}
+		// The two files keep their names and sizes, so only the content reads
+		// tell them apart.
+		if err := os.WriteFile(filepath.Join(dst, "a.bin"), []byte("bbbb"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dst, "b.bin"), []byte("aaaa"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := VerifyTree(src, dst); err == nil {
+			t.Fatal("expected VerifyTree to report the swapped files")
+		}
+	})
+}
+
+// A single-file copy goes through CopyFile, so it needs the same content check.
+func TestVerifyFileChecksContent(t *testing.T) {
+	src := t.TempDir()
+	source := filepath.Join(src, "Docker.raw")
+	if err := os.WriteFile(source, []byte("vmdata"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	good := t.TempDir()
+	copied := filepath.Join(good, "Docker.raw")
+	if err := CopyFile(source, copied, 0, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyFile(source, copied); err != nil {
+		t.Fatalf("VerifyFile on an identical copy failed: %v", err)
+	}
+
+	if err := os.WriteFile(copied, []byte("vmDATA"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyFile(source, copied); err == nil {
+		t.Fatal("expected VerifyFile to report the changed content")
+	}
+}
+
+// A socket, a FIFO, or a device file cannot be copied or read. Reading one
+// would block, so the copy and the verification must refuse it by name.
+func TestSpecialFilesAreRefused(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "a.bin"), []byte("a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	pipe := filepath.Join(src, "pipe")
+	if err := syscall.Mkfifo(pipe, 0600); err != nil {
+		t.Skipf("cannot create a FIFO: %v", err)
+	}
+
+	t.Run("copy", func(t *testing.T) {
+		err := CopyDir(src, filepath.Join(t.TempDir(), "copy"), 0, nil)
+		if err == nil {
+			t.Fatal("expected CopyDir to refuse the FIFO")
+		}
+		if !strings.Contains(err.Error(), "special file") {
+			t.Fatalf("error does not name a special file: %v", err)
+		}
+	})
+
+	t.Run("verification", func(t *testing.T) {
+		err := VerifyTree(src, t.TempDir())
+		if err == nil {
+			t.Fatal("expected VerifyTree to refuse the FIFO")
+		}
+		if !strings.Contains(err.Error(), "special file") {
+			t.Fatalf("error does not name a special file: %v", err)
+		}
+	})
 }
 
 func TestCopyDirPreservesDirectoryMode(t *testing.T) {

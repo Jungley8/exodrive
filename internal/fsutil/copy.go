@@ -1,6 +1,8 @@
 package fsutil
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -98,7 +100,12 @@ func CopyDir(src, dst string, totalBytes int64, progress CopyProgressCallback) e
 			return nil
 		}
 
-		// Handle regular file.
+		// Handle regular file. A socket, a FIFO, or a device file cannot be
+		// copied or read, so the migration must not start on a tree that holds
+		// one.
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("special file %s: stop the tool that owns it, then run the migration again", path)
+		}
 		if err := copyFile(path, targetPath, info); err != nil {
 			return fmt.Errorf("copy file %s -> %s: %w", path, targetPath, err)
 		}
@@ -263,9 +270,10 @@ func copyFile(src, dst string, info os.FileInfo) (err error) {
 	return nil
 }
 
-// VerifyTree checks that dst matches src: the same regular files, the same
-// total size, and the same symbolic links with the same targets. A provider
-// calls it before it replaces the source with a link.
+// VerifyTree checks that dst matches src: the same regular files with the same
+// bytes, the same total size, and the same symbolic links with the same
+// targets. A provider calls it before it replaces the source with a link. It
+// reads every file in both trees, so a damaged byte stops the migration.
 func VerifyTree(src, dst string) error {
 	srcTree, err := scanTree(src)
 	if err != nil {
@@ -280,6 +288,9 @@ func VerifyTree(src, dst string) error {
 	}
 	if srcTree.bytes != dstTree.bytes {
 		return fmt.Errorf("verification failed: %s has %d bytes, %s has %d", dst, dstTree.bytes, src, srcTree.bytes)
+	}
+	if err := compareContent(src, dst, srcTree.sizes, dstTree.sizes); err != nil {
+		return err
 	}
 	if len(srcTree.links) != len(dstTree.links) {
 		return fmt.Errorf("verification failed: %s has %d symbolic links, %s has %d", dst, len(dstTree.links), src, len(srcTree.links))
@@ -300,12 +311,17 @@ func VerifyTree(src, dst string) error {
 type treeSummary struct {
 	files int64
 	bytes int64
+	// sizes maps the path relative to the root to the file size.
+	sizes map[string]int64
 	// links maps the path relative to the root to the link target.
 	links map[string]string
 }
 
 func scanTree(root string) (treeSummary, error) {
-	summary := treeSummary{links: make(map[string]string)}
+	summary := treeSummary{
+		sizes: make(map[string]int64),
+		links: make(map[string]string),
+	}
 	err := filepath.Walk(root, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -328,9 +344,87 @@ func scanTree(root string) (treeSummary, error) {
 		if info.IsDir() {
 			return nil
 		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("special file %s: stop the tool that owns it, then run the migration again", path)
+		}
 		summary.files++
 		summary.bytes += info.Size()
+		summary.sizes[rel] = info.Size()
 		return nil
 	})
 	return summary, err
+}
+
+// compareContent reads every regular file in both trees and compares the
+// bytes. File count and total size alone pass a copy that swapped one file for
+// another of the same length.
+func compareContent(src, dst string, srcSizes, dstSizes map[string]int64) error {
+	for rel, size := range srcSizes {
+		copiedSize, ok := dstSizes[rel]
+		if !ok {
+			return fmt.Errorf("verification failed: %s is missing the file %s", dst, rel)
+		}
+		if copiedSize != size {
+			return fmt.Errorf("verification failed: %s has %d bytes, the source file has %d", filepath.Join(dst, rel), copiedSize, size)
+		}
+		same, err := sameContent(filepath.Join(src, rel), filepath.Join(dst, rel))
+		if err != nil {
+			return fmt.Errorf("verification failed: %w", err)
+		}
+		if !same {
+			return fmt.Errorf("verification failed: %s differs from the source file", filepath.Join(dst, rel))
+		}
+	}
+	return nil
+}
+
+// VerifyFile checks that a copied file holds the same bytes as its source.
+func VerifyFile(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("verification failed: %w", err)
+	}
+	dstInfo, err := os.Stat(dst)
+	if err != nil {
+		return fmt.Errorf("verification failed: %w", err)
+	}
+	if dstInfo.Size() != srcInfo.Size() {
+		return fmt.Errorf("verification failed: %s has %d bytes, the source file has %d", dst, dstInfo.Size(), srcInfo.Size())
+	}
+	same, err := sameContent(src, dst)
+	if err != nil {
+		return fmt.Errorf("verification failed: %w", err)
+	}
+	if !same {
+		return fmt.Errorf("verification failed: %s differs from the source file", dst)
+	}
+	return nil
+}
+
+// sameContent reports whether two files hold the same bytes.
+func sameContent(a, b string) (bool, error) {
+	aSum, err := fileDigest(a)
+	if err != nil {
+		return false, err
+	}
+	bSum, err := fileDigest(b)
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(aSum, bSum), nil
+}
+
+func fileDigest(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	digest := sha256.New()
+	buf := make([]byte, 1024*1024)
+	if _, err := io.CopyBuffer(digest, file, buf); err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return digest.Sum(nil), nil
 }
