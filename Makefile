@@ -1,4 +1,5 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+RAW_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
+VERSION ?= $(if $(RAW_VERSION),$(patsubst v%,%,$(RAW_VERSION)),dev)
 BIN := bin
 
 .PHONY: all build test race vet lint fmt check install clean

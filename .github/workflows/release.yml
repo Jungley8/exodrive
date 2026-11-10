@@ -51,18 +51,16 @@ jobs:
         id: version
         shell: bash
         run: |
-          if [ -n "${{ inputs.tag }}" ]; then
-            echo "value=${GITHUB_REF_NAME:-${{ inputs.tag }}}" >> "$GITHUB_OUTPUT"
-          else
-            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          fi
+          tag="${GITHUB_REF_NAME:-${{ inputs.tag }}}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "number=${tag#v}" >> "$GITHUB_OUTPUT"
 
       - name: Build CLI
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
-          VERSION: ${{ steps.version.outputs.value }}
+          VERSION: ${{ steps.version.outputs.number }}
         run: |
           mkdir -p dist
           go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
@@ -82,10 +80,10 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          VERSION: ${{ steps.version.outputs.value }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           cp README.md README.zh.md LICENSE "dist/exodrive_${GOOS}_${GOARCH}/"
-          tar -C dist -czf "dist/exodrive_${VERSION}_${GOOS}_${GOARCH}.tar.gz" "exodrive_${GOOS}_${GOARCH}"
+          tar -C dist -czf "dist/exodrive_${TAG}_${GOOS}_${GOARCH}.tar.gz" "exodrive_${GOOS}_${GOARCH}"
 
       - uses: actions/upload-artifact@v4
         with:

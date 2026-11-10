@@ -50,7 +50,17 @@ func main() {
 }
 
 func printVersion() {
-	fmt.Printf("Exodrive v%s (%s/%s)\n", version, runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("Exodrive %s (%s/%s)\n", versionLabel(version), runtime.GOOS, runtime.GOARCH)
+}
+
+// versionLabel formats the build version for display. A release build carries
+// a number, so it gets the "v" prefix. A development build carries a commit
+// hash or "dev", and shows as it is.
+func versionLabel(v string) string {
+	if len(v) > 0 && v[0] >= '0' && v[0] <= '9' {
+		return "v" + v
+	}
+	return v
 }
 
 func printHelp() {

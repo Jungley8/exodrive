@@ -58,7 +58,8 @@ func TestCLI_Version(t *testing.T) {
 			if code != 0 {
 				t.Errorf("expected exit code 0, got %d", code)
 			}
-			if !strings.Contains(out, "Exodrive v") {
+			// The test build carries no ldflags, so the version is "dev".
+			if !strings.Contains(out, "Exodrive dev (") {
 				t.Errorf("expected version output, got: %s", out)
 			}
 		})
@@ -164,5 +165,25 @@ func TestCLI_Check_JSON(t *testing.T) {
 	var items []map[string]interface{}
 	if err := json.Unmarshal([]byte(out), &items); err != nil {
 		t.Fatalf("failed unmarshaling JSON output: %v\nOutput was: %s", err, out)
+	}
+}
+
+func TestVersionLabel(t *testing.T) {
+	cases := []struct {
+		version string
+		want    string
+	}{
+		{"0.1.0", "v0.1.0"},
+		{"1.2.3", "v1.2.3"},
+		{"v0.1.0", "v0.1.0"},
+		{"dev", "dev"},
+		{"fdc1fdd-dirty", "fdc1fdd-dirty"},
+		{"", ""},
+	}
+
+	for _, tc := range cases {
+		if got := versionLabel(tc.version); got != tc.want {
+			t.Errorf("versionLabel(%q) = %q; want %q", tc.version, got, tc.want)
+		}
 	}
 }
