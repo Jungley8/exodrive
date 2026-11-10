@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -314,5 +315,72 @@ func TestWindowDeletesAbandonedCache(t *testing.T) {
 	})
 	if _, err := os.Stat(orphanDir); !os.IsNotExist(err) {
 		t.Fatalf("the abandoned cache still exists: %v", err)
+	}
+}
+
+// A cache that Exodrive cannot move stays visible. The row explains why, and
+// the selection and the main action stay off.
+func TestWindowShowsWhyACacheCannotMove(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	blocked := exoCore.CacheItem{
+		ID:            "yarn.cache",
+		ToolName:      "yarn",
+		ToolVersion:   "4.1.0",
+		Title:         "Yarn Cache",
+		Category:      exoCore.CategoryPackageStore,
+		CurrentPath:   filepath.Join(t.TempDir(), "berry-cache"),
+		SizeBytes:     1024,
+		IsActive:      true,
+		BlockedReason: "Yarn 4.1.0 reads cacheFolder from each project file.",
+	}
+
+	app := nsgotest.Start(t, NewMain(newFakeEngine(blocked)), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Yarn Cache") })
+	app.Settle()
+
+	if !app.Exists("id:blocked-yarn.cache") {
+		t.Fatalf("the row does not show the reason:\n%s", app.Dump())
+	}
+	if app.Enabled("id:select-yarn.cache") {
+		t.Fatalf("a blocked cache is selectable:\n%s", app.Dump())
+	}
+	if badgeText(app, blocked.ID) != "Blocked" {
+		t.Fatalf("badge is %q, want Blocked", badgeText(app, blocked.ID))
+	}
+
+	app.Type("id:target", t.TempDir())
+	app.Settle()
+	if app.Enabled("id:migrate") {
+		t.Fatalf("Migrate is enabled while every cache is blocked:\n%s", app.Dump())
+	}
+}
+
+// The first run shows three steps, and the window replaces them with the volume
+// summary as soon as the user picks a folder.
+func TestWindowGuidesTheFirstRun(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	item := exoCore.CacheItem{
+		ID: "fake.cache", ToolName: "fake", Title: "Fake Cache",
+		Category: exoCore.CategoryPackageStore, CurrentPath: "/tmp/fake-cache",
+		SizeBytes: 4096, IsActive: true,
+	}
+
+	app := nsgotest.Start(t, NewMain(newFakeEngine(item)), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
+	app.Settle()
+
+	if !app.Exists("id:guide") {
+		t.Fatalf("the first run shows no steps:\n%s", app.Dump())
+	}
+
+	app.Type("id:target", t.TempDir())
+	app.WaitUntil(2*time.Second, func() bool { return !app.Exists("id:guide") })
+
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:target-info") })
+	views := app.Query("id:target-info")
+	if len(views) != 1 || !strings.HasPrefix(views[0].Text, "Ready.") {
+		t.Fatalf("target summary is %+v, want a Ready line", views)
 	}
 }

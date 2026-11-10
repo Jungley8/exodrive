@@ -68,7 +68,7 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 |---|---|---|---|
 | npm | 全局缓存 | `npm config set cache --global` | 切换成功后删除本地缓存。 |
 | pnpm | 包仓库 | `pnpm config set store-dir --global` | pnpm 使用硬链接。仓库应与项目位于同一磁盘。 |
-| yarn | 缓存目录 | `yarn config set cache-folder --global` | 只写全局配置，不改项目文件。 |
+| yarn（1.x） | 缓存目录 | `yarn config set cache-folder --global` | 只写全局配置，不改项目文件。 |
 | Cargo | `registry/` 与 `git/` | 分别建立软链接 | `~/.cargo/bin` 保留在内置磁盘。 |
 | Go | `GOCACHE`、`GOMODCACHE` | `go env -w` | 模块缓存和构建缓存都迁移。 |
 | Bun | `install/cache` | 软链接 | `~/.bun/bin` 保留在内置磁盘。 |
@@ -185,7 +185,9 @@ exodrive rollback npm.cache
 5. 要把某个缓存搬回本地，点该行的 **Roll back** 并确认。
 6. 要删除遗留的孤儿缓存，点该行的 **Delete** 并确认。删除不可撤销。
 
-窗口显示本地、已迁移、孤儿三类占用。每次扫描、迁移和回滚后，列表自动刷新。
+窗口显示本地、已迁移、孤儿三类占用。每次扫描、迁移和回滚后，列表自动刷新。首次运行显示三个步骤。选定目录后，窗口先显示该磁盘的文件系统与可用空间。
+
+Exodrive 无法迁移的缓存显示 Blocked 状态和原因。yarn 2 及更高版本会被阻止：它们的 `cacheFolder` 写在每个项目的 `.yarnrc.yml` 里，全局切换无法覆盖。可删除该缓存，或保留。
 
 ## 账本
 

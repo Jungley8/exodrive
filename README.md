@@ -81,7 +81,7 @@ holds. Run `exodrive rollback <item>` first.
 |---|---|---|---|
 | npm | Global cache | `npm config set cache --global` | Exodrive removes the local cache after the switch. |
 | pnpm | Package store | `pnpm config set store-dir --global` | pnpm uses hard links. Keep the store on the volume that holds your projects. |
-| yarn | Cache folder | `yarn config set cache-folder --global` | Exodrive writes the global config, not a project file. |
+| yarn (1.x) | Cache folder | `yarn config set cache-folder --global` | Exodrive writes the global config, not a project file. |
 | Cargo | `registry/` and `git/` | Symbolic link for each folder | `~/.cargo/bin` stays on the internal disk. |
 | Go | `GOCACHE`, `GOMODCACHE` | `go env -w` | Exodrive moves the module cache and the build cache. |
 | Bun | `install/cache` | Symbolic link | `~/.bun/bin` stays on the internal disk. |
@@ -213,7 +213,13 @@ exodrive check
    delete. This action cannot be undone.
 
 The window shows local, migrated, and abandoned bytes. It updates the list after
-every scan, every move, and every rollback.
+every scan, every move, and every rollback. The first run shows three steps. A
+chosen folder shows its filesystem and free space before you move anything.
+
+A cache that Exodrive cannot move shows the state Blocked and the reason. Yarn 2
+and later are blocked: they read `cacheFolder` from each project's
+`.yarnrc.yml`, so a global move does not reach them. Delete that cache, or keep
+it.
 
 ## The ledger
 

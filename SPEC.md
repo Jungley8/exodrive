@@ -58,9 +58,11 @@ type Provider interface {
 4. The provider copies the data with `fsutil.CopyDir` or `fsutil.CopyFile`.
    Both preserve the file mode and the modification time. `CopyDir` restores
    directory modes and times after the copy.
-5. The provider calls `fsutil.VerifyTree`. It compares the regular-file count
-   and the total size of both trees. A mismatch stops the migration before any
-   switch.
+5. The provider calls `fsutil.VerifyTree`. It compares the regular-file count,
+   the total size, and every symbolic link with its target in both trees. A
+   mismatch stops the migration before any switch. `CopyDir` refuses a
+   destination that is not empty, is a symbolic link, or is a file, because a
+   merge would overwrite data the copy does not own.
 6. The provider calls `core.RecordMigration`. The record exists before the
    switch, so a process that dies after the switch still has a record. The
    ledger refuses a second record for the same item ID.
@@ -147,6 +149,20 @@ and return an error with the record intact.
    - A recorded move whose store path is missing stops the scan with a rollback
      hint. An empty store would send pnpm to a new location without the
      packages.
+9. **Tool versions**:
+   - `CacheItem.ToolVersion` holds the version the provider read, when it reads
+     one. The store folder name carries it for pnpm. The window and `check`
+     show it.
+   - Yarn 2 and later read `cacheFolder` from each project's `.yarnrc.yml`. A
+     global switch does not reach those projects, so the item carries
+     `BlockedReason` and Exodrive refuses to move it.
+   - `BlockedReason` keeps an item visible. `Engine.Preflight` refuses it, the
+     window disables its checkbox, and every run prints the reason.
+10. **Rollback record check**:
+    - `loadRecord` validates the record before anything else runs.
+    - Both paths must be absolute. They must differ, must not nest, and the
+      destination must not be the root, the home directory, or a path with
+      fewer than three segments below `/`.
 
 ## 4. Failure modes
 
@@ -180,6 +196,14 @@ and return an error with the record intact.
 - A row that holds an abandoned cache shows a Delete button. The button names
   the path and the size, asks for confirmation, then runs
   `Engine.CleanOrphan`.
+- A row whose item carries `BlockedReason` shows the state Blocked, the reason,
+  and a disabled checkbox.
+- While no target folder is set, the window shows three steps: choose the
+  folder, check the caches, press Migrate.
+- After the target changes, `Engine.CheckTarget` reports the filesystem and the
+  free space, or the reason the folder fails. The window shows that line under
+  the field and drops a result that a newer edit made stale.
+- The footer names the move that runs: `Moving 2 of 4: <title>, 45%`.
 - Progress comes from the provider's copy callback, posted to the UI thread
   through the root scope. A Dynamic branch scope ends when the branch repaints.
 - A scan, a migration, and a rollback exclude each other. `busy` reads the
@@ -191,7 +215,9 @@ and return an error with the record intact.
 - `check` prints the detected caches. A provider that fails prints a warning;
   the other items stay usable. An unreadable ledger stops the command.
 - `preflight <item> --target` runs the same checks a migration runs first.
-- `migrate --target` moves the selected caches. `--dry-run` runs every check
+- `migrate --target` moves the selected caches. The command prints a blocked
+  cache as `[blocked] <title>: <reason>` and leaves it out of the run. When
+  every selected cache is blocked, it exits 1. `--dry-run` runs every check
   and prints the plan. It copies no data, switches no tool, and writes no
   record. A blocked item makes the command exit 1.
 - `rollback <item>` restores one cache and removes its record.

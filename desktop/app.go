@@ -39,6 +39,14 @@ type AppState struct {
 	// CleanTarget holds the abandoned item ID that waits for confirmation, or "".
 	CleanTarget *core.Signal[string]
 
+	// TargetInfo holds the volume summary, or the reason the folder fails.
+	TargetInfo *core.Signal[string]
+	// MoveCurrent is the title of the cache that the window moves now.
+	MoveCurrent *core.Signal[string]
+	// MoveDone counts the finished moves of this run; MoveTotal is its size.
+	MoveDone  *core.Signal[int]
+	MoveTotal *core.Signal[int]
+
 	PickerOpen   *core.Signal[bool]
 	ConfirmOpen  *core.Signal[bool]
 	Picker       *filepicker.State
@@ -85,6 +93,10 @@ func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
 		RollbackTarget: core.NewSignal(cx, ""),
 		IsCleaning:     core.NewSignal(cx, false),
 		CleanTarget:    core.NewSignal(cx, ""),
+		TargetInfo:     core.NewSignal(cx, ""),
+		MoveCurrent:    core.NewSignal(cx, ""),
+		MoveDone:       core.NewSignal(cx, 0),
+		MoveTotal:      core.NewSignal(cx, 0),
 		Picker:         filepicker.NewState(cx, filepicker.List, false, 0),
 		Root:           cx,
 		Engine:         engine,
@@ -101,6 +113,7 @@ func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
 			core.Dynamic(func(cx *core.Scope) core.Node { return renderStats(cx, state) }),
 			core.Dynamic(func(cx *core.Scope) core.Node { return renderToolbar(cx, state) }),
 			renderTargetRow(cx, state),
+			renderGuide(state),
 			core.Dynamic(func(cx *core.Scope) core.Node { return renderItemList(cx, state) }),
 			renderFooter(cx, state),
 			renderPicker(state),
@@ -251,26 +264,86 @@ func renderToolbar(cx *core.Scope, state *AppState) core.Node {
 
 func renderTargetRow(cx *core.Scope, state *AppState) core.Node {
 	return core.View{
+		Class: "flex-col gap-1",
+		Children: []core.Node{
+			core.View{
+				Class: "flex-row items-center gap-2",
+				Children: []core.Node{
+					core.Text{
+						Class:   "text-xs font-semibold text-slate-600 dark:text-zinc-300",
+						Content: "Target folder",
+					},
+					ui.Input{Input: core.Input{
+						Class:       "flex-1",
+						Value:       func() string { return state.TargetDir.Get() },
+						Placeholder: "Choose an empty folder on the external volume",
+						OnChange: func(text string) {
+							state.TargetDir.Set(strings.TrimSpace(text))
+							triggerTargetCheck(state)
+						},
+						TestID: "target",
+					}},
+					ui.Button{
+						Text:    "Browse...",
+						Variant: ui.ButtonSecondary,
+						Icon:    lucide.Folder,
+						OnPress: func() { state.PickerOpen.Set(true) },
+						TestID:  "browse",
+					},
+				},
+			},
+			core.Show{
+				When: func() bool { return state.TargetInfo.Get() != "" },
+				Then: func(cx *core.Scope) core.Node {
+					return core.Text{
+						ClassFunc:   func() string { return targetInfoClass(state.TargetInfo.Get()) },
+						ContentFunc: func() string { return state.TargetInfo.Get() },
+						TestID:      "target-info",
+					}
+				},
+			},
+		},
+	}
+}
+
+// targetInfoClass colors the volume summary. A problem reads in the warning
+// color, a ready folder in the calm one.
+func targetInfoClass(info string) string {
+	if strings.HasPrefix(info, "Problem:") {
+		return "text-xs text-rose-600 dark:text-rose-400"
+	}
+	return "text-xs text-emerald-600 dark:text-emerald-400"
+}
+
+// renderGuide shows the three steps while no target folder is set, so the first
+// run needs no manual.
+func renderGuide(state *AppState) core.Node {
+	return core.Show{
+		When: func() bool { return strings.TrimSpace(state.TargetDir.Get()) == "" },
+		Then: func(cx *core.Scope) core.Node {
+			return core.View{
+				Class:  "flex-col gap-1 p-3 bg-slate-100 dark:bg-zinc-800 rounded-lg",
+				TestID: "guide",
+				Children: []core.Node{
+					core.Text{
+						Class:   "text-xs font-semibold text-slate-700 dark:text-zinc-200",
+						Content: "Three steps",
+					},
+					guideStep("1", "Choose an empty folder on the external volume."),
+					guideStep("2", "Check the caches and the space the move frees."),
+					guideStep("3", "Press Migrate, then confirm."),
+				},
+			}
+		},
+	}
+}
+
+func guideStep(number, text string) core.Node {
+	return core.View{
 		Class: "flex-row items-center gap-2",
 		Children: []core.Node{
-			core.Text{
-				Class:   "text-xs font-semibold text-slate-600 dark:text-zinc-300",
-				Content: "Target folder",
-			},
-			ui.Input{Input: core.Input{
-				Class:       "flex-1",
-				Value:       func() string { return state.TargetDir.Get() },
-				Placeholder: "Choose an empty folder on the external volume",
-				OnChange:    func(text string) { state.TargetDir.Set(strings.TrimSpace(text)) },
-				TestID:      "target",
-			}},
-			ui.Button{
-				Text:    "Browse...",
-				Variant: ui.ButtonSecondary,
-				Icon:    lucide.Folder,
-				OnPress: func() { state.PickerOpen.Set(true) },
-				TestID:  "browse",
-			},
+			core.Text{Class: "text-xs font-bold text-slate-500 dark:text-zinc-400", Content: number + "."},
+			core.Text{Class: "text-xs text-slate-600 dark:text-zinc-300", Content: text},
 		},
 	}
 }
@@ -310,6 +383,8 @@ func renderItemRow(state *AppState, item func() exoCore.CacheItem) core.Node {
 			return "Migrated"
 		case !it.IsActive:
 			return "Abandoned"
+		case it.BlockedReason != "":
+			return "Blocked"
 		default:
 			return "Local SSD"
 		}
@@ -318,7 +393,7 @@ func renderItemRow(state *AppState, item func() exoCore.CacheItem) core.Node {
 		switch it := item(); {
 		case it.IsMigrated:
 			return "text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-		case !it.IsActive:
+		case !it.IsActive, it.BlockedReason != "":
 			return "text-xs px-2 py-0.5 rounded-full font-medium bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"
 		default:
 			return "text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
@@ -326,7 +401,7 @@ func renderItemRow(state *AppState, item func() exoCore.CacheItem) core.Node {
 	}
 	selectable := func() bool {
 		it := item()
-		return !it.IsMigrated && it.IsActive
+		return !it.IsMigrated && it.IsActive && it.BlockedReason == ""
 	}
 
 	return core.View{
@@ -396,7 +471,23 @@ func renderItemRow(state *AppState, item func() exoCore.CacheItem) core.Node {
 				Class:       "text-xs font-mono text-slate-400 dark:text-zinc-500 truncate",
 				ContentFunc: func() string { return item().CurrentPath },
 			},
+			renderBlockedText(item),
 			renderWarningText(item().Warning),
+		},
+	}
+}
+
+// renderBlockedText explains why Exodrive cannot move an item. A blocked row
+// stays visible, so the reason sits next to the row it belongs to.
+func renderBlockedText(item func() exoCore.CacheItem) core.Node {
+	return core.Show{
+		When: func() bool { return item().BlockedReason != "" },
+		Then: func(cx *core.Scope) core.Node {
+			return core.Text{
+				Class:       "text-xs text-rose-600 dark:text-rose-400",
+				ContentFunc: func() string { return item().BlockedReason },
+				TestID:      "blocked-" + item().ID,
+			}
 		},
 	}
 }
@@ -428,10 +519,22 @@ func renderFooter(cx *core.Scope, state *AppState) core.Node {
 }
 
 func progressText(state *AppState) string {
-	if state.IsMigrating.Get() {
-		return fmt.Sprintf("Migrating... %.0f%%", state.ProgressPct.Get()*100)
+	switch {
+	case state.IsMigrating.Get():
+		total := state.MoveTotal.Get()
+		done := state.MoveDone.Get()
+		current := state.MoveCurrent.Get()
+		if total == 0 {
+			return "Moving the caches..."
+		}
+		return fmt.Sprintf("Moving %d of %d: %s, %.0f%%", done+1, total, current, state.ProgressPct.Get()*100)
+	case state.IsRollingBack.Get():
+		return "Moving the cache back to the internal disk..."
+	case state.IsCleaning.Get():
+		return "Deleting the abandoned cache..."
+	default:
+		return "Ready."
 	}
-	return "Exodrive. Ledger keeps every migration for rollback."
 }
 
 func renderPicker(state *AppState) core.Node {
@@ -487,7 +590,7 @@ func countSelected(state *AppState) int {
 	selected := state.Selected.Get()
 	count := 0
 	for _, it := range state.Items.Get() {
-		if selected[it.ID] && !it.IsMigrated && it.IsActive {
+		if selected[it.ID] && !it.IsMigrated && it.IsActive && it.BlockedReason == "" {
 			count++
 		}
 	}
@@ -562,6 +665,31 @@ func renderCleanConfirm(state *AppState) core.Node {
 	})
 }
 
+// triggerTargetCheck reports the volume under the target folder, or the reason
+// it fails. It runs after every edit, and it drops a result that a newer edit
+// made stale.
+func triggerTargetCheck(state *AppState) {
+	target := strings.TrimSpace(state.TargetDir.Get())
+	if target == "" {
+		state.TargetInfo.Set("")
+		return
+	}
+
+	go func() {
+		info, err := state.Engine.CheckTarget(target)
+		state.Root.Post(func() {
+			if strings.TrimSpace(state.TargetDir.Get()) != target {
+				return
+			}
+			if err != nil {
+				state.TargetInfo.Set("Problem: " + err.Error())
+				return
+			}
+			state.TargetInfo.Set(fmt.Sprintf("Ready. %s. %s free.", strings.ToUpper(info.Filesystem), internalUi.FormatBytes(info.FreeBytes)))
+		})
+	}()
+}
+
 func toggleSelected(state *AppState, id string) {
 	next := make(map[string]bool, len(state.Selected.GetUntracked()))
 	for key, value := range state.Selected.GetUntracked() {
@@ -620,7 +748,7 @@ func triggerMigration(state *AppState) {
 	selected := state.Selected.Get()
 	var toMigrate []exoCore.CacheItem
 	for _, it := range state.Items.Get() {
-		if selected[it.ID] && !it.IsMigrated && it.IsActive {
+		if selected[it.ID] && !it.IsMigrated && it.IsActive && it.BlockedReason == "" {
 			toMigrate = append(toMigrate, it)
 		}
 	}
@@ -631,6 +759,9 @@ func triggerMigration(state *AppState) {
 
 	state.IsMigrating.Set(true)
 	state.ProgressPct.Set(0)
+	state.MoveTotal.Set(len(toMigrate))
+	state.MoveDone.Set(0)
+	state.MoveCurrent.Set(toMigrate[0].Title)
 	state.StatusMsg.Set(fmt.Sprintf("Migrating %d cache(s)...", len(toMigrate)))
 
 	go func() {
@@ -638,7 +769,12 @@ func triggerMigration(state *AppState) {
 		successCount := 0
 		var errs []string
 
-		for _, it := range toMigrate {
+		for index, it := range toMigrate {
+			state.Root.Post(func() {
+				state.MoveCurrent.Set(it.Title)
+				state.MoveDone.Set(index)
+				state.ProgressPct.Set(0)
+			})
 			// Report 1% steps: a large file copies in 1 MiB chunks and would
 			// otherwise post thousands of updates.
 			lastPct := float32(-1)
@@ -675,6 +811,9 @@ func triggerMigration(state *AppState) {
 			}
 			state.IsMigrating.Set(false)
 			state.ProgressPct.Set(0)
+			state.MoveTotal.Set(0)
+			state.MoveDone.Set(0)
+			state.MoveCurrent.Set("")
 			if len(errs) > 0 {
 				state.StatusMsg.Set(fmt.Sprintf("Migrated %d cache(s). %d failed: %s", successCount, len(errs), strings.Join(errs, "; ")))
 			} else {
