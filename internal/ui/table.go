@@ -22,9 +22,9 @@ func FormatBytes(b int64) string {
 
 // RenderTable prints a well-aligned CLI table for the detected items.
 func RenderTable(items []core.CacheItem) {
-	fmt.Println("\n==========================================================================================")
-	fmt.Printf("%-18s %-12s %-10s %-10s %-32s\n", "TOOL / CACHE", "CATEGORY", "SIZE", "STATUS", "LOCATION")
-	fmt.Println("------------------------------------------------------------------------------------------")
+	fmt.Println("\n====================================================================================================")
+	fmt.Printf("%-18s %-12s %-10s %-10s %-9s %-32s\n", "TOOL / CACHE", "CATEGORY", "SIZE", "STATUS", "METHOD", "LOCATION")
+	fmt.Println("----------------------------------------------------------------------------------------------------")
 
 	var totalInternal, totalMigrated int64
 
@@ -54,11 +54,12 @@ func RenderTable(items []core.CacheItem) {
 			title = truncate(item.Title+" "+item.ToolVersion, 17)
 		}
 
-		fmt.Printf("%-18s %-12s %-10s %-10s %-32s\n",
+		fmt.Printf("%-18s %-12s %-10s %-10s %-9s %-32s\n",
 			title,
 			item.Category,
 			FormatBytes(item.SizeBytes),
 			status,
+			RedirectShortLabel(item.RedirectMethod),
 			shortPath,
 		)
 		if item.BlockedReason != "" {
@@ -69,9 +70,9 @@ func RenderTable(items []core.CacheItem) {
 		}
 	}
 
-	fmt.Println("------------------------------------------------------------------------------------------")
+	fmt.Println("----------------------------------------------------------------------------------------------------")
 	fmt.Printf("Total Local SSD Cache: %s | Already on External: %s\n", FormatBytes(totalInternal), FormatBytes(totalMigrated))
-	fmt.Println("==========================================================================================")
+	fmt.Println("====================================================================================================")
 	fmt.Println()
 }
 
@@ -94,4 +95,33 @@ func RenderProgressBar(title string, copied, total int64) {
 	completed := int(float64(barLen) * (percent / 100))
 	bar := strings.Repeat("=", completed) + strings.Repeat(" ", barLen-completed)
 	fmt.Printf("\r[%s] [%s] %.1f%% (%s / %s)", title, bar, percent, FormatBytes(copied), FormatBytes(total))
+}
+
+// RedirectLabel names how Exodrive points the tool at the moved data. The
+// window and the command line use the same words.
+func RedirectLabel(method core.RedirectMethod) string {
+	switch method {
+	case core.RedirectNativeConfig:
+		return "configuration"
+	case core.RedirectSymlink:
+		return "symbolic link"
+	case core.RedirectManual:
+		return "manual step"
+	default:
+		return "unknown method"
+	}
+}
+
+// RedirectShortLabel fits the method into a table column.
+func RedirectShortLabel(method core.RedirectMethod) string {
+	switch method {
+	case core.RedirectNativeConfig:
+		return "config"
+	case core.RedirectSymlink:
+		return "symlink"
+	case core.RedirectManual:
+		return "manual"
+	default:
+		return "unknown"
+	}
 }

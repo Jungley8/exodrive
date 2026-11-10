@@ -198,6 +198,9 @@ and return an error with the record intact.
   `Engine.CleanOrphan`.
 - A row whose item carries `BlockedReason` shows the state Blocked, the reason,
   and a disabled checkbox.
+- A row names how the tool reaches its copy: `Method: configuration`,
+  `Method: symbolic link`, or `Method: manual step`. The confirmation counts
+  the selected caches by that method before the move starts.
 - While no target folder is set, the window shows three steps: choose the
   folder, check the caches, press Migrate.
 - After the target changes, `Engine.CheckTarget` reports the filesystem and the
@@ -217,8 +220,9 @@ and return an error with the record intact.
 
 ## 6. Command line contract
 
-- `check` prints the detected caches. A provider that fails prints a warning;
-  the other items stay usable. An unreadable ledger stops the command.
+- `check` prints the detected caches, the tool version, and the switch method.
+  A provider that fails prints a warning; the other items stay usable. An
+  unreadable ledger stops the command.
 - `preflight <item> --target` runs the same checks a migration runs first.
 - `migrate --target` moves the selected caches. The command prints a blocked
   cache as `[blocked] <title>: <reason>` and leaves it out of the run. When

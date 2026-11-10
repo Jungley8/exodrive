@@ -116,3 +116,42 @@ func TestRenderProgressBar(t *testing.T) {
 	RenderProgressBar("Copying", 50, 100)
 	RenderProgressBar("Copying", 150, 100) // percent > 100
 }
+
+// The table says how Exodrive points each tool at the copy, so a user can tell
+// a tool setting from a symbolic link before the move.
+func TestRenderTableShowsTheSwitchMethod(t *testing.T) {
+	items := []core.CacheItem{
+		{ID: "npm.cache", ToolName: "npm", Title: "NPM Cache", Category: core.CategoryPackageStore, CurrentPath: "/Users/x/.npm", SizeBytes: 10, IsActive: true, RedirectMethod: core.RedirectNativeConfig},
+		{ID: "cargo.registry", ToolName: "cargo", Title: "Cargo Registry", Category: core.CategoryPackageStore, CurrentPath: "/Users/x/.cargo/registry", SizeBytes: 20, IsActive: true, RedirectMethod: core.RedirectSymlink},
+		{ID: "orphan.pnpm", ToolName: "pnpm", Title: "Old PNPM", Category: core.CategoryOrphan, CurrentPath: "/Users/x/Library/Caches/pnpm", SizeBytes: 30, RedirectMethod: core.RedirectManual},
+	}
+
+	out := captureStdout(t, func() { RenderTable(items) })
+
+	for _, want := range []string{"METHOD", "config", "symlink", "manual"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("the table does not show %q:\n%s", want, out)
+		}
+	}
+}
+
+// captureStdout runs fn and returns what it printed to stdout.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	old := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = w
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	os.Stdout = old
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
+}

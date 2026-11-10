@@ -213,6 +213,9 @@ exodrive check
 6. To delete an abandoned cache, press **Delete** on its row. Confirm the
    delete. This action cannot be undone.
 
+Every row names how Exodrive reaches the copy: a tool configuration, a symbolic
+link, or a manual step. The confirmation counts the selected caches by method.
+
 The window shows local, migrated, and abandoned bytes. It updates the list after
 every scan, every move, and every rollback. The first run shows three steps. A
 chosen folder shows its filesystem and free space before you move anything.

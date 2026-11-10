@@ -255,7 +255,7 @@ func runMigrate(args []string) {
 	var reclaimedBytes int64
 
 	for _, it := range candidates {
-		fmt.Printf("==> Migrating %s (%s, %s)...\n", it.Title, it.CurrentPath, ui.FormatBytes(it.SizeBytes))
+		fmt.Printf("==> Migrating %s (%s, %s) by %s...\n", it.Title, it.CurrentPath, ui.FormatBytes(it.SizeBytes), ui.RedirectLabel(it.RedirectMethod))
 
 		err := engine.Migrate(ctx, it, *target, func(copied, total int64) {
 			ui.RenderProgressBar(it.ToolName, copied, total)
@@ -298,7 +298,7 @@ func runMigrateDryRun(ctx context.Context, engine *core.Engine, candidates []cor
 			continue
 		}
 		destination := filepath.Join(target, it.TargetSubdir)
-		fmt.Printf("[ready] %s: %s -> %s (%s)\n", it.Title, it.CurrentPath, destination, ui.FormatBytes(it.SizeBytes))
+		fmt.Printf("[ready] %s: %s -> %s (%s, by %s)\n", it.Title, it.CurrentPath, destination, ui.FormatBytes(it.SizeBytes), ui.RedirectLabel(it.RedirectMethod))
 		reclaimable += it.SizeBytes
 	}
 

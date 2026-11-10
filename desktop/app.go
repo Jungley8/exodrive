@@ -493,6 +493,11 @@ func renderItemRow(state *AppState, item func() exoCore.CacheItem) core.Node {
 				Class:       "text-xs font-mono text-slate-400 dark:text-zinc-500 truncate",
 				ContentFunc: func() string { return item().CurrentPath },
 			},
+			core.Text{
+				Class:       "text-xs text-slate-500 dark:text-zinc-400",
+				ContentFunc: func() string { return "Method: " + internalUi.RedirectLabel(item().RedirectMethod) },
+				TestID:      "method-" + id,
+			},
 			renderBlockedText(item),
 			renderWarningText(item().Warning),
 		},
@@ -597,8 +602,8 @@ func renderConfirm(cx *core.Scope, state *AppState) core.Node {
 			},
 			Title: "Move selected caches?",
 			Description: fmt.Sprintf(
-				"Exodrive copies %d cache(s) to %s, checks every copy, then removes the local copy. Run 'exodrive rollback' to move a cache back.",
-				countSelected(state), state.TargetDir.Get()),
+				"Exodrive copies %d cache(s) to %s, checks every copy, then removes the local copy.%s Run 'exodrive rollback' to move a cache back.",
+				countSelected(state), state.TargetDir.Get(), methodSummary(state)),
 			Actions: []ui.AlertAction{
 				{Text: "Cancel", Variant: ui.ButtonSecondary, TestID: "confirm-cancel",
 					OnPress: func() { state.ConfirmOpen.Set(false) }},
@@ -706,6 +711,41 @@ func renderCleanConfirm(state *AppState) core.Node {
 			TestID: "clean-dialog",
 		}
 	})
+}
+
+// methodSummary says how the selected caches reach their copy: a tool setting
+// or a symbolic link. A user needs that before the move, not after.
+func methodSummary(state *AppState) string {
+	selected := state.Selected.Get()
+	configs, links, manuals := 0, 0, 0
+	for _, it := range state.Items.Get() {
+		if !selected[it.ID] || it.IsMigrated || !it.IsActive || it.BlockedReason != "" {
+			continue
+		}
+		switch it.RedirectMethod {
+		case exoCore.RedirectNativeConfig:
+			configs++
+		case exoCore.RedirectSymlink:
+			links++
+		default:
+			manuals++
+		}
+	}
+
+	var parts []string
+	if configs > 0 {
+		parts = append(parts, fmt.Sprintf("%d by tool configuration", configs))
+	}
+	if links > 0 {
+		parts = append(parts, fmt.Sprintf("%d by symbolic link", links))
+	}
+	if manuals > 0 {
+		parts = append(parts, fmt.Sprintf("%d by a manual step", manuals))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " Exodrive switches " + strings.Join(parts, " and ") + "."
 }
 
 // triggerTargetCheck reports the volume under the target folder, or the reason

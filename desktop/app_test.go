@@ -439,3 +439,51 @@ func TestWindowStopsAfterTheCancelledMove(t *testing.T) {
 		t.Fatalf("the run did not keep the first move: %+v", m.Records)
 	}
 }
+
+// A row says how Exodrive points the tool at the copy, and the confirmation
+// counts both kinds before the move starts.
+func TestWindowShowsTheSwitchMethod(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	configItem := exoCore.CacheItem{
+		ID: "npm.cache", ToolName: "npm", Title: "NPM Global Cache",
+		Category: exoCore.CategoryPackageStore, CurrentPath: "/tmp/npm-cache",
+		SizeBytes: 1024, IsActive: true, RedirectMethod: exoCore.RedirectNativeConfig,
+	}
+	linkItem := exoCore.CacheItem{
+		ID: "cargo.registry", ToolName: "cargo", Title: "Cargo Registry",
+		Category: exoCore.CategoryPackageStore, CurrentPath: "/tmp/cargo-registry",
+		SizeBytes: 2048, IsActive: true, RedirectMethod: exoCore.RedirectSymlink,
+	}
+
+	engine := exoCore.NewEngine(&fakeProvider{name: "fake", items: []exoCore.CacheItem{configItem, linkItem}})
+	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:NPM Global Cache") })
+	app.Settle()
+
+	methodText := func(id string) string {
+		views := app.Query("id:method-" + id)
+		if len(views) != 1 {
+			t.Fatalf("row %s shows no method:\n%s", id, app.Dump())
+		}
+		return views[0].Text
+	}
+	if got := methodText("npm.cache"); got != "Method: configuration" {
+		t.Fatalf("npm method is %q", got)
+	}
+	if got := methodText("cargo.registry"); got != "Method: symbolic link" {
+		t.Fatalf("cargo method is %q", got)
+	}
+
+	app.Type("id:target", t.TempDir())
+	app.Settle()
+	app.Press("id:migrate")
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:confirm") })
+
+	dump := app.Dump()
+	for _, want := range []string{"1 by tool configuration", "1 by symbolic link"} {
+		if !strings.Contains(dump, want) {
+			t.Fatalf("the confirmation does not say %q:\n%s", want, dump)
+		}
+	}
+}
