@@ -138,6 +138,15 @@ and return an error with the record intact.
    - `CleanOrphan` accepts an absolute path only.
    - It refuses `/`, the user home directory, a top-level folder inside the home
      directory, and any path with fewer than three segments below `/`.
+8. **pnpm store layout**:
+   - `pnpm store path` reports `<store-dir>/v<N>`. pnpm adds that folder to
+     store-dir on every run.
+   - Exodrive moves the store root and keeps the version folder. The new
+     store-dir then holds `v<N>` again, so pnpm finds the packages.
+   - The store root is the unit of the move, not the version folder.
+   - A recorded move whose store path is missing stops the scan with a rollback
+     hint. An empty store would send pnpm to a new location without the
+     packages.
 
 ## 4. Failure modes
 
@@ -168,6 +177,9 @@ and return an error with the record intact.
   target folder.
 - A migrated row shows a Roll back button. The button opens a second
   confirmation, then runs `Engine.Rollback`.
+- A row that holds an abandoned cache shows a Delete button. The button names
+  the path and the size, asks for confirmation, then runs
+  `Engine.CleanOrphan`.
 - Progress comes from the provider's copy callback, posted to the UI thread
   through the root scope. A Dynamic branch scope ends when the branch repaints.
 - A scan, a migration, and a rollback exclude each other. `busy` reads the

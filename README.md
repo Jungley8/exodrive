@@ -209,6 +209,8 @@ exodrive check
 3. Press **Migrate**. Confirm the move.
 4. Read the status line. It shows the number of moved caches.
 5. To move a cache back, press **Roll back** on its row. Confirm the move.
+6. To delete an abandoned cache, press **Delete** on its row. Confirm the
+   delete. This action cannot be undone.
 
 The window shows local, migrated, and abandoned bytes. It updates the list after
 every scan, every move, and every rollback.
