@@ -45,6 +45,12 @@ jobs:
       - name: Test
         run: go test -race -count=1 ./...
 
+      - name: Bundle the window
+        if: runner.os == 'macOS'
+        run: |
+          make app
+          codesign --verify --strict bin/Exodrive.app
+
   lint:
     name: lint
     runs-on: ubuntu-latest
