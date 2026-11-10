@@ -180,7 +180,7 @@ exodrive rollback npm.cache
 
 1. 打开 `bin/exodrive-gui` 或 `Exodrive.app`。
 2. 点击 **Browse...**，选择外置磁盘上的空目录。
-3. 点击 **Migrate**，并在确认框中确认。
+3. 点击 **Migrate**，并在确认框中确认。长时间运行时可以点 **Cancel** 停止，当前这一项会先完成。
 4. 查看状态栏，其中显示已迁移的数量。
 5. 要把某个缓存搬回本地，点该行的 **Roll back** 并确认。
 6. 要删除遗留的孤儿缓存，点该行的 **Delete** 并确认。删除不可撤销。

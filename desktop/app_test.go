@@ -20,6 +20,8 @@ type fakeProvider struct {
 	name  string
 	items []exoCore.CacheItem
 	delay time.Duration
+	// migrateDelay holds each Migrate call, so a test can act while it runs.
+	migrateDelay time.Duration
 }
 
 func (f *fakeProvider) Name() string { return f.name }
@@ -36,6 +38,9 @@ func (f *fakeProvider) PreflightCheck(ctx context.Context, item exoCore.CacheIte
 }
 
 func (f *fakeProvider) Migrate(ctx context.Context, item exoCore.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error {
+	if f.migrateDelay > 0 {
+		time.Sleep(f.migrateDelay)
+	}
 	if onProgress != nil {
 		onProgress(1, 1)
 	}
@@ -382,5 +387,55 @@ func TestWindowGuidesTheFirstRun(t *testing.T) {
 	views := app.Query("id:target-info")
 	if len(views) != 1 || !strings.HasPrefix(views[0].Text, "Ready.") {
 		t.Fatalf("target summary is %+v, want a Ready line", views)
+	}
+}
+
+// A long run must stop between moves, and it must say how far it got.
+func TestWindowStopsAfterTheCancelledMove(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	first := exoCore.CacheItem{
+		ID: "fake.one", ToolName: "fake", Title: "First Cache",
+		Category: exoCore.CategoryPackageStore, CurrentPath: "/tmp/first",
+		SizeBytes: 1024, IsActive: true,
+	}
+	second := exoCore.CacheItem{
+		ID: "fake.two", ToolName: "fake", Title: "Second Cache",
+		Category: exoCore.CategoryPackageStore, CurrentPath: "/tmp/second",
+		SizeBytes: 2048, IsActive: true,
+	}
+
+	engine := exoCore.NewEngine(&fakeProvider{
+		name: "fake", items: []exoCore.CacheItem{first, second},
+		migrateDelay: 600 * time.Millisecond,
+	})
+
+	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:First Cache") })
+
+	app.Type("id:target", t.TempDir())
+	app.Settle()
+	app.Press("id:migrate")
+	app.Settle()
+	app.Press("id:confirm-move")
+
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:cancel-move") })
+	app.Press("id:cancel-move")
+
+	app.WaitUntil(3*time.Second, func() bool {
+		m, err := exoCore.LoadManifest()
+		return err == nil && len(m.Records) == 1
+	})
+	app.WaitUntil(3*time.Second, func() bool { return strings.Contains(app.Dump(), "Stopped after 1 of 2 moves") })
+
+	m, err := exoCore.LoadManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Records) != 1 {
+		t.Fatalf("the run moved %d caches, want 1", len(m.Records))
+	}
+	if _, ok := m.Records[first.ID]; !ok {
+		t.Fatalf("the run did not keep the first move: %+v", m.Records)
 	}
 }

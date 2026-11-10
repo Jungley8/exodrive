@@ -206,7 +206,8 @@ exodrive check
 
 1. Open `bin/exodrive-gui`, or `Exodrive.app`.
 2. Press **Browse...** and choose an empty folder on the external volume.
-3. Press **Migrate**. Confirm the move.
+3. Press **Migrate**. Confirm the move. A long run offers **Cancel**, which
+   stops it after the cache that is copying now.
 4. Read the status line. It shows the number of moved caches.
 5. To move a cache back, press **Roll back** on its row. Confirm the move.
 6. To delete an abandoned cache, press **Delete** on its row. Confirm the

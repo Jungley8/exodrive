@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/icons/lucide"
 	"github.com/oneo-me/nsgo/ui"
@@ -46,6 +47,8 @@ type AppState struct {
 	// MoveDone counts the finished moves of this run; MoveTotal is its size.
 	MoveDone  *core.Signal[int]
 	MoveTotal *core.Signal[int]
+	// CancelRequested asks the running move to stop after the current cache.
+	CancelRequested *core.Signal[bool]
 
 	PickerOpen   *core.Signal[bool]
 	ConfirmOpen  *core.Signal[bool]
@@ -80,26 +83,27 @@ func Root(cx *core.Scope) core.Node { return root(cx, NewEngine()) }
 
 func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
 	state := &AppState{
-		Items:          core.NewSignalFunc(cx, []exoCore.CacheItem{}, nil),
-		Selected:       core.NewSignalFunc(cx, map[string]bool{}, nil),
-		TargetDir:      core.NewSignal(cx, ""),
-		StatusMsg:      core.NewSignal(cx, "Ready. Choose a target folder, then scan."),
-		IsScanning:     core.NewSignal(cx, false),
-		IsMigrating:    core.NewSignal(cx, false),
-		ProgressPct:    core.NewSignal[float32](cx, 0),
-		PickerOpen:     core.NewSignal(cx, false),
-		ConfirmOpen:    core.NewSignal(cx, false),
-		IsRollingBack:  core.NewSignal(cx, false),
-		RollbackTarget: core.NewSignal(cx, ""),
-		IsCleaning:     core.NewSignal(cx, false),
-		CleanTarget:    core.NewSignal(cx, ""),
-		TargetInfo:     core.NewSignal(cx, ""),
-		MoveCurrent:    core.NewSignal(cx, ""),
-		MoveDone:       core.NewSignal(cx, 0),
-		MoveTotal:      core.NewSignal(cx, 0),
-		Picker:         filepicker.NewState(cx, filepicker.List, false, 0),
-		Root:           cx,
-		Engine:         engine,
+		Items:           core.NewSignalFunc(cx, []exoCore.CacheItem{}, nil),
+		Selected:        core.NewSignalFunc(cx, map[string]bool{}, nil),
+		TargetDir:       core.NewSignal(cx, ""),
+		StatusMsg:       core.NewSignal(cx, "Ready. Choose a target folder, then scan."),
+		IsScanning:      core.NewSignal(cx, false),
+		IsMigrating:     core.NewSignal(cx, false),
+		ProgressPct:     core.NewSignal[float32](cx, 0),
+		PickerOpen:      core.NewSignal(cx, false),
+		ConfirmOpen:     core.NewSignal(cx, false),
+		IsRollingBack:   core.NewSignal(cx, false),
+		RollbackTarget:  core.NewSignal(cx, ""),
+		IsCleaning:      core.NewSignal(cx, false),
+		CleanTarget:     core.NewSignal(cx, ""),
+		TargetInfo:      core.NewSignal(cx, ""),
+		MoveCurrent:     core.NewSignal(cx, ""),
+		MoveDone:        core.NewSignal(cx, 0),
+		MoveTotal:       core.NewSignal(cx, 0),
+		CancelRequested: core.NewSignal(cx, false),
+		Picker:          filepicker.NewState(cx, filepicker.List, false, 0),
+		Root:            cx,
+		Engine:          engine,
 	}
 	state.Picker.Load = loadFolder
 	state.PickerDevice, _ = os.Hostname()
@@ -250,13 +254,31 @@ func renderToolbar(cx *core.Scope, state *AppState) core.Node {
 				OnPress:  func() { triggerScan(state) },
 				TestID:   "rescan",
 			},
-			ui.Button{
-				Text:     migrateLabel,
-				Variant:  ui.ButtonPrimary,
-				Icon:     lucide.ArrowUpRight,
-				Disabled: func() bool { return busy(state) || !hasTarget || selected == 0 },
-				OnPress:  func() { state.ConfirmOpen.Set(true) },
-				TestID:   "migrate",
+			core.View{
+				Class: "flex-row items-center gap-2",
+				Children: []core.Node{
+					core.Show{
+						When: func() bool { return state.IsMigrating.Get() },
+						Then: func(cx *core.Scope) core.Node {
+							return ui.Button{
+								Text:     "Cancel",
+								Variant:  ui.ButtonSecondary,
+								Icon:     lucide.CircleX,
+								Disabled: func() bool { return state.CancelRequested.Get() },
+								OnPress:  func() { state.CancelRequested.Set(true) },
+								TestID:   "cancel-move",
+							}
+						},
+					},
+					ui.Button{
+						Text:     migrateLabel,
+						Variant:  ui.ButtonPrimary,
+						Icon:     lucide.ArrowUpRight,
+						Disabled: func() bool { return busy(state) || !hasTarget || selected == 0 },
+						OnPress:  func() { state.ConfirmOpen.Set(true) },
+						TestID:   "migrate",
+					},
+				},
 			},
 		},
 	}
@@ -565,7 +587,14 @@ func renderConfirm(cx *core.Scope, state *AppState) core.Node {
 	// in a Dynamic: a signal read at build time would not repaint.
 	return core.Dynamic(func(cx *core.Scope) core.Node {
 		return ui.AlertDialog{
-			Open:  func() bool { return state.ConfirmOpen.Get() },
+			Open: func() bool { return state.ConfirmOpen.Get() },
+			OnOpenChange: func(open bool, reason base.Reason) {
+				if open || reason == base.ReasonSelect {
+					return
+				}
+				state.ConfirmOpen.Set(false)
+				state.StatusMsg.Set("Move cancelled. Nothing changed.")
+			},
 			Title: "Move selected caches?",
 			Description: fmt.Sprintf(
 				"Exodrive copies %d cache(s) to %s, checks every copy, then removes the local copy. Run 'exodrive rollback' to move a cache back.",
@@ -613,7 +642,14 @@ func renderRollbackConfirm(state *AppState) core.Node {
 	return core.Dynamic(func(cx *core.Scope) core.Node {
 		id := state.RollbackTarget.Get()
 		return ui.AlertDialog{
-			Open:  func() bool { return state.RollbackTarget.Get() != "" },
+			Open: func() bool { return state.RollbackTarget.Get() != "" },
+			OnOpenChange: func(open bool, reason base.Reason) {
+				if open || reason == base.ReasonSelect {
+					return
+				}
+				state.RollbackTarget.Set("")
+				state.StatusMsg.Set("Rollback cancelled. Nothing changed.")
+			},
 			Title: "Move this cache back?",
 			Description: fmt.Sprintf(
 				"Exodrive copies the cache from %s back to its original place. It checks the copy, then removes the external copy. The ledger record is removed.",
@@ -651,7 +687,14 @@ func renderCleanConfirm(state *AppState) core.Node {
 				item.CurrentPath, internalUi.FormatBytes(item.SizeBytes))
 		}
 		return ui.AlertDialog{
-			Open:        func() bool { return state.CleanTarget.Get() != "" },
+			Open: func() bool { return state.CleanTarget.Get() != "" },
+			OnOpenChange: func(open bool, reason base.Reason) {
+				if open || reason == base.ReasonSelect {
+					return
+				}
+				state.CleanTarget.Set("")
+				state.StatusMsg.Set("Delete cancelled. Nothing changed.")
+			},
 			Title:       "Delete this abandoned cache?",
 			Description: description,
 			Actions: []ui.AlertAction{
@@ -758,6 +801,7 @@ func triggerMigration(state *AppState) {
 	}
 
 	state.IsMigrating.Set(true)
+	state.CancelRequested.Set(false)
 	state.ProgressPct.Set(0)
 	state.MoveTotal.Set(len(toMigrate))
 	state.MoveDone.Set(0)
@@ -767,9 +811,14 @@ func triggerMigration(state *AppState) {
 	go func() {
 		ctx := context.Background()
 		successCount := 0
+		stopped := false
 		var errs []string
 
 		for index, it := range toMigrate {
+			if state.CancelRequested.GetUntracked() {
+				stopped = true
+				break
+			}
 			state.Root.Post(func() {
 				state.MoveCurrent.Set(it.Title)
 				state.MoveDone.Set(index)
@@ -810,10 +859,15 @@ func triggerMigration(state *AppState) {
 				state.Selected.Set(map[string]bool{})
 			}
 			state.IsMigrating.Set(false)
+			state.CancelRequested.Set(false)
 			state.ProgressPct.Set(0)
 			state.MoveTotal.Set(0)
 			state.MoveDone.Set(0)
 			state.MoveCurrent.Set("")
+			if stopped {
+				state.StatusMsg.Set(fmt.Sprintf("Stopped after %d of %d moves. Press Rescan Caches to see the list.", successCount, len(toMigrate)))
+				return
+			}
 			if len(errs) > 0 {
 				state.StatusMsg.Set(fmt.Sprintf("Migrated %d cache(s). %d failed: %s", successCount, len(errs), strings.Join(errs, "; ")))
 			} else {

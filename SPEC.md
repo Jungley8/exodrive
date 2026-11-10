@@ -204,6 +204,11 @@ and return an error with the record intact.
   free space, or the reason the folder fails. The window shows that line under
   the field and drops a result that a newer edit made stale.
 - The footer names the move that runs: `Moving 2 of 4: <title>, 45%`.
+- A move shows a Cancel button. Cancel stops the run after the cache that is
+  copying now, then reports how many caches moved. A finished cache keeps its
+  record.
+- Escape, or a press outside a confirmation, closes it and reports that
+  nothing changed.
 - Progress comes from the provider's copy callback, posted to the UI thread
   through the root scope. A Dynamic branch scope ends when the branch repaints.
 - A scan, a migration, and a rollback exclude each other. `busy` reads the
