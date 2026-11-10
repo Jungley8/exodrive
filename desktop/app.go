@@ -728,7 +728,7 @@ func triggerTargetCheck(state *AppState) {
 				state.TargetInfo.Set("Problem: " + err.Error())
 				return
 			}
-			state.TargetInfo.Set(fmt.Sprintf("Ready. %s. %s free.", strings.ToUpper(info.Filesystem), internalUi.FormatBytes(info.FreeBytes)))
+			state.TargetInfo.Set(fmt.Sprintf("Ready. %s, %s free.", strings.ToUpper(info.Filesystem), internalUi.FormatBytes(info.FreeBytes)))
 		})
 	}()
 }
