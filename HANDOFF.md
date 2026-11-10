@@ -3,7 +3,7 @@
 **项目路径**: `/Volumes/PHD/code/exodrive`
 **开源协议**: Apache-2.0
 **技术栈**: Go 1.27 + nsgo (`github.com/oneo-me/nsgo` 原生 macOS Cocoa 声明式 GUI)
-**当前状态**: 核心引擎、CLI、GUI 全部可运行。`make check` 全绿（59 个测试函数，race 检测，`golangci-lint` 0 警告，gofmt 无差异）。CLI 与 GUI 二进制均已实测启动。
+**当前状态**: 核心引擎、CLI、GUI 全部可运行，已按 Apache-2.0 开源发布 v0.1.0。`make check` 全绿（60 个测试函数，race 检测，`golangci-lint` 0 警告，gofmt 无差异）。CLI 与 GUI 二进制均已实测启动，发布产物已下载验证。
 
 ---
 
@@ -72,14 +72,14 @@
 
 ```text
 $ make check
-go test -race -count=1 ./...        # PASS, 6 packages, 59 test functions
+go test -race -count=1 ./...        # PASS, 6 packages, 60 test functions
 go vet ./...                        # PASS
 golangci-lint run ./...             # 0 issues
 $ gofmt -l .                        # 空
 
 $ make build
 $ ./bin/exodrive version
-Exodrive vfdc1fdd-dirty (darwin/arm64)
+Exodrive v0.1.0-dirty (darwin/arm64)
 
 $ ./bin/exodrive check
 ... 9 items（含 4 个已在 /Volumes 的条目，状态 Migrated）
@@ -92,6 +92,11 @@ $ go test ./desktop/ -v
 --- PASS: TestWindowListsDetectedCaches
 --- PASS: TestWindowMigratesSelectedCaches
 --- PASS: TestWindowRescanRecovers
+
+$ gh release download v0.1.0 && shasum -a 256 -c SHA256SUMS
+全部 4 个产物 OK
+$ ./exodrive_darwin_arm64/exodrive version
+Exodrive v0.1.0 (darwin/arm64)
 ```
 
 窗口测试用 `nsgotest` 无头挂载真实窗口并模拟点击，覆盖：扫描结果渲染、无目标时 Migrate 禁用、输入目标后可点、确认弹窗、迁移写入账本、迁移后徽章变为 Migrated、重扫期间按钮禁用并在完成后恢复。
@@ -100,12 +105,17 @@ $ go test ./desktop/ -v
 
 ## 5. 未完成事项
 
-### 5.1 远端仓库与首发 (P1，需要用户确认)
-- [ ] 创建 GitHub 仓库并配置 remote（本机 `gh` 已登录 `Jungley8`，`Jungley8/exodrive` 尚不存在）
-- [ ] 用 DCO 签署提交（`Jungley Yeh <yejing@live.cn>`）并推送
-- [ ] 打 tag `v0.1.0` 触发 release workflow
+### 5.1 远端仓库与首发 (P1，✅ 2026-11-10 完成)
 
-推送会写入 GitHub，属于对外动作，需用户点头后再执行。
+- [x] 创建 GitHub 仓库：<https://github.com/Jungley8/exodrive>（public，Apache-2.0）
+- [x] DCO 签署提交（`Jungley Yeh <yejing@live.cn>`）并推送 main
+- [x] 打 tag `v0.1.0`，release workflow 发布四个平台的 tar.gz 与 SHA256SUMS
+
+发布地址：<https://github.com/Jungley8/exodrive/releases/tag/v0.1.0>
+
+首发验证：四个产物 `shasum -a 256 -c SHA256SUMS` 全部 OK；下载 `darwin_arm64` 产物运行 `exodrive version` 输出 `Exodrive v0.1.0 (darwin/arm64)`。
+
+首发时发现并修复：workflow 把 tag 名（`v0.1.0`）直接注入 `main.version`，CLI 又加了一次前缀，二进制显示 `vv0.1.0`。修复后重新发同一版本（旧 tag 与 release 已删除重建，无外部使用者）。
 
 ### 5.2 产品增强 (P2)
 - [ ] GUI 回滚入口（目前仅 CLI 支持 `rollback`）

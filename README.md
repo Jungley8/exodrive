@@ -78,7 +78,12 @@ holds. Run `exodrive rollback <item>` first.
 
 ## Install
 
-Build the command line tool:
+Download a release build for macOS or Linux from the
+[releases page](https://github.com/Jungley8/exodrive/releases). The archive
+holds the command line tool, the window, the README, and the license. Check the
+archive against `SHA256SUMS`.
+
+Or build the command line tool from source:
 
 ```sh
 go build -o bin/exodrive ./cmd/exodrive

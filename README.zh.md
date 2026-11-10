@@ -70,7 +70,9 @@ flowchart LR
 
 ## 安装
 
-构建命令行工具：
+从[发布页](https://github.com/Jungley8/exodrive/releases)下载 macOS 或 Linux 的构建包。压缩包内含命令行工具、窗口程序、README 和许可证。用 `SHA256SUMS` 校验文件。
+
+也可以从源码构建命令行工具：
 
 ```sh
 go build -o bin/exodrive ./cmd/exodrive
