@@ -33,20 +33,22 @@ const (
 
 // CacheItem represents a single developer cache entity.
 type CacheItem struct {
-	ID             string         `json:"id"`
-	ToolName       string         `json:"tool_name"`
-	ToolVersion    string         `json:"tool_version,omitempty"`
-	Title          string         `json:"title"`
-	Category       CacheCategory  `json:"category"`
-	CurrentPath    string         `json:"current_path"`
-	ConfiguredPath string         `json:"configured_path,omitempty"`
-	SizeBytes      int64          `json:"size_bytes"`
-	IsActive       bool           `json:"is_active"`
-	IsMigrated     bool           `json:"is_migrated"`
-	IsSymlink      bool           `json:"is_symlink"`
-	RedirectMethod RedirectMethod `json:"redirect_method"`
-	TargetSubdir   string         `json:"target_subdir"`
-	Warning        string         `json:"warning,omitempty"`
+	ID          string        `json:"id"`
+	ToolName    string        `json:"tool_name"`
+	ToolVersion string        `json:"tool_version,omitempty"`
+	Title       string        `json:"title"`
+	Category    CacheCategory `json:"category"`
+	CurrentPath string        `json:"current_path"`
+	// DestinationPath holds the moved copy from the ledger record, or "".
+	DestinationPath string         `json:"destination_path,omitempty"`
+	ConfiguredPath  string         `json:"configured_path,omitempty"`
+	SizeBytes       int64          `json:"size_bytes"`
+	IsActive        bool           `json:"is_active"`
+	IsMigrated      bool           `json:"is_migrated"`
+	IsSymlink       bool           `json:"is_symlink"`
+	RedirectMethod  RedirectMethod `json:"redirect_method"`
+	TargetSubdir    string         `json:"target_subdir"`
+	Warning         string         `json:"warning,omitempty"`
 	// BlockedReason says why Exodrive cannot move this item. Empty when it can.
 	// A blocked item stays visible, so the user can read the reason and act.
 	BlockedReason string `json:"blocked_reason,omitempty"`

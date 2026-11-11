@@ -247,6 +247,13 @@ and return an error with the record intact.
 - A row names how the tool reaches its copy: `Method: configuration`,
   `Method: symbolic link`, or `Method: manual step`. The confirmation counts
   the selected caches by that method before the move starts.
+- A moved row shows the copy: `Copy: /Volumes/SSD/exodrive/npm-cache`. The
+  path comes from the ledger record, so the row names the folder that holds
+  the data, not only the folder that used to.
+- The window reads the login shell PATH before the first scan. A window opened
+  from Finder or the Dock inherits the launchd PATH, which holds no Homebrew,
+  nvm, or custom folder. Without that step, every tool query fails and each
+  cache shows Blocked.
 - While no target folder is set, the window shows three steps: choose the
   folder, check the caches, press Migrate.
 - After the target changes, `Engine.CheckTarget` reports the filesystem and the
@@ -272,6 +279,7 @@ and return an error with the record intact.
 ## 6. Command line contract
 
 - `check` prints the detected caches, the tool version, and the switch method.
+  A migrated cache prints its copy as `   └── copy: <path>`.
   A provider that fails prints a warning; the other items stay usable. An
   unreadable ledger stops the command.
 - `preflight <item> --target` runs the same checks a migration runs first.

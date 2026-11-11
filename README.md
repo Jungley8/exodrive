@@ -234,7 +234,12 @@ During a move the footer names the step. It reads `Moving 2 of 4: npm cache,
 Exodrive compares the copy.
 
 Every row names how Exodrive reaches the copy: a tool configuration, a symbolic
-link, or a manual step. The confirmation counts the selected caches by method.
+link, or a manual step. A moved row also shows the copy folder. The confirmation
+counts the selected caches by method.
+
+The window reads the PATH of your login shell. A tool installed by Homebrew,
+nvm, or a custom folder is found after you open the app from Finder or the
+Dock.
 
 The window shows local, migrated, and abandoned bytes. It updates the list after
 every scan, every move, and every rollback. The first run shows three steps, and

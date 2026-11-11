@@ -522,8 +522,24 @@ func renderItemRow(state *AppState, item func() exoCore.CacheItem) core.Node {
 				ContentFunc: func() string { return "Method: " + internalUi.RedirectLabel(item().RedirectMethod) },
 				TestID:      "method-" + id,
 			},
+			renderDestination(item, id),
 			renderBlockedText(item),
 			renderWarningText(item().Warning),
+		},
+	}
+}
+
+// renderDestination shows the folder that holds the moved copy. A user who
+// moves a cache needs the new path, not only the old one.
+func renderDestination(item func() exoCore.CacheItem, id string) core.Node {
+	return core.Show{
+		When: func() bool { return item().DestinationPath != "" },
+		Then: func(cx *core.Scope) core.Node {
+			return core.Text{
+				Class:       "text-xs font-mono text-slate-400 dark:text-zinc-500 truncate",
+				ContentFunc: func() string { return "Copy: " + item().DestinationPath },
+				TestID:      "destination-" + id,
+			}
 		},
 	}
 }

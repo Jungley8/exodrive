@@ -135,6 +135,33 @@ func TestRenderTableShowsTheSwitchMethod(t *testing.T) {
 	}
 }
 
+// A user who moves a cache needs the new path, not only the old one.
+func TestRenderTableShowsTheCopy(t *testing.T) {
+	items := []core.CacheItem{
+		{
+			ID: "cargo.registry", ToolName: "cargo", Title: "Cargo Registry",
+			Category: core.CategoryPackageStore, CurrentPath: "/Users/x/.cargo/registry",
+			DestinationPath: "/Volumes/SSD/exodrive/cargo/registry",
+			SizeBytes:       20, IsActive: true, IsMigrated: true,
+			RedirectMethod: core.RedirectSymlink,
+		},
+		{
+			ID: "npm.cache", ToolName: "npm", Title: "NPM Cache",
+			Category: core.CategoryPackageStore, CurrentPath: "/Users/x/.npm",
+			SizeBytes: 10, IsActive: true, RedirectMethod: core.RedirectNativeConfig,
+		},
+	}
+
+	out := captureStdout(t, func() { RenderTable(items) })
+
+	if !strings.Contains(out, "copy: /Volumes/SSD/exodrive/cargo/registry") {
+		t.Fatalf("the table does not show the copy:\n%s", out)
+	}
+	if strings.Count(out, "copy:") != 1 {
+		t.Fatalf("the table shows a copy for a cache that did not move:\n%s", out)
+	}
+}
+
 // captureStdout runs fn and returns what it printed to stdout.
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()

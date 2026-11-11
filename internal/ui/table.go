@@ -65,6 +65,9 @@ func RenderTable(items []core.CacheItem) {
 		if item.BlockedReason != "" {
 			fmt.Printf("   └── [!] %s\n", item.BlockedReason)
 		}
+		if item.DestinationPath != "" {
+			fmt.Printf("   └── copy: %s\n", item.DestinationPath)
+		}
 		if item.Warning != "" {
 			fmt.Printf("   └── [!] %s\n", item.Warning)
 		}

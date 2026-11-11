@@ -384,8 +384,34 @@ func TestWindowShowsWhyACacheCannotMove(t *testing.T) {
 	}
 }
 
-// The first run shows three steps, and the window replaces them with the volume
-// summary as soon as the user picks a folder.
+// A moved cache shows the folder that holds it. The old path alone leaves the
+// user to guess where the data went.
+func TestWindowShowsTheCopyOfAMovedCache(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	item := exoCore.CacheItem{
+		ID: "fake.cache", ToolName: "fake", Title: "Fake Cache",
+		Category: exoCore.CategoryPackageStore, CurrentPath: "/tmp/fake-cache",
+		SizeBytes: 4096, IsActive: true, RedirectMethod: exoCore.RedirectSymlink,
+	}
+	destination := "/Volumes/SSD/exodrive/fake-cache"
+	if err := exoCore.RecordMigration(exoCore.MigrationRecord{
+		ID: item.ID, ToolName: item.ToolName, OriginalPath: item.CurrentPath,
+		DestinationDir: destination, RedirectMethod: exoCore.RedirectSymlink,
+		MigratedAt: time.Now(), SizeBytes: item.SizeBytes,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	app := nsgotest.Start(t, NewMain(newFakeEngine(item)), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:destination-fake.cache") })
+
+	views := app.Query("id:destination-fake.cache")
+	if len(views) != 1 || views[0].Text != "Copy: "+destination {
+		t.Fatalf("the row shows %+v, want the copy path", views)
+	}
+}
+
 // The first run must name a missing external volume. The folder picker lists
 // only the internal disk, so the guide is the only place that says what to do.
 func TestWindowGuidesWhenNoVolumeIsConnected(t *testing.T) {
@@ -456,6 +482,8 @@ func TestWindowShowsTheCheckStep(t *testing.T) {
 	})
 }
 
+// The first run shows three steps, and the window replaces them with the volume
+// summary as soon as the user picks a folder.
 func TestWindowGuidesTheFirstRun(t *testing.T) {
 	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
 

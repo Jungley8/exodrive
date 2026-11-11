@@ -68,8 +68,9 @@ func (e *Engine) ScanAll(ctx context.Context) ([]CacheItem, error) {
 		return nil, fmt.Errorf("%w: %v", ErrLedger, err)
 	}
 	for i := range allItems {
-		if _, ok := manifest.Records[allItems[i].ID]; ok {
+		if rec, ok := manifest.Records[allItems[i].ID]; ok {
 			allItems[i].IsMigrated = true
+			allItems[i].DestinationPath = rec.DestinationDir
 		}
 	}
 	return allItems, errors.Join(detectErrs...)
