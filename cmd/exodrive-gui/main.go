@@ -13,5 +13,5 @@ func main() {
 	// Homebrew or nvm folder. Read the login shell PATH before the first scan.
 	plugins.UseLoginShellPath(context.Background())
 
-	nsgo.Run(desktop.Root, nsgo.WindowSize(860, 680))
+	nsgo.Run(desktop.Root, nsgo.WindowSize(900, 720))
 }

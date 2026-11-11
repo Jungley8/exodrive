@@ -233,48 +233,59 @@ and return an error with the record intact.
 
 - The window reads signals inside `core.Dynamic`, `core.Each`, `core.Show`, and
   `...Func` fields only. A signal read at build time does not repaint.
-- A migration requires a non-empty target folder. The Migrate button stays
-  disabled until the field holds one.
-- A migration asks for confirmation and shows the number of caches and the
-  target folder.
-- A migrated row shows a Roll back button. The button opens a second
-  confirmation, then runs `Engine.Rollback`.
-- A row that holds an abandoned cache shows a Delete button. The button names
-  the path and the size, asks for confirmation, then runs
-  `Engine.CleanOrphan`.
-- A row whose item carries `BlockedReason` shows the state Blocked, the reason,
-  and a disabled checkbox.
-- A row names how the tool reaches its copy: `Method: configuration`,
-  `Method: symbolic link`, or `Method: manual step`. The confirmation counts
-  the selected caches by that method before the move starts.
-- A moved row shows the copy: `Copy: /Volumes/SSD/exodrive/npm-cache`. The
-  path comes from the ledger record, so the row names the folder that holds
-  the data, not only the folder that used to.
+- The window shell is built once: the header, the drive panel, the list header,
+  and the footer. The drive panel holds the folder field. A field mounted
+  inside a `Dynamic` remounts on every repaint and reports an empty value, which
+  clears the typed path. Keep the field, and every container that holds it,
+  outside any region.
+- Nothing is selected after a scan. One press must not move a whole disk.
+- A move needs a folder that passed `Engine.CheckTarget` (`targetState.Ready`)
+  and at least one selected cache that can move. While no cache can move, the
+  main action is absent. A folder that fails the check shows its reason under
+  the field, and a result that a newer edit made stale is dropped.
+- The main action names the next step: `Choose folder`, `Select all N`, or
+  `Move N caches`. A move asks for confirmation with the count, the total
+  bytes, the target folder, and up to five cache names.
+- The header shows two gauges: the free space and cache bytes of this Mac, and
+  the free space and moved bytes of the drive. Each bar part keeps a minimum
+  width, so a small share stays visible. Without a chosen folder, the right
+  gauge names the connected volume, or says that none is connected.
+- A row reads in one line: checkbox, title, size, state chip, chevron. The chip
+  carries a word, so color is never the only signal: `On this Mac`,
+  `On the drive`, `Cannot move`, `Unused`, `Move failed`, `Move back failed`.
+- `stateOf` reads the move first, then use, then the block. A moved cache shows
+  where it lives even when it also carries a reason.
+- A cache that is moved, unused, or blocked shows a disabled checkbox.
+  `movable` is the only gate that select all, the move, and the count of caches
+  that can move read.
+- The chevron opens the details: the folder, the copy, the note that names the
+  change Exodrive makes, the failure, and the one action that fits the state. A
+  moved row offers `Move back`. An unused row offers `Delete cache`. Each one
+  asks for confirmation. The delete names the path and says the data is gone.
+- Every user-facing failure goes through `explain(err, action)` in
+  `desktop/plain.go`. It returns a title, a body, and a next step. An error that
+  matches no rule keeps the engine's own text in the body, so the window never
+  hides a reason.
+- A failure opens its row, so the reason never waits behind a closed chevron.
+  `Try again` repeats the action that stopped, and each retry asks for
+  confirmation again.
+- A move names its phase and its position: `Moving <title>`, `Checking the copy
+  of <title>`, `Finishing <title>`, with `Cache 2 of 4. 45% done.` A stopped
+  move reads `Stopping after this cache.` as soon as the press lands, so the
+  press has an answer before the current cache ends.
+- Escape, or a press outside a confirmation, closes it and reports that nothing
+  changed. A dialog closed by selection (`base.ReasonSelect`) reports nothing.
+- Progress comes from the provider's copy callback, posted to the UI thread
+  through the root scope. A Dynamic branch scope ends when the branch repaints.
+- A scan, a move, a move back, and a delete exclude each other. `busy` reads
+  the four signals.
+- Every long action rescans before it reports, so the list matches the ledger.
+- The footer shows the status line and a `Details` toggle that names the record
+  file a move back needs.
 - The window reads the login shell PATH before the first scan. A window opened
   from Finder or the Dock inherits the launchd PATH, which holds no Homebrew,
   nvm, or custom folder. Without that step, every tool query fails and each
-  cache shows Blocked.
-- While no target folder is set, the window shows three steps: choose the
-  folder, check the caches, press Migrate.
-- After the target changes, `Engine.CheckTarget` reports the filesystem and the
-  free space, or the reason the folder fails. The window shows that line under
-  the field and drops a result that a newer edit made stale.
-- The footer names the move that runs: `Moving 2 of 4: <title>, 45%`. During
-  the check step it reads `Checking 2 of 4: <title>, 45%`, so a long check does
-  not look frozen.
-- The first-run guide names the external volumes. With none connected, it says
-  `No external volume is connected. Connect one, then press Browse.`
-- A move shows a Cancel button. Cancel stops the run after the cache that is
-  copying now, then reports how many caches moved. A finished cache keeps its
-  record. The footer reads `Stopping after cache 2 of 4.` as soon as the press
-  lands, so the press has an answer before the current cache ends.
-- Escape, or a press outside a confirmation, closes it and reports that
-  nothing changed.
-- Progress comes from the provider's copy callback, posted to the UI thread
-  through the root scope. A Dynamic branch scope ends when the branch repaints.
-- A scan, a migration, and a rollback exclude each other. `busy` reads the
-  three signals.
-- Every long action rescans before it reports, so the list matches the ledger.
+  cache shows `Cannot move`.
 
 ## 6. Command line contract
 

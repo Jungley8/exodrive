@@ -221,37 +221,41 @@ exodrive check
 ## Use the window
 
 1. Open `bin/exodrive-gui`, or `Exodrive.app`.
-2. Press **Browse...** and choose an empty folder on the external volume.
-3. Press **Migrate**. Confirm the move. A long run offers **Cancel**, which
-   stops it after the cache that is copying now.
-4. Read the status line. It shows the number of moved caches.
-5. To move a cache back, press **Roll back** on its row. Confirm the move.
-6. To delete an abandoned cache, press **Delete** on its row. Confirm the
-   delete. This action cannot be undone.
+2. Choose a folder on the external drive. Press **Choose**, or type the path.
+   The window checks the folder and shows the free space of the drive.
+3. Select the caches to move. Press **Select all N**, or press the box on one
+   row.
+4. Press **Move N caches**. Read the list, then press **Move**. A long move
+   shows its progress, and **Stop after this cache** stops it at the end of the
+   cache that copies now.
+5. To move a cache back, open its row and press **Move back**. Confirm the move.
+6. To delete an unused cache, open its row and press **Delete cache**. Confirm
+   the delete. This action cannot be undone.
 
-During a move the footer names the step. It reads `Moving 2 of 4: npm cache,
-45%` while Exodrive copies. It reads `Checking 2 of 4: npm cache, 45%` while
-Exodrive compares the copy.
+The window shows two gauges. The left gauge holds the free space of this Mac and
+the bytes in caches. The right gauge holds the free space of the drive and the
+bytes that moved.
 
-Every row names how Exodrive reaches the copy: a tool configuration, a symbolic
-link, or a manual step. A moved row also shows the copy folder. The confirmation
-counts the selected caches by method.
+Every row reads in one line: the cache name, its size, and where it lives. A row
+says **On this Mac**, **On the drive**, **Cannot move**, or **Unused**. Open a
+row with the chevron to read its folder, its copy, and the change that Exodrive
+makes. A program setting applies at the next start of the program. A symbolic
+link changes nothing for the program.
+
+A move that stops keeps its reason on the row, and Exodrive deletes nothing.
+Open the row, read the next step, then press **Try again**. The footer shows
+**Details**, which names the record file that a move back needs.
 
 The window reads the PATH of your login shell. A tool installed by Homebrew,
 nvm, or a custom folder is found after you open the app from Finder or the
 Dock.
 
-The window shows local, migrated, and abandoned bytes. It updates the list after
-every scan, every move, and every rollback. The first run shows three steps, and
-names the external volumes that are connected. With none connected it says so;
-connect a volume, then press Browse. A chosen folder shows its filesystem and
-free space before you move anything.
-
-A cache that Exodrive cannot move shows the state Blocked and the reason. Yarn 2
-and later are blocked: they read `cacheFolder` from each project's
+The list refreshes after every scan, every move, and every rollback. A cache
+that Exodrive cannot move says **Cannot move**, and the row holds the reason.
+Yarn 2 and later are blocked: they read `cacheFolder` from each project's
 `.yarnrc.yml`, so a global move does not reach them. Delete that cache, or keep
 it. A cache is also blocked when its tool does not report the cache folder. Put
-the tool on PATH, then press Rescan Caches.
+the tool on PATH, then press **Rescan**.
 
 ## The ledger
 
