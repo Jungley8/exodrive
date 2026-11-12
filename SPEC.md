@@ -253,23 +253,38 @@ and return an error with the record intact.
   the free space and moved bytes of the drive. Each bar part keeps a minimum
   width, so a small share stays visible. Without a chosen folder, the right
   gauge names the connected volume, or says that none is connected.
-- A row reads in one line: checkbox, title, size, state chip, chevron. The chip
-  carries a word, so color is never the only signal: `On this Mac`,
-  `On the drive`, `Cannot move`, `Unused`, `Move failed`, `Move back failed`.
+- A cache is a card, and the card keeps every fact visible: checkbox, title,
+  size, state chip, folder, copy, the note that names the change Exodrive makes,
+  the failure with its next step, and the one action that fits the state. No
+  fact waits behind a press.
+- The state chip carries a word, so color is never the only signal:
+  `On this Mac`, `On the drive`, `Cannot move`, `Unused`, `Move failed`,
+  `Move back failed`.
 - `stateOf` reads the move first, then use, then the block. A moved cache shows
   where it lives even when it also carries a reason.
 - A cache that is moved, unused, or blocked shows a disabled checkbox.
   `movable` is the only gate that select all, the move, and the count of caches
   that can move read.
-- The chevron opens the details: the folder, the copy, the note that names the
-  change Exodrive makes, the failure, and the one action that fits the state. A
-  moved row offers `Move back`. An unused row offers `Delete cache`. Each one
-  asks for confirmation. The delete names the path and says the data is gone.
+- A card offers the action that fits its place. A local cache offers `Move`,
+  which asks for a confirmation that holds that cache alone; without a checked
+  folder it opens the folder picker first. A moved cache offers `Move back`. An
+  unused cache offers `Delete cache`. Each one asks for confirmation. The
+  delete names the path and says the data is gone.
+- The rail lists what the check found, by group: Node, Python, Rust, Go,
+  Docker, and Other. Each group shows its count and a bar split by place, so a
+  press on a group reads before it filters. A group with no cache is absent.
+- A place filter above the list keeps `On this Mac` or `On the drive`. The
+  words match the state chip on every card.
+- The rail and the place filter both narrow the list. A move acts on the caches
+  on screen: `selectAll`, the count of caches that can move, and the main
+  action all read the narrowed list.
+- A filter change drops the selection. A press on Move never moves a cache that
+  the filter hides.
 - Every user-facing failure goes through `explain(err, action)` in
   `desktop/plain.go`. It returns a title, a body, and a next step. An error that
   matches no rule keeps the engine's own text in the body, so the window never
   hides a reason.
-- A failure opens its row, so the reason never waits behind a closed chevron.
+- A failure stays on the card that holds it, so the reason never waits behind a press.
   `Try again` repeats the action that stopped, and each retry asks for
   confirmation again.
 - A move names its phase and its position: `Moving <title>`, `Checking the copy
@@ -285,6 +300,9 @@ and return an error with the record intact.
 - Every long action rescans before it reports, so the list matches the ledger.
 - The footer shows the status line and a `Details` toggle that names the record
   file a move back needs.
+- The folder picker lists nothing until it is told a folder. The window calls
+  `filepicker.State.Open` as the picker opens, at the chosen folder or at the
+  home folder, so the dialog never opens empty.
 - The window reads the login shell PATH before the first scan. A window opened
   from Finder or the Dock inherits the launchd PATH, which holds no Homebrew,
   nvm, or custom folder. Without that step, every tool query fails and each

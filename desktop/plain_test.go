@@ -290,3 +290,64 @@ func TestCountKeepsThePlural(t *testing.T) {
 		t.Fatalf("count(2) is %q", got)
 	}
 }
+
+// TestFamiliesGroupsTheCachesByToolchain keeps the rail honest: every cache
+// lands in one group, the groups keep their order, and a toolchain the window
+// does not know still shows up.
+func TestFamiliesGroupsTheCachesByToolchain(t *testing.T) {
+	items := []exoCore.CacheItem{
+		{ID: "1", ToolName: "npm", SizeBytes: 10, IsActive: true},
+		{ID: "2", ToolName: "pnpm", SizeBytes: 20, IsActive: true},
+		{ID: "3", ToolName: "pip", SizeBytes: 40, IsActive: true},
+		{ID: "4", ToolName: "cargo", SizeBytes: 80, IsMigrated: true, IsActive: true},
+		{ID: "5", ToolName: "docker", SizeBytes: 160, IsActive: true},
+		{ID: "6", ToolName: "something-new", SizeBytes: 320, IsActive: true},
+	}
+
+	got := families(items)
+	want := []cacheFamily{familyNode, familyPython, familyRust, familyDocker, familyOther}
+	if len(got) != len(want) {
+		t.Fatalf("families returned %d groups, want %d: %+v", len(got), len(want), got)
+	}
+	for i, family := range want {
+		if got[i].Family != family {
+			t.Fatalf("group %d is %q, want %q", i, got[i].Family, family)
+		}
+	}
+	if got[0].Count != 2 || got[0].Local != 30 || got[0].Moved != 0 {
+		t.Fatalf("Node is %+v, want 2 caches and 30 bytes on this Mac", got[0])
+	}
+	if got[2].Moved != 80 || got[2].Local != 0 {
+		t.Fatalf("Rust is %+v, want its bytes on the drive", got[2])
+	}
+
+	if !hasFamily(items, familyOther) || hasFamily(items, familyGo) {
+		t.Fatalf("hasFamily does not follow the items")
+	}
+	if !inFamily(items[0], familyNode) || !inFamily(items[0], "") {
+		t.Fatalf("inFamily drops a cache it should keep")
+	}
+	if inFamily(items[0], familyPython) {
+		t.Fatalf("inFamily keeps a cache of another group")
+	}
+}
+
+// TestInPlaceKeepsTheTwoPlaces keeps the place filter to the two answers a
+// person looks for.
+func TestInPlaceKeepsTheTwoPlaces(t *testing.T) {
+	local := exoCore.CacheItem{ID: "a", IsActive: true}
+	moved := exoCore.CacheItem{ID: "b", IsMigrated: true}
+	for _, tc := range []struct {
+		place string
+		item  exoCore.CacheItem
+		want  bool
+	}{
+		{placeAll, local, true}, {placeAll, moved, true},
+		{placeLocal, local, true}, {placeLocal, moved, false},
+		{placeMoved, moved, true}, {placeMoved, local, false},
+	} {
+		if got := inPlace(tc.item, tc.place); got != tc.want {
+			t.Fatalf("inPlace(%q) is %v, want %v", tc.place, got, tc.want)
+		}
+	}
+}

@@ -292,8 +292,8 @@ func TestWindowRescanRecovers(t *testing.T) {
 	}
 }
 
-// TestWindowRollsBackMigratedCache drives the way back: move a cache, open its
-// row, press Move back, confirm. The record must be gone and the row local
+// TestWindowRollsBackMigratedCache drives the way back: move a cache, press
+// Move back on its card, confirm. The record must be gone and the card local
 // again.
 func TestWindowRollsBackMigratedCache(t *testing.T) {
 	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
@@ -304,13 +304,10 @@ func TestWindowRollsBackMigratedCache(t *testing.T) {
 	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
 	app.Settle()
 
-	// A local cache offers no way back, so its row carries no such action.
-	app.Press("id:expand-fake.cache")
-	app.Settle()
+	// A local cache offers no way back, so its card carries no such action.
 	if app.Exists("id:rollback-fake.cache") {
 		t.Fatalf("a local cache offers a move back:\n%s", app.Dump())
 	}
-	app.Press("id:expand-fake.cache")
 
 	chooseTarget(t, app, target)
 	checkAll(t, app)
@@ -319,9 +316,7 @@ func TestWindowRollsBackMigratedCache(t *testing.T) {
 	app.Press("id:confirm-move")
 	app.WaitUntil(2*time.Second, func() bool { return badgeText(app, item.ID) == "On the drive" })
 
-	// The action lives in the row's details, one press away from the list.
-	app.Press("id:expand-fake.cache")
-	app.Settle()
+	// The action sits on the card, so no press hides it.
 	if !app.Exists("id:rollback-fake.cache") {
 		t.Fatalf("a moved cache offers no way back:\n%s", app.Dump())
 	}
@@ -377,8 +372,6 @@ func TestWindowDeletesAbandonedCache(t *testing.T) {
 		t.Fatalf("a cache in use offers Delete:\n%s", app.Dump())
 	}
 
-	app.Press("id:expand-orphan.pnpm")
-	app.Settle()
 	if !app.Exists("id:clean-orphan.pnpm") {
 		t.Fatalf("an unused cache offers no Delete:\n%s", app.Dump())
 	}
@@ -456,8 +449,6 @@ func TestWindowShowsTheCopyOfAMovedCache(t *testing.T) {
 	}
 
 	app := nsgotest.Start(t, NewMain(newFakeEngine(item)), nsgotest.Size(1100, 800))
-	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
-	app.Press("id:expand-fake.cache")
 	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:destination-fake.cache") })
 
 	views := app.Query("id:destination-fake.cache")
@@ -608,10 +599,6 @@ func TestWindowShowsTheSwitchMethod(t *testing.T) {
 	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:NPM Global Cache") })
 	app.Settle()
 
-	app.Press("id:expand-npm.cache")
-	app.Press("id:expand-cargo.registry")
-	app.Settle()
-
 	if !strings.Contains(app.Dump(), "Exodrive changes this program's setting.") {
 		t.Fatalf("the npm row does not say what changes:\n%s", app.Dump())
 	}
@@ -644,7 +631,6 @@ func TestWindowShowsAMoveFailure(t *testing.T) {
 		t.Fatalf("the row chip is %q, want Move failed:\n%s", got, app.Dump())
 	}
 
-	app.Press("id:expand-fake.cache")
 	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:retry-fake.cache") })
 
 	dump := app.Dump()
@@ -714,5 +700,168 @@ func TestWindowRemindsWhenTheFolderIsOnThisMac(t *testing.T) {
 	// The confirmation reads the reminder again, where the move starts.
 	if !strings.Contains(app.Dump(), reminder) {
 		t.Fatalf("the confirmation does not repeat the reminder:\n%s", app.Dump())
+	}
+}
+
+// TestWindowOpensThePickerOnAFolder keeps the picker from opening empty: a
+// picker lists nothing until it is told a folder, so the window loads one as
+// the dialog opens.
+func TestWindowOpensThePickerOnAFolder(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	target := t.TempDir()
+	if err := os.Mkdir(filepath.Join(target, "cache-folder"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	app := nsgotest.Start(t, NewMain(newFakeEngine(fakeCache())), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
+
+	chooseTarget(t, app, target)
+	app.Press("id:browse")
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:target-picker") })
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:filepicker-entry-cache-folder") })
+	if strings.Contains(app.Dump(), "This folder is empty") {
+		t.Fatalf("the picker opened on an empty folder:\n%s", app.Dump())
+	}
+}
+
+// TestWindowFiltersByGroup keeps the rail a filter: a press on a group keeps
+// that group's caches, and All brings them back.
+func TestWindowFiltersByGroup(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	npm := fakeCache()
+	npm.ID, npm.ToolName, npm.Title = "npm.cache", "npm", "NPM Cache"
+	pip := fakeCache()
+	pip.ID, pip.ToolName, pip.Title = "pip.cache", "pip", "Pip Cache"
+	pip.CurrentPath = "/tmp/pip-cache"
+
+	engine := exoCore.NewEngine(&fakeProvider{name: "fake", items: []exoCore.CacheItem{npm, pip}})
+	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:NPM Cache") })
+
+	if !app.Exists("id:rail-Node") || !app.Exists("id:rail-Python") {
+		t.Fatalf("the rail does not name the groups:\n%s", app.Dump())
+	}
+
+	app.Press("id:rail-Python")
+	app.Settle()
+	if !app.Exists("id:row-pip.cache") || app.Exists("id:row-npm.cache") {
+		t.Fatalf("the Python group kept the wrong caches:\n%s", app.Dump())
+	}
+
+	app.Press("id:rail-all")
+	app.Settle()
+	if !app.Exists("id:row-npm.cache") || !app.Exists("id:row-pip.cache") {
+		t.Fatalf("All did not bring every cache back:\n%s", app.Dump())
+	}
+}
+
+// TestWindowFiltersByPlace keeps the two places apart: this Mac and the drive.
+func TestWindowFiltersByPlace(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	local := fakeCache()
+	moved := fakeCache()
+	moved.ID, moved.Title, moved.CurrentPath = "moved.cache", "Moved Cache", "/tmp/moved-cache"
+	if err := exoCore.RecordMigration(exoCore.MigrationRecord{
+		ID: moved.ID, ToolName: moved.ToolName, OriginalPath: moved.CurrentPath,
+		DestinationDir: "/Volumes/SSD/exodrive", RedirectMethod: exoCore.RedirectSymlink,
+		MigratedAt: time.Now(), SizeBytes: moved.SizeBytes,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	engine := exoCore.NewEngine(&fakeProvider{name: "fake", items: []exoCore.CacheItem{local, moved}})
+	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Moved Cache") })
+
+	app.Press("id:place-this-mac")
+	app.Settle()
+	if !app.Exists("id:row-"+local.ID) || app.Exists("id:row-"+moved.ID) {
+		t.Fatalf("On this Mac kept the wrong caches:\n%s", app.Dump())
+	}
+
+	app.Press("id:place-drive")
+	app.Settle()
+	if !app.Exists("id:row-"+moved.ID) || app.Exists("id:row-"+local.ID) {
+		t.Fatalf("On the drive kept the wrong caches:\n%s", app.Dump())
+	}
+
+	app.Press("id:place-all")
+	app.Settle()
+	if !app.Exists("id:row-"+local.ID) || !app.Exists("id:row-"+moved.ID) {
+		t.Fatalf("All did not bring every place back:\n%s", app.Dump())
+	}
+}
+
+// TestWindowMovesOneCacheFromItsCard keeps a single move a first-class action:
+// the card's Move asks for that cache alone and records it alone.
+func TestWindowMovesOneCacheFromItsCard(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	target := t.TempDir()
+
+	first := fakeCache()
+	second := fakeCache()
+	second.ID, second.Title, second.CurrentPath = "fake.two", "Second Cache", "/tmp/second"
+
+	engine := exoCore.NewEngine(&fakeProvider{name: "fake", items: []exoCore.CacheItem{first, second}})
+	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Second Cache") })
+
+	chooseTarget(t, app, target)
+	app.Press("id:move-" + second.ID)
+	app.Settle()
+	if !app.Exists("id:confirm") {
+		t.Fatalf("the card's Move did not ask for confirmation:\n%s", app.Dump())
+	}
+	// The confirmation holds the card's cache alone.
+	if !strings.Contains(app.Dump(), "Move 1 cache?") {
+		t.Fatalf("the card's Move asked for more than one cache:\n%s", app.Dump())
+	}
+	app.Press("id:confirm-move")
+
+	app.WaitUntil(2*time.Second, func() bool {
+		m, err := exoCore.LoadManifest()
+		if err != nil {
+			return false
+		}
+		_, ok := m.Records[second.ID]
+		return ok
+	})
+	app.WaitUntil(2*time.Second, func() bool { return app.Enabled("id:rescan") })
+	if got := badgeText(app, first.ID); got != "On this Mac" {
+		t.Fatalf("a cache that was not chosen shows %q", got)
+	}
+	if got := badgeText(app, second.ID); got != "On the drive" {
+		t.Fatalf("the chosen cache shows %q", got)
+	}
+}
+
+// TestWindowDropsTheSelectionOnAFilter keeps the move honest: a cache that the
+// filter hides never moves on a press that was meant for the cards on screen.
+func TestWindowDropsTheSelectionOnAFilter(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	npm := fakeCache()
+	npm.ID, npm.ToolName, npm.Title = "npm.cache", "npm", "NPM Cache"
+	pip := fakeCache()
+	pip.ID, pip.ToolName, pip.Title = "pip.cache", "pip", "Pip Cache"
+	pip.CurrentPath = "/tmp/pip-cache"
+
+	engine := exoCore.NewEngine(&fakeProvider{name: "fake", items: []exoCore.CacheItem{npm, pip}})
+	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:NPM Cache") })
+
+	chooseTarget(t, app, t.TempDir())
+	checkAll(t, app)
+	if !app.Exists("id:migrate") {
+		t.Fatalf("the window offers no move after Select all:\n%s", app.Dump())
+	}
+
+	app.Press("id:rail-Python")
+	app.Settle()
+	if app.Exists("id:migrate") {
+		t.Fatalf("the selection survived a filter, so a hidden cache could move:\n%s", app.Dump())
 	}
 }

@@ -225,34 +225,43 @@ exodrive check
    The window checks the folder and shows the free space of the drive. A folder
    on this Mac frees no space, and the window says so.
 3. Select the caches to move. Press **Select all N**, or press the box on one
-   row.
+   card.
 4. Press **Move N caches**. Read the list, then press **Move**. A long move
    shows its progress, and **Stop after this cache** stops it at the end of the
-   cache that copies now.
-5. To move a cache back, open its row and press **Move back**. Confirm the move.
-6. To delete an unused cache, open its row and press **Delete cache**. Confirm
-   the delete. This action cannot be undone.
+   cache that copies now. To move one cache, press **Move** on its card.
+5. To move a cache back, press **Move back** on its card. Confirm the move.
+6. To delete an unused cache, press **Delete cache** on its card. Confirm the
+   delete. This action cannot be undone.
 
 The window shows two gauges. The left gauge holds the free space of this Mac and
 the bytes in caches. The right gauge holds the free space of the drive and the
 bytes that moved.
 
-Every row reads in one line: the cache name, its size, and where it lives. A row
-says **On this Mac**, **On the drive**, **Cannot move**, or **Unused**. Open a
-row with the chevron to read its folder, its copy, and the change that Exodrive
-makes. A program setting applies at the next start of the program. A symbolic
-link changes nothing for the program.
+Every cache is a card. A card shows the name, the size, and one state word:
+**On this Mac**, **On the drive**, **Cannot move**, or **Unused**. A card also
+shows its folder, its copy, and the change that Exodrive makes. A program
+setting applies at the next start of the program. A symbolic link changes
+nothing for the program.
 
-A move that stops keeps its reason on the row, and Exodrive deletes nothing.
-Open the row, read the next step, then press **Try again**. The footer shows
-**Details**, which names the record file that a move back needs.
+The rail on the left lists the groups that Exodrive found: Node, Python, Rust,
+Go, and Docker. A bar under each name shows how much of that group sits on this
+Mac and how much already moved. Press a group to show only its caches. Press
+**All caches** to show every group.
+
+The filter above the list keeps one place: **All**, **On this Mac**, or **On the
+drive**. The rail and the filter both narrow the list, and a move acts on the
+caches on screen. A filter change clears the selection.
+
+A move that stops keeps its reason on the card, and Exodrive deletes nothing.
+Read the next step, then press **Try again**. The footer shows **Details**,
+which names the record file that a move back needs.
 
 The window reads the PATH of your login shell. A tool installed by Homebrew,
 nvm, or a custom folder is found after you open the app from Finder or the
 Dock.
 
 The list refreshes after every scan, every move, and every rollback. A cache
-that Exodrive cannot move says **Cannot move**, and the row holds the reason.
+that Exodrive cannot move says **Cannot move**, and the card holds the reason.
 Yarn 2 and later are blocked: they read `cacheFolder` from each project's
 `.yarnrc.yml`, so a global move does not reach them. Delete that cache, or keep
 it. A cache is also blocked when its tool does not report the cache folder. Put

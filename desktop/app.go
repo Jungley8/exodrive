@@ -63,10 +63,13 @@ func (n notice) shown() bool { return n.Kind != noticeNone && n.Title != "" }
 type AppState struct {
 	Items    *core.Signal[[]exoCore.CacheItem]
 	Selected *core.Signal[map[string]bool]
-	// OpenRows holds the caches whose details the user opened.
-	OpenRows *core.Signal[map[string]bool]
 	// Failures holds the reason a cache did not move, by cache ID.
 	Failures *core.Signal[map[string]friendly]
+	// FilterFamily holds the group the rail keeps, or "" for every group.
+	FilterFamily *core.Signal[cacheFamily]
+	// FilterPlace holds the place the list keeps: "" for every place, or
+	// "local" and "moved" for the two places a person looks for.
+	FilterPlace *core.Signal[string]
 
 	TargetDir *core.Signal[string]
 	Target    *core.Signal[targetState]
@@ -144,8 +147,7 @@ func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
 			renderHeader(cx, state),
 			renderDrives(cx, state),
 			core.Dynamic(func(cx *core.Scope) core.Node { return renderAction(cx, state) }),
-			renderListHeader(cx, state),
-			core.Dynamic(func(cx *core.Scope) core.Node { return renderList(cx, state) }),
+			renderListArea(cx, state),
 			core.Show{When: func() bool { return state.AdvancedOpen.Get() }, Then: func(cx *core.Scope) core.Node { return renderAdvanced(cx, state) }},
 			renderFooter(cx, state),
 			renderPicker(state),
@@ -158,7 +160,8 @@ func newState(cx *core.Scope, engine *exoCore.Engine) *AppState {
 	state := &AppState{
 		Items:           core.NewSignalFunc(cx, []exoCore.CacheItem{}, nil),
 		Selected:        core.NewSignalFunc(cx, map[string]bool{}, nil),
-		OpenRows:        core.NewSignalFunc(cx, map[string]bool{}, nil),
+		FilterFamily:    core.NewSignal[cacheFamily](cx, ""),
+		FilterPlace:     core.NewSignal(cx, ""),
 		Failures:        core.NewSignalFunc(cx, map[string]friendly{}, nil),
 		TargetDir:       core.NewSignal(cx, ""),
 		Target:          core.NewSignal(cx, targetState{}),
@@ -238,21 +241,52 @@ func toggleSelected(state *AppState, id string) {
 	state.Selected.Set(next)
 }
 
-func toggleOpen(state *AppState, id string) {
-	next := make(map[string]bool, len(state.OpenRows.GetUntracked()))
-	for key, value := range state.OpenRows.GetUntracked() {
-		next[key] = value
+// visibleItems returns the caches the rail and the place filter keep. The
+// window only shows these, and only these can move, so the list on screen is
+// the list the move acts on.
+func visibleItems(state *AppState) []exoCore.CacheItem {
+	family := state.FilterFamily.Get()
+	place := state.FilterPlace.Get()
+	var out []exoCore.CacheItem
+	for _, it := range state.Items.Get() {
+		if inFamily(it, family) && inPlace(it, place) {
+			out = append(out, it)
+		}
 	}
-	next[id] = !next[id]
-	state.OpenRows.Set(next)
+	return out
 }
 
-// selectAll selects every cache that can move, or clears the selection.
+// setFamily keeps the caches of one group. It drops the selection, so a press
+// on Move never moves a cache that the filter hides.
+func setFamily(state *AppState, family cacheFamily) {
+	state.FilterFamily.Set(family)
+	state.Selected.Set(map[string]bool{})
+}
+
+// setPlace keeps the caches of one place, and drops the selection for the same
+// reason as setFamily.
+func setPlace(state *AppState, place string) {
+	state.FilterPlace.Set(place)
+	state.Selected.Set(map[string]bool{})
+}
+
+// openPicker opens the folder picker at the chosen folder, or at the home
+// folder on the first run. The picker lists nothing until it is told a folder,
+// so the window loads one as the picker opens.
+func openPicker(state *AppState) {
+	state.Picker.Open(strings.TrimSpace(state.TargetDir.Get()))
+	state.PickerOpen.Set(true)
+}
+
+// selectAll selects every cache on screen that can move, or clears the
+// selection.
 func selectAll(state *AppState, on bool) {
 	next := map[string]bool{}
 	if on {
-		for _, it := range state.Items.Get() {
-			if movable(it) {
+		family := state.FilterFamily.GetUntracked()
+		place := state.FilterPlace.GetUntracked()
+		for _, it := range state.Items.GetUntracked() {
+			if movable(it) && inFamily(it, family) && inPlace(it, place) {
 				next[it.ID] = true
 			}
 		}
@@ -341,7 +375,6 @@ func triggerScan(state *AppState) {
 			state.IsScanning.Set(false)
 			state.Local.Set(local)
 			state.Failures.Set(map[string]friendly{})
-			state.OpenRows.Set(map[string]bool{})
 
 			if items == nil {
 				// A scan without a ledger cannot tell a moved cache from a
@@ -357,6 +390,11 @@ func triggerScan(state *AppState) {
 
 			state.Items.Set(items)
 			state.Selected.Set(map[string]bool{})
+			// A group that lost its last cache would leave the rail with no
+			// row to press, and an empty list with no way back.
+			if family := state.FilterFamily.GetUntracked(); family != "" && !hasFamily(items, family) {
+				state.FilterFamily.Set("")
+			}
 
 			if err != nil {
 				state.Notice.Set(notice{Kind: noticeWarn,
@@ -530,7 +568,6 @@ func triggerClean(state *AppState, id string) {
 				next := state.Failures.GetUntracked()
 				next[id] = f
 				state.Failures.Set(next)
-				state.OpenRows.Set(withOpen(state.OpenRows.GetUntracked(), id))
 				state.Notice.Set(notice{Kind: noticeDanger, Title: f.Title, Body: f.Body, Hint: f.Hint})
 				return
 			}
@@ -565,7 +602,6 @@ func triggerRollback(state *AppState, id string) {
 				next := state.Failures.GetUntracked()
 				next[id] = f
 				state.Failures.Set(next)
-				state.OpenRows.Set(withOpen(state.OpenRows.GetUntracked(), id))
 				state.Notice.Set(notice{Kind: noticeDanger, Title: f.Title, Body: f.Body, Hint: f.Hint})
 				return
 			}
@@ -573,14 +609,4 @@ func triggerRollback(state *AppState, id string) {
 			state.Status.Set("The cache is back on this Mac. Exodrive removed the record of the move.")
 		})
 	}()
-}
-
-// withOpen returns the open rows with id added.
-func withOpen(open map[string]bool, id string) map[string]bool {
-	next := make(map[string]bool, len(open)+1)
-	for key, value := range open {
-		next[key] = value
-	}
-	next[id] = true
-	return next
 }

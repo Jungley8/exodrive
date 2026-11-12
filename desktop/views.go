@@ -284,7 +284,7 @@ func targetInput(cx *core.Scope, state *AppState) core.Node {
 		}},
 		ui.Button{
 			Text: "Choose", Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.FolderOpen,
-			OnPress: func() { state.PickerOpen.Set(true) },
+			OnPress: func() { openPicker(state) },
 			TestID:  "browse",
 		},
 	}}
@@ -312,14 +312,15 @@ func renderAction(cx *core.Scope, state *AppState) core.Node {
 	}
 
 	target := state.Target.Get()
+	visible := visibleItems(state)
 	selected := selectedItems(state)
-	_, _, _, canMove := tally(state.Items.Get())
+	_, _, _, canMove := tally(visible)
 	var total int64
 	for _, it := range selected {
 		total += it.SizeBytes
 	}
 
-	title, helper := actionCopy(target, len(selected), canMove, total)
+	title, helper := actionCopy(target, len(visible), len(selected), canMove, total)
 	colors := ui.ColorsOf(cx)
 	children := []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 16}, Children: []core.Node{
@@ -327,7 +328,7 @@ func renderAction(cx *core.Scope, state *AppState) core.Node {
 				typeLine(title, typeLead, colors.Text),
 				typeLine(helper, typeSmall, colors.Muted),
 			}},
-			actionButton(state, target, len(selected), canMove),
+			actionButton(state, target, len(selected), canMove, len(visible)),
 		}},
 	}
 	if n := state.Notice.Get(); n.shown() {
@@ -337,12 +338,14 @@ func renderAction(cx *core.Scope, state *AppState) core.Node {
 }
 
 // actionCopy names the next step and what it will do.
-func actionCopy(target targetState, selected, canMove int, total int64) (title, helper string) {
+func actionCopy(target targetState, shown, selected, canMove int, total int64) (title, helper string) {
 	switch {
 	case !target.Ready && target.Problem != "":
 		return "Choose another folder", "Exodrive checked the folder and cannot use it."
 	case !target.Ready:
 		return "Choose a folder for the caches", "The caches move to this folder. Keep the drive connected."
+	case shown == 0:
+		return "No caches in this view", "Choose All, or another group in the list on the left."
 	case canMove == 0:
 		return "Nothing can move now", "Every cache is already on the drive, or it cannot move."
 	case selected == 0:
@@ -353,13 +356,13 @@ func actionCopy(target targetState, selected, canMove int, total int64) (title, 
 	}
 }
 
-func actionButton(state *AppState, target targetState, selected, canMove int) core.Node {
+func actionButton(state *AppState, target targetState, selected, canMove, shown int) core.Node {
 	disabled := func() bool { return busy(state) }
 	switch {
 	case !target.Ready:
 		return ui.Button{Text: "Choose folder", Variant: ui.ButtonPrimary, Icon: lucide.FolderOpen,
-			Disabled: disabled, OnPress: func() { state.PickerOpen.Set(true) }, TestID: "choose-target"}
-	case canMove == 0:
+			Disabled: disabled, OnPress: func() { openPicker(state) }, TestID: "choose-target"}
+	case canMove == 0 || shown == 0:
 		return core.View{}
 	case selected == 0:
 		return ui.Button{Text: fmt.Sprintf("Select all %d", canMove), Variant: ui.ButtonPrimary, Icon: lucide.Check,
@@ -440,19 +443,20 @@ func progressRow(cx *core.Scope, state *AppState) core.Node {
 	}}
 }
 
-// renderListHeader counts the caches and holds the two list actions: the
+// renderListHeader names the list and holds its filters: the place, the
 // selection and the check.
 func renderListHeader(cx *core.Scope, state *AppState) core.Node {
 	return core.Dynamic(func(cx *core.Scope) core.Node {
 		colors := ui.ColorsOf(cx)
-		items := state.Items.Get()
-		_, _, _, canMove := tally(items)
+		visible := visibleItems(state)
+		_, _, _, canMove := tally(visible)
 		selected := len(selectedItems(state))
 
 		children := []core.Node{
 			typeLine("Caches", typeLabel, colors.Text),
-			typeLine(fmt.Sprintf("%d", len(items)), figures(typeSmall), colors.Muted),
+			typeLine(fmt.Sprintf("%d", len(visible)), figures(typeSmall), colors.Muted),
 			fill(),
+			placeFilter(cx, state),
 		}
 		if selected > 0 {
 			children = append(children, typeLine(fmt.Sprintf("%d selected", selected), figures(typeSmall), colors.Muted))
@@ -470,16 +474,125 @@ func renderListHeader(cx *core.Scope, state *AppState) core.Node {
 	})
 }
 
-func renderList(cx *core.Scope, state *AppState) core.Node {
+// placeFilter keeps one place in the list: this Mac, the drive, or both. The
+// words match the state on every card, so a press reads as a filter on what
+// the cards already say.
+func placeFilter(cx *core.Scope, state *AppState) core.Node {
+	return ui.ToggleGroup{Label: "Place", TestID: "place-filter", Children: []core.Node{
+		placeToggle(state, placeAll, "All", "place-all"),
+		placeToggle(state, placeLocal, "On this Mac", "place-this-mac"),
+		placeToggle(state, placeMoved, "On the drive", "place-drive"),
+	}}
+}
+
+func placeToggle(state *AppState, place, text, testID string) core.Node {
+	return ui.ToggleButton{Text: text, TestID: testID,
+		On:       func() bool { return state.FilterPlace.Get() == place },
+		OnChange: func(bool) { setPlace(state, place) }}
+}
+
+// renderListArea is the rail of groups beside the cards of the chosen group.
+// The rail keeps every group visible, so the window always says what it found.
+func renderListArea(cx *core.Scope, state *AppState) core.Node {
+	return core.View{
+		Style: core.Style{Direction: core.Row, AlignItems: core.AlignStretch, Gap: 14,
+			FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)},
+		Children: []core.Node{
+			core.Dynamic(func(cx *core.Scope) core.Node { return renderRail(cx, state) }),
+			core.View{
+				Style: core.Style{Direction: core.Column, Gap: 8, FlexGrow: 1, FlexShrink: 1, FlexBasis: core.Pt(0), MinWidth: core.Pt(0), MinHeight: core.Pt(0)},
+				Children: []core.Node{
+					core.Dynamic(func(cx *core.Scope) core.Node { return renderListHeader(cx, state) }),
+					core.Dynamic(func(cx *core.Scope) core.Node { return renderList(cx, state) }),
+				},
+			},
+		},
+	}
+}
+
+// renderRail shows what the check found, broken down by group. A bar under
+// each name shows how much of that group sits on this Mac and how much already
+// moved, so a press on a group reads before it filters.
+func renderRail(cx *core.Scope, state *AppState) core.Node {
+	colors := ui.ColorsOf(cx)
 	items := state.Items.Get()
-	if len(items) == 0 {
+	stats := families(items)
+	if len(stats) == 0 {
+		return core.Group{}
+	}
+	local, moved, unused, _ := tally(items)
+	all := familyStat{Family: placeAllFamily, Count: len(items), Local: local + unused, Moved: moved}
+	total := all.Local + all.Moved
+
+	children := []core.Node{typeLine("Detected", typeLabel, colors.Text),
+		railRow(cx, state, all, total, "All caches", "rail-all")}
+	for _, stat := range stats {
+		children = append(children, railRow(cx, state, stat, total, string(stat.Family), "rail-"+string(stat.Family)))
+	}
+
+	return core.View{
+		Style: core.Style{Width: core.Pt(176), FlexShrink: 0, MinHeight: core.Pt(0), Direction: core.Column, Gap: 2,
+			Padding: core.Symmetric(12, 8), CornerRadius: 12, BorderCurve: core.BorderCurveContinuous, BorderWidth: 1},
+		StyleFunc: func() core.Style { return core.Style{Background: colors.Surface(), BorderColor: colors.Border()} },
+		TestID:    "rail",
+		Children: []core.Node{core.Scroll{
+			Style:    core.Style{Direction: core.Column, Gap: 2, FlexGrow: 1, MinHeight: core.Pt(0)},
+			Children: children,
+		}},
+	}
+}
+
+// placeAllFamily is the rail's first row: every group at once.
+const placeAllFamily cacheFamily = ""
+
+// railRow is one group: its name, how many caches it holds, and its share of
+// the caches with a bar split by place.
+func railRow(cx *core.Scope, state *AppState, stat familyStat, total int64, label, testID string) core.Node {
+	colors := ui.ColorsOf(cx)
+	chosen := state.FilterFamily.Get() == stat.Family
+	ink := colors.Muted
+	if chosen {
+		ink = colors.Text
+	}
+	return core.View{
+		Style: core.Style{Direction: core.Column, Gap: 5, Padding: core.Symmetric(7, 8), CornerRadius: 8},
+		StyleFunc: func() core.Style {
+			if chosen {
+				return core.Style{Background: colors.Inset()}
+			}
+			return core.Style{}
+		},
+		Role: core.RoleButton,
+		OnPress: func(core.PressEvent) {
+			if chosen && stat.Family != placeAllFamily {
+				setFamily(state, placeAllFamily)
+				return
+			}
+			setFamily(state, stat.Family)
+		},
+		LabelFunc: func() string { return fmt.Sprintf("%s, %s", label, count(stat.Count, "cache", "caches")) },
+		TestID:    testID,
+		Children: []core.Node{
+			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6}, Children: []core.Node{
+				typeLine(label, typeSmall, ink),
+				fill(),
+				typeLine(fmt.Sprintf("%d", stat.Count), figures(typeSmall), colors.Faint),
+			}},
+			gaugeBar(cx, total, []barPart{{stat.Local, colors.Warn}, {stat.Moved, colors.Up}}),
+		},
+	}
+}
+
+func renderList(cx *core.Scope, state *AppState) core.Node {
+	visible := visibleItems(state)
+	if len(visible) == 0 {
 		return emptyList(cx, state)
 	}
 	return core.Scroll{
-		Style: core.Style{Direction: core.Column, Gap: 6, FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)},
+		Style: core.Style{Direction: core.Column, Gap: 8, FlexGrow: 1, FlexShrink: 1, MinHeight: core.Pt(0)},
 		Children: []core.Node{
 			core.Each(
-				func() []exoCore.CacheItem { return state.Items.Get() },
+				func() []exoCore.CacheItem { return visibleItems(state) },
 				func(it exoCore.CacheItem) string { return it.ID },
 				func(cx *core.Scope, item func() exoCore.CacheItem, _ func() int) core.Node {
 					return core.Dynamic(func(cx *core.Scope) core.Node { return renderRow(cx, state, item) })
@@ -489,12 +602,23 @@ func renderList(cx *core.Scope, state *AppState) core.Node {
 	}
 }
 
-// emptyList says what a check looks for. A failed check already explains
-// itself in the notice, so the list stays bare then.
+// emptyList says what a check looks for, or that the filter hides every cache.
+// A failed check already explains itself in the notice, so the list stays bare
+// then.
 func emptyList(cx *core.Scope, state *AppState) core.Node {
 	colors := ui.ColorsOf(cx)
 	if state.Notice.Get().Kind == noticeDanger {
 		return core.View{Style: core.Style{FlexGrow: 1, MinHeight: core.Pt(0)}}
+	}
+	if len(state.Items.Get()) > 0 {
+		return core.View{
+			Style: core.Style{FlexGrow: 1, MinHeight: core.Pt(0), Direction: core.Column, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 4},
+			Children: []core.Node{
+				ui.Icon(lucide.Funnel, 22, colors.Faint),
+				typeLine("No caches in this view", typeLead, colors.Text),
+				typeLine("Choose All, or another group in the list on the left.", typeSmall, colors.Muted),
+			},
+		}
 	}
 	return core.View{
 		Style: core.Style{FlexGrow: 1, MinHeight: core.Pt(0), Direction: core.Column, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 4},

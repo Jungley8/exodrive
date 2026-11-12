@@ -219,3 +219,108 @@ func count(n int, one, many string) string {
 
 // bytes is a formatted size, for the window's own labels.
 func bytes(n int64) string { return internalUi.FormatBytes(n) }
+
+// cacheFamily groups a toolchain under the name a person knows. The rail lists
+// the groups, and a press on one keeps only that group's caches in the list.
+type cacheFamily string
+
+const (
+	familyNode   cacheFamily = "Node"
+	familyPython cacheFamily = "Python"
+	familyRust   cacheFamily = "Rust"
+	familyGo     cacheFamily = "Go"
+	familyDocker cacheFamily = "Docker"
+	familyOther  cacheFamily = "Other"
+)
+
+// familyOrder is the order the rail lists the groups in. A group with no cache
+// does not appear.
+var familyOrder = []cacheFamily{familyNode, familyPython, familyRust, familyGo, familyDocker, familyOther}
+
+// familyOf maps a toolchain to its group. A toolchain the window does not know
+// falls in Other, so its caches stay visible and cannot hide.
+func familyOf(tool string) cacheFamily {
+	switch strings.ToLower(strings.TrimSpace(tool)) {
+	case "npm", "pnpm", "yarn", "bun":
+		return familyNode
+	case "pip", "uv":
+		return familyPython
+	case "cargo":
+		return familyRust
+	case "go", "golang":
+		return familyGo
+	case "docker", "orbstack":
+		return familyDocker
+	}
+	return familyOther
+}
+
+// familyStat is one group's count and bytes in the rail.
+type familyStat struct {
+	Family cacheFamily
+	Count  int
+	Local  int64
+	Moved  int64
+}
+
+// families sums the caches by group, in the order the rail lists them.
+func families(items []exoCore.CacheItem) []familyStat {
+	stats := make(map[cacheFamily]*familyStat, len(familyOrder))
+	for _, it := range items {
+		family := familyOf(it.ToolName)
+		stat, ok := stats[family]
+		if !ok {
+			stat = &familyStat{Family: family}
+			stats[family] = stat
+		}
+		stat.Count++
+		switch stateOf(it) {
+		case stateMoved:
+			stat.Moved += it.SizeBytes
+		default:
+			stat.Local += it.SizeBytes
+		}
+	}
+
+	out := make([]familyStat, 0, len(stats))
+	for _, family := range familyOrder {
+		if stat, ok := stats[family]; ok {
+			out = append(out, *stat)
+		}
+	}
+	return out
+}
+
+// hasFamily reports whether a group holds a cache in items.
+func hasFamily(items []exoCore.CacheItem, family cacheFamily) bool {
+	for _, it := range items {
+		if familyOf(it.ToolName) == family {
+			return true
+		}
+	}
+	return false
+}
+
+// inFamily reports whether a cache belongs to family. An empty family holds
+// every cache.
+func inFamily(it exoCore.CacheItem, family cacheFamily) bool {
+	return family == "" || familyOf(it.ToolName) == family
+}
+
+// The places the list filter keeps. An empty place keeps every place.
+const (
+	placeAll   = ""
+	placeLocal = "local"
+	placeMoved = "moved"
+)
+
+// inPlace reports whether a cache sits in the place the filter keeps.
+func inPlace(it exoCore.CacheItem, place string) bool {
+	switch place {
+	case placeLocal:
+		return stateOf(it) != stateMoved
+	case placeMoved:
+		return stateOf(it) == stateMoved
+	}
+	return true
+}
