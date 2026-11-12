@@ -2,6 +2,7 @@ package fsutil
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -66,4 +67,66 @@ func TestIsSafeFilesystemFailClosed(t *testing.T) {
 			t.Errorf("IsSafeFilesystem(%q) = %v; want %v", tc.fstype, got, tc.want)
 		}
 	}
+}
+
+// TestIsSameDevice covers the two answers that matter: a folder and a child of
+// it share a volume, and a folder on a second volume does not.
+func TestIsSameDevice(t *testing.T) {
+	dir := t.TempDir()
+	child := filepath.Join(dir, "cache")
+	if err := os.Mkdir(child, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	same, err := IsSameDevice(dir, child)
+	if err != nil {
+		t.Fatalf("IsSameDevice failed: %v", err)
+	}
+	if !same {
+		t.Fatalf("a folder and its child are reported as two volumes")
+	}
+
+	if _, err := IsSameDevice(dir, filepath.Join(dir, "missing")); err == nil {
+		t.Fatalf("a missing path reported a volume")
+	}
+
+	other := secondVolume()
+	if other == "" {
+		t.Skip("no second volume on this machine")
+	}
+	same, err = IsSameDevice(dir, other)
+	if err != nil {
+		t.Fatalf("IsSameDevice across volumes failed: %v", err)
+	}
+	if same {
+		t.Fatalf("%s and %s are reported as one volume", dir, other)
+	}
+}
+
+// secondVolume returns a mounted folder outside the volume of the home folder,
+// or "" when this machine has only one volume.
+func secondVolume() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	candidates := []string{"/Volumes", "/dev/shm", "/run", "/mnt"}
+	for _, root := range candidates {
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			path := filepath.Join(root, entry.Name())
+			info, err := os.Stat(path)
+			if err != nil || !info.IsDir() {
+				continue
+			}
+			same, err := IsSameDevice(home, path)
+			if err == nil && !same {
+				return path
+			}
+		}
+	}
+	return ""
 }

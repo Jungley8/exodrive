@@ -106,7 +106,7 @@ func renderDrives(cx *core.Scope, state *AppState) core.Node {
 				Children: []core.Node{
 					core.Dynamic(func(cx *core.Scope) core.Node { return externalGaugeHead(cx, state) }),
 					targetInput(cx, state),
-					core.Dynamic(func(cx *core.Scope) core.Node { return targetProblemLine(cx, state) }),
+					core.Dynamic(func(cx *core.Scope) core.Node { return targetNote(cx, state) }),
 				},
 			},
 		},
@@ -239,16 +239,30 @@ func externalGaugeHead(cx *core.Scope, state *AppState) core.Node {
 	}
 }
 
-// targetProblemLine says why the chosen folder fails, under the field.
-func targetProblemLine(cx *core.Scope, state *AppState) core.Node {
+// targetNote is the line under the folder field: the reason a folder fails the
+// check, or the reminder that a folder on this Mac frees no space. The reminder
+// never stops a move; it only says what a move cannot do.
+func targetNote(cx *core.Scope, state *AppState) core.Node {
 	colors := ui.ColorsOf(cx)
 	target := state.Target.Get()
-	if target.Path == "" || target.Ready || target.Problem == "" {
-		return core.Group{}
+	switch {
+	case target.Ready && target.SameVolume:
+		return noteLine(cx, lucide.Info, colors.Warn, "target-reminder",
+			"This folder is on this Mac. A move here frees no space.")
+	case target.Path != "" && !target.Ready && target.Problem != "":
+		return noteLine(cx, lucide.TriangleAlert, colors.Danger, "target-problem", target.Problem)
 	}
+	return core.Group{}
+}
+
+// noteLine is one line of advice under a field, with an icon and a color that
+// follow how serious the advice is.
+func noteLine(cx *core.Scope, icon func() *core.SVG, c func() core.Color, testID, content string) core.Node {
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignStart, Gap: 6}, Children: []core.Node{
-		ui.Icon(lucide.TriangleAlert, 12, colors.Danger),
-		typeLine(target.Problem, typeSmall, colors.Danger),
+		ui.Icon(icon, 12, c),
+		core.Text{Content: content, TestID: testID,
+			Style:     core.Style{FlexShrink: 1, FontSize: 12, LineHeight: 16},
+			StyleFunc: func() core.Style { return core.Style{Color: c()} }},
 	}}
 }
 

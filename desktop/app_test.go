@@ -676,3 +676,43 @@ func TestWindowRefusesAFolderThatFailsTheCheck(t *testing.T) {
 		t.Fatalf("the window does not name the next step:\n%s", app.Dump())
 	}
 }
+
+// TestWindowRemindsWhenTheFolderIsOnThisMac keeps the reminder a reminder: the
+// window says that a move here frees no space, and the move stays on offer.
+func TestWindowRemindsWhenTheFolderIsOnThisMac(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("no home folder")
+	}
+	target, err := os.MkdirTemp(home, ".exodrive-target-")
+	if err != nil {
+		t.Skipf("home folder is not writable: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(target) })
+
+	app := nsgotest.Start(t, NewMain(newFakeEngine(fakeCache())), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
+
+	chooseTarget(t, app, target)
+
+	reminder := "This folder is on this Mac. A move here frees no space."
+	if !app.Exists("id:target-reminder") || !strings.Contains(app.Dump(), reminder) {
+		t.Fatalf("the window does not say that a folder on this Mac frees no space:\n%s", app.Dump())
+	}
+	// The reminder must not act as a gate.
+	if !app.Exists("id:select-all") {
+		t.Fatalf("the reminder stopped the move:\n%s", app.Dump())
+	}
+	checkAll(t, app)
+	app.Press("id:migrate")
+	app.Settle()
+	if !app.Exists("id:confirm") {
+		t.Fatalf("the reminder stopped the move before the confirmation:\n%s", app.Dump())
+	}
+	// The confirmation reads the reminder again, where the move starts.
+	if !strings.Contains(app.Dump(), reminder) {
+		t.Fatalf("the confirmation does not repeat the reminder:\n%s", app.Dump())
+	}
+}

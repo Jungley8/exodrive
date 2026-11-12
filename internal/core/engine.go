@@ -94,6 +94,22 @@ type TargetInfo struct {
 	Filesystem string `json:"filesystem"`
 	FreeBytes  int64  `json:"free_bytes"`
 	TotalBytes int64  `json:"total_bytes"`
+	// SameVolume is true when the folder sits on the volume that holds this
+	// Mac. A move into that volume frees no space, so the window and the
+	// command line warn. Neither one stops the move.
+	SameVolume bool `json:"same_volume"`
+}
+
+// TargetOnThisMac reports whether target sits on the volume that holds the home
+// folder. The caches live there, so a move into that volume frees no space.
+// An unreadable path reports false: the window only warns on a known answer.
+func TargetOnThisMac(target string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return false
+	}
+	same, err := fsutil.IsSameDevice(target, home)
+	return err == nil && same
 }
 
 // CheckTarget reports the volume under targetRoot before anything moves. It
@@ -110,7 +126,8 @@ func (e *Engine) CheckTarget(targetRoot string) (TargetInfo, error) {
 	if !fsutil.IsSafeFilesystem(fstype) {
 		return TargetInfo{}, fmt.Errorf("filesystem '%s' is not supported: choose APFS, HFS+, ext2/3/4, btrfs, zfs, xfs, f2fs, or bcachefs", fstype)
 	}
-	return TargetInfo{Path: targetRoot, Filesystem: fstype, FreeBytes: freeBytes, TotalBytes: totalBytes}, nil
+	return TargetInfo{Path: targetRoot, Filesystem: fstype, FreeBytes: freeBytes, TotalBytes: totalBytes,
+		SameVolume: TargetOnThisMac(targetRoot)}, nil
 }
 
 func (e *Engine) Preflight(ctx context.Context, item CacheItem, targetRoot string) error {

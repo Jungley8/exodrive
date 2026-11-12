@@ -249,6 +249,9 @@ func runMigrate(args []string) {
 	}
 
 	fmt.Printf("\nTarget external directory: %s\n", *target)
+	if core.TargetOnThisMac(*target) {
+		fmt.Println("Warning: the target folder is on this Mac. A move here frees no space.")
+	}
 	fmt.Printf("Selected %d cache target(s) for migration.\n\n", len(candidates))
 
 	var failureCount int
@@ -299,6 +302,9 @@ func runMigrate(args []string) {
 // and changes nothing: no copy, no switch, no ledger record.
 func runMigrateDryRun(ctx context.Context, engine *core.Engine, candidates []core.CacheItem, target string) {
 	fmt.Printf("\nTarget external directory: %s\n", target)
+	if core.TargetOnThisMac(target) {
+		fmt.Println("Warning: the target folder is on this Mac. A move here frees no space.")
+	}
 	fmt.Printf("Dry run. %d cache(s) selected. No data moves.\n\n", len(candidates))
 
 	var reclaimable int64

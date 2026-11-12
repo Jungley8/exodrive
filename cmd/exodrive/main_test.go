@@ -335,3 +335,47 @@ func TestCLI_ReportsBlockedCache(t *testing.T) {
 		t.Fatalf("check does not show the Blocked status:\n%s", checkOut)
 	}
 }
+
+// TestCLI_RemindsAboutAFolderOnThisMac keeps the reminder a reminder: the run
+// says that a folder on this Mac frees no space, and it still plans the move.
+func TestCLI_RemindsAboutAFolderOnThisMac(t *testing.T) {
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	cargoHome := filepath.Join(tmp, "cargo")
+	registry := filepath.Join(cargoHome, "registry")
+	target := filepath.Join(tmp, "target")
+	ledger := filepath.Join(tmp, "manifest.json")
+
+	for _, dir := range []string{home, registry, target} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(registry, "crate"), []byte("crate-bytes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	env := map[string]string{
+		"HOME":                   home,
+		"CARGO_HOME":             cargoHome,
+		"EXODRIVE_MANIFEST_PATH": ledger,
+		"GOCACHE":                filepath.Join(home, "gocache"),
+		"GOMODCACHE":             filepath.Join(home, "gomodcache"),
+		"UV_CACHE_DIR":           filepath.Join(home, "uv"),
+		"PIP_CACHE_DIR":          filepath.Join(home, "pip"),
+		"BUN_INSTALL":            filepath.Join(home, "bun"),
+		"YARN_CACHE_FOLDER":      filepath.Join(home, "yarn"),
+		"ORBSTACK_DATA_DIR":      filepath.Join(home, "orbstack"),
+	}
+
+	out, code := runCLIEnv(t, env, "migrate", "--dry-run", "--tools=cargo", "--target="+target)
+	if code != 0 {
+		t.Fatalf("the reminder stopped the dry run (exit %d):\n%s", code, out)
+	}
+	if !strings.Contains(out, "Warning: the target folder is on this Mac. A move here frees no space.") {
+		t.Fatalf("the run does not warn about a folder on this Mac:\n%s", out)
+	}
+	if !strings.Contains(out, "Dry run.") {
+		t.Fatalf("the warning replaced the plan:\n%s", out)
+	}
+}

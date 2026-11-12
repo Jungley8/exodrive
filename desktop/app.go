@@ -18,14 +18,16 @@ import (
 
 // targetState is the chosen folder and the volume under it. Ready is true only
 // after the engine checks the folder, so the window never starts a move into a
-// folder that already failed the check.
+// folder that already failed the check. SameVolume is true when the folder sits
+// on this Mac, where a move frees no space; the window warns and still moves.
 type targetState struct {
-	Path    string
-	Free    int64
-	Total   int64
-	FS      string
-	Ready   bool
-	Problem string
+	Path       string
+	Free       int64
+	Total      int64
+	FS         string
+	Ready      bool
+	Problem    string
+	SameVolume bool
 }
 
 // diskState is the free space of this Mac.
@@ -317,6 +319,7 @@ func triggerTargetCheck(state *AppState) {
 			state.Target.Set(targetState{
 				Path: target, Ready: true, FS: info.Filesystem,
 				Free: info.FreeBytes, Total: info.TotalBytes,
+				SameVolume: info.SameVolume,
 			})
 		})
 	}()

@@ -243,6 +243,9 @@ and return an error with the record intact.
   and at least one selected cache that can move. While no cache can move, the
   main action is absent. A folder that fails the check shows its reason under
   the field, and a result that a newer edit made stale is dropped.
+- A folder on the volume that holds this Mac frees no space. `TargetInfo` says
+  so, and the window warns under the field and again in the confirmation. The
+  warning never stops a move, and the command line prints the same sentence.
 - The main action names the next step: `Choose folder`, `Select all N`, or
   `Move N caches`. A move asks for confirmation with the count, the total
   bytes, the target folder, and up to five cache names.

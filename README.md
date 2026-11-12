@@ -222,7 +222,8 @@ exodrive check
 
 1. Open `bin/exodrive-gui`, or `Exodrive.app`.
 2. Choose a folder on the external drive. Press **Choose**, or type the path.
-   The window checks the folder and shows the free space of the drive.
+   The window checks the folder and shows the free space of the drive. A folder
+   on this Mac frees no space, and the window says so.
 3. Select the caches to move. Press **Select all N**, or press the box on one
    row.
 4. Press **Move N caches**. Read the list, then press **Move**. A long move

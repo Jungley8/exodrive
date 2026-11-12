@@ -5,6 +5,7 @@ import (
 
 	"github.com/oneo-me/nsgo/base"
 	"github.com/oneo-me/nsgo/core"
+	"github.com/oneo-me/nsgo/icons/lucide"
 	"github.com/oneo-me/nsgo/ui"
 )
 
@@ -44,6 +45,14 @@ func confirmMove(cx *core.Scope, state *AppState) core.Node {
 			}})
 		}
 
+		children := make([]core.Node, 0, 2)
+		if target.SameVolume {
+			children = append(children, noteLine(cx, lucide.Info, colors.Warn, "confirm-reminder",
+				"This folder is on this Mac. A move here frees no space."))
+		}
+		children = append(children, core.View{Style: core.Style{Direction: core.Column, Gap: 4, Padding: core.Symmetric(8, 10), CornerRadius: 8},
+			StyleFunc: ui.Filled(colors.Inset), Children: rows})
+
 		return ui.Dialog{
 			Open: func() bool { return state.ConfirmOpen.Get() },
 			OnOpenChange: func(open bool, _ base.Reason) {
@@ -55,8 +64,7 @@ func confirmMove(cx *core.Scope, state *AppState) core.Node {
 			Title: fmt.Sprintf("Move %s?", count(len(selected), "cache", "caches")),
 			Description: fmt.Sprintf("%s moves to %s. Exodrive checks each copy, then frees the space on this Mac.",
 				bytes(total), shortPath(target.Path)),
-			Children: []core.Node{core.View{Style: core.Style{Direction: core.Column, Gap: 4, Padding: core.Symmetric(8, 10), CornerRadius: 8},
-				StyleFunc: ui.Filled(colors.Inset), Children: rows}},
+			Children: children,
 			Footer: []core.Node{
 				ui.Button{Text: "Cancel", Variant: ui.ButtonSecondary, TestID: "confirm-cancel",
 					OnPress: func() { state.ConfirmOpen.Set(false); state.Status.Set("Nothing moved.") }},

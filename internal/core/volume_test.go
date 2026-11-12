@@ -98,3 +98,34 @@ func TestPreflightRefusesADisconnectedVolume(t *testing.T) {
 		t.Fatalf("error does not name the disconnected volume: %v", err)
 	}
 }
+
+// TestCheckTargetWarnsOnThisMac keeps the reminder honest: a folder under the
+// home folder sits on the volume that holds the caches, so a move there frees
+// no space. The check still passes, because the reminder never stops a move.
+func TestCheckTargetWarnsOnThisMac(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		t.Skip("no home folder")
+	}
+	dir, err := os.MkdirTemp(home, ".exodrive-target-")
+	if err != nil {
+		t.Skipf("home folder is not writable: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+	engine := NewEngine()
+	info, err := engine.CheckTarget(dir)
+	if err != nil {
+		t.Fatalf("CheckTarget refused a folder on this Mac: %v", err)
+	}
+	if !info.SameVolume {
+		t.Fatalf("a folder on this Mac is reported as another volume")
+	}
+
+	if !TargetOnThisMac(dir) {
+		t.Fatalf("TargetOnThisMac is false for a folder on this Mac")
+	}
+	if TargetOnThisMac(filepath.Join(dir, "gone")) {
+		t.Fatalf("TargetOnThisMac claims a known answer for a missing folder")
+	}
+}
