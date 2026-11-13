@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"exodrive/internal/fsutil"
 )
 
 // VolumesRoot holds the mount points. macOS uses /Volumes. The tests override
@@ -75,3 +77,28 @@ type TargetError struct {
 }
 
 func (e *TargetError) Error() string { return e.Message }
+
+// VolumeSpace is a mounted external volume and the space it offers.
+type VolumeSpace struct {
+	Name        string
+	Path        string
+	Free, Total int64
+}
+
+// SpaciousVolumes lists the external volumes with their space, the one with the
+// most free space first. A volume whose space cannot be read is left out: a
+// number the window cannot check is worse than no number.
+func SpaciousVolumes() []VolumeSpace {
+	names := ExternalVolumes()
+	spaces := make([]VolumeSpace, 0, len(names))
+	for _, name := range names {
+		path := filepath.Join(VolumesRoot, name)
+		free, total, _, err := fsutil.GetDiskUsage(path)
+		if err != nil || total <= 0 {
+			continue
+		}
+		spaces = append(spaces, VolumeSpace{Name: name, Path: path, Free: free, Total: total})
+	}
+	sort.SliceStable(spaces, func(i, j int) bool { return spaces[i].Free > spaces[j].Free })
+	return spaces
+}

@@ -11,6 +11,9 @@ import (
 // markSize is the mark's side beside the wordmark.
 const markSize core.Points = 30
 
+// WindowTitle is the name the system shows for the window and in the Dock.
+const WindowTitle = "Exodrive"
+
 // brandMark is the window's mark: one plate that runs from the accent to the
 // drive's color, and the arrow that leaves it. The plate carries the whole
 // story in two colors, the same two the gauges use: this Mac, then the drive.

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -35,6 +36,41 @@ func TestExternalVolumesListsMountedFolders(t *testing.T) {
 	got := ExternalVolumes()
 	if len(got) != 2 || got[0] != "Backup" || got[1] != "SSD" {
 		t.Fatalf("ExternalVolumes returned %v, want [Backup SSD]", got)
+	}
+}
+
+func TestSpaciousVolumesReportsTheFreeSpaceOfEachDrive(t *testing.T) {
+	root := useVolumesRoot(t)
+
+	for _, name := range []string{"SSD", "Backup"} {
+		if err := os.Mkdir(filepath.Join(root, name), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A plain file is no drive. It must not appear with made-up numbers.
+	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := SpaciousVolumes()
+	if len(got) != 2 {
+		t.Fatalf("SpaciousVolumes returned %+v, want both drives", got)
+	}
+	names := []string{got[0].Name, got[1].Name}
+	sort.Strings(names)
+	if names[0] != "Backup" || names[1] != "SSD" {
+		t.Fatalf("SpaciousVolumes returned %v, want Backup and SSD", names)
+	}
+	for _, v := range got {
+		if v.Free <= 0 || v.Total <= 0 {
+			t.Fatalf("%s reports free=%d total=%d, want real numbers", v.Name, v.Free, v.Total)
+		}
+		if v.Free > v.Total {
+			t.Fatalf("%s reports more free space than it holds", v.Name)
+		}
+		if v.Path != filepath.Join(root, v.Name) {
+			t.Fatalf("%s reports path %q", v.Name, v.Path)
+		}
 	}
 }
 

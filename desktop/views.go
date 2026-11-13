@@ -232,6 +232,14 @@ func externalGaugeHead(cx *core.Scope, state *AppState) core.Node {
 	case target.Path != "":
 		head = "Not ready"
 		note = "The folder failed the check."
+	default:
+		// No folder yet. The drive that has the most room still answers the
+		// question a person opens this window with: how much space is there.
+		if v, ok := bestVolume(); ok {
+			head = bytes(v.Free) + " free"
+			total, other = v.Total, v.Total-v.Free
+			note = volumeReadyNote(v)
+		}
 	}
 
 	return core.View{
@@ -295,8 +303,28 @@ func targetInput(cx *core.Scope, state *AppState) core.Node {
 	}}
 }
 
+// bestVolume is the connected drive with the most free space, when there is
+// one. The window names it, so the number belongs to a drive the person can
+// find in the Finder.
+func bestVolume() (exoCore.VolumeSpace, bool) {
+	volumes := exoCore.SpaciousVolumes()
+	if len(volumes) == 0 {
+		return exoCore.VolumeSpace{}, false
+	}
+	return volumes[0], true
+}
+
+// volumeReadyNote names the drive beside the free space, and says what the next
+// step is. It never claims a folder Exodrive has not checked.
+func volumeReadyNote(v exoCore.VolumeSpace) string {
+	if others := len(exoCore.ExternalVolumes()) - 1; others > 0 {
+		return fmt.Sprintf("%s has the most free space. %d more connected. Choose a folder.", v.Name, others)
+	}
+	return v.Name + ": choose a folder to move caches here."
+}
+
 // volumeHint says whether an external volume is connected. Without one, the
-// folder picker shows only the internal disk, so the window says so first.
+// folder picker lists only the internal disk.
 func volumeHint() string {
 	volumes := exoCore.ExternalVolumes()
 	switch len(volumes) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/oneo-me/nsgo/core"
+	nsdesktop "github.com/oneo-me/nsgo/desktop"
 	"github.com/oneo-me/nsgo/ui"
 
 	exoCore "exodrive/internal/core"
@@ -137,6 +138,9 @@ func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
 // it can answer for the system picker the way the system does.
 func window(cx *core.Scope, state *AppState) core.Node {
 	cx.SetTheme(Theme())
+	// The window title names the app in the title bar, the Dock, and the
+	// window list. Without it the system shows the name of the binary.
+	nsdesktop.SetTitle(cx, WindowTitle)
 	triggerScan(state)
 
 	return core.View{

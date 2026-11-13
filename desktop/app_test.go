@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,6 +32,24 @@ type fakeProvider struct {
 	hold chan struct{}
 	// migrateErr makes every move stop with this error.
 	migrateErr error
+	// writes counts the calls that change the ledger. The ledger path is one
+	// process-wide setting, so a call that still runs when a test ends writes
+	// into the ledger of the next test.
+	writes atomic.Int32
+}
+
+// waitForWrites waits until no call changes the ledger. A test that reads a
+// step in the middle of a move defers this, so the move cannot outlive the
+// test and taint the next one.
+func (f *fakeProvider) waitForWrites(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for f.writes.Load() > 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("a cache action did not finish")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func (f *fakeProvider) Name() string { return f.name }
@@ -47,6 +66,8 @@ func (f *fakeProvider) PreflightCheck(ctx context.Context, item exoCore.CacheIte
 }
 
 func (f *fakeProvider) Migrate(ctx context.Context, item exoCore.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
+	f.writes.Add(1)
+	defer f.writes.Add(-1)
 	if f.migrateDelay > 0 {
 		time.Sleep(f.migrateDelay)
 	}
@@ -77,6 +98,8 @@ func (f *fakeProvider) Migrate(ctx context.Context, item exoCore.CacheItem, targ
 }
 
 func (f *fakeProvider) Rollback(ctx context.Context, item exoCore.CacheItem) error {
+	f.writes.Add(1)
+	defer f.writes.Add(-1)
 	return exoCore.RemoveRecord(item.ID)
 }
 
@@ -95,6 +118,18 @@ func useVolumesRoot(t *testing.T, root string) string {
 	exoCore.VolumesRoot = root
 	t.Cleanup(func() { exoCore.VolumesRoot = previous })
 	return root
+}
+
+// The window needs a title. Without one the system shows the name of the
+// binary in the title bar, the Dock, and the window list.
+func TestWindowSetsItsTitle(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	useVolumesRoot(t, t.TempDir())
+
+	app := nsgotest.Start(t, NewMain(newFakeEngine(fakeCache())), nsgotest.Size(1100, 800))
+	if app.Title != "Exodrive" {
+		t.Fatalf("the window title is %q, want Exodrive", app.Title)
+	}
 }
 
 // badgeText returns the state chip of a row, or "" when the row is not shown.
@@ -471,8 +506,9 @@ func TestWindowGuidesWhenNoVolumeIsConnected(t *testing.T) {
 	})
 }
 
-// A connected drive turns the same line into a ready state.
-func TestWindowGuidesWhenAVolumeIsReady(t *testing.T) {
+// A connected drive shows its free space before the person chooses a folder.
+// The size answers the first question the window gets: is there room.
+func TestWindowShowsTheDriveBeforeAFolderIsChosen(t *testing.T) {
 	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
 	root := useVolumesRoot(t, t.TempDir())
 	if err := os.Mkdir(filepath.Join(root, "SSD"), 0755); err != nil {
@@ -482,7 +518,9 @@ func TestWindowGuidesWhenAVolumeIsReady(t *testing.T) {
 	app := nsgotest.Start(t, NewMain(newFakeEngine(fakeCache())), nsgotest.Size(1100, 800))
 	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
 	app.WaitUntil(2*time.Second, func() bool {
-		return strings.Contains(app.Dump(), "SSD is connected.")
+		dump := app.Dump()
+		return strings.Contains(dump, " free") &&
+			strings.Contains(dump, "SSD: choose a folder to move caches here.")
 	})
 }
 
@@ -491,12 +529,15 @@ func TestWindowGuidesWhenAVolumeIsReady(t *testing.T) {
 func TestWindowShowsTheCheckStep(t *testing.T) {
 	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
 
-	engine := exoCore.NewEngine(&fakeProvider{
+	provider := &fakeProvider{
 		name: "fake", items: []exoCore.CacheItem{fakeCache()},
 		verifyPause: 800 * time.Millisecond,
-	})
+	}
+	// The test reads the step in the middle of the move, then ends. Wait for
+	// the move, or its record lands in the next test's ledger.
+	t.Cleanup(func() { provider.waitForWrites(t) })
 
-	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
+	app := nsgotest.Start(t, NewMain(exoCore.NewEngine(provider)), nsgotest.Size(1100, 800))
 	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
 
 	chooseTarget(t, app, t.TempDir())
