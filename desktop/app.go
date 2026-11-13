@@ -103,6 +103,9 @@ type AppState struct {
 
 	ConfirmOpen  *core.Signal[bool]
 	AdvancedOpen *core.Signal[bool]
+	// WelcomeOpen shows the first-run card. It starts open until the person
+	// takes the first step, and stays closed after that.
+	WelcomeOpen *core.Signal[bool]
 
 	// Root is the window scope. Background work posts through it, because the
 	// scope of a Dynamic branch is gone as soon as that branch re-renders.
@@ -145,6 +148,11 @@ func window(cx *core.Scope, state *AppState) core.Node {
 	// window list. Without it the system shows the name of the binary.
 	nsdesktop.SetTitle(cx, WindowTitle)
 	triggerScan(state)
+	// A record left by an earlier run names the cache that was changing when
+	// the window closed. The scan clears the notice, so this comes after it.
+	if n, ok := interruptedNotice(state.Text); ok {
+		state.Notice.Set(n)
+	}
 
 	return core.View{
 		Style: core.Style{Direction: core.Column, Width: core.Pct(100), Height: core.Pct(100), Padding: core.All(20), Gap: 14},
@@ -159,6 +167,7 @@ func window(cx *core.Scope, state *AppState) core.Node {
 		},
 		Children: []core.Node{
 			renderHeader(cx, state),
+			core.Show{When: func() bool { return state.WelcomeOpen.Get() }, Then: func(cx *core.Scope) core.Node { return renderWelcome(cx, state) }},
 			renderDrives(cx, state),
 			core.Dynamic(func(cx *core.Scope) core.Node { return renderAction(cx, state) }),
 			renderListArea(cx, state),
@@ -195,6 +204,7 @@ func newState(cx *core.Scope, engine *exoCore.Engine) *AppState {
 		CancelRequested: core.NewSignal(cx, false),
 		ConfirmOpen:     core.NewSignal(cx, false),
 		AdvancedOpen:    core.NewSignal(cx, false),
+		WelcomeOpen:     core.NewSignal(cx, !welcomeSeen()),
 		Root:            cx,
 		Engine:          engine,
 		Text:            texts(languageOf(cx)),
@@ -272,6 +282,7 @@ func openPicker(state *AppState) {
 // chooseFolder takes a folder from the picker and checks it, exactly as a
 // typed path is checked.
 func chooseFolder(state *AppState, path string) {
+	closeWelcome(state)
 	state.TargetDir.Set(path)
 	triggerTargetCheck(state)
 }
@@ -353,6 +364,8 @@ func triggerTargetCheck(state *AppState) {
 				Free: info.FreeBytes, Total: info.TotalBytes,
 				SameVolume: info.SameVolume,
 			})
+			// A checked folder is the first step of the first run.
+			closeWelcome(state)
 		})
 	}()
 }
@@ -491,10 +504,14 @@ func triggerMigration(state *AppState) {
 				}
 			}
 
+			// The record names this cache until the move ends, so a window
+			// that closes now leaves a reason for the next start.
+			_ = exoCore.WriteInFlight(exoCore.InFlight{ID: it.ID, Title: it.Title, Action: actionMove, Target: target.Path})
 			err := state.Engine.Migrate(ctx, it, target.Path, fsutil.MigrateProgress{
 				Copy:   report(exoCore.PhaseCopy),
 				Verify: report(exoCore.PhaseVerify),
 			})
+			_ = exoCore.ClearInFlight()
 			if err != nil {
 				failures[it.ID] = explain(err, actionMove, t)
 				failed++
@@ -557,7 +574,9 @@ func triggerClean(state *AppState, id string) {
 	t := state.Text
 	go func() {
 		ctx := context.Background()
+		_ = exoCore.WriteInFlight(exoCore.InFlight{ID: id, Title: item.Title, Action: actionDelete, Target: item.CurrentPath})
 		err := state.Engine.CleanOrphan(item.CurrentPath)
+		_ = exoCore.ClearInFlight()
 		items, scanErr := state.Engine.ScanAll(ctx)
 		local := readDisk()
 
@@ -590,9 +609,12 @@ func triggerRollback(state *AppState, id string) {
 	state.Notice.Set(notice{})
 
 	t := state.Text
+	item, _ := itemByID(state, id)
 	go func() {
 		ctx := context.Background()
+		_ = exoCore.WriteInFlight(exoCore.InFlight{ID: id, Title: item.Title, Action: actionMoveBack, Target: item.DestinationPath})
 		err := state.Engine.Rollback(ctx, id)
+		_ = exoCore.ClearInFlight()
 		items, scanErr := state.Engine.ScanAll(ctx)
 		local := readDisk()
 

@@ -29,6 +29,12 @@ func GetManifestPath() string {
 	return filepath.Join(home, ".exodrive", "manifest.json")
 }
 
+// StatePath returns a file that the window keeps beside the ledger. A run that
+// moves the ledger moves these files with it.
+func StatePath(name string) string {
+	return filepath.Join(filepath.Dir(GetManifestPath()), name)
+}
+
 // loadManifestLocked reads the manifest from disk. Caller MUST hold manifestMu.
 func loadManifestLocked() (*Manifest, error) {
 	p := GetManifestPath()

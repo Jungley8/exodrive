@@ -16,6 +16,12 @@ const LangEnvVar = "EXODRIVE_LANG"
 // so a language that misses one does not compile.
 type text struct {
 	// Header.
+	WelcomeTitle        string
+	WelcomeStepOne      string
+	WelcomeStepTwo      string
+	WelcomeStepThree    string
+	WelcomeStart        string
+	WelcomeSkip         string
 	Subtitle            string
 	CheckingThisMac     string
 	CheckingThisMacLine string
@@ -125,6 +131,10 @@ type text struct {
 	NothingDeleted          string
 
 	// Status and notices.
+	InterruptedTitle   string
+	InterruptedBody    string // %s was moving when Exodrive stopped.
+	InterruptedBodyAny string
+	InterruptedHint    string
 	NoFolderPathTitle  string
 	NoFolderPathBody   string
 	NoFolderPathHint   string
@@ -199,6 +209,12 @@ type text struct {
 }
 
 var englishText = text{
+	WelcomeTitle:        "Three steps move a cache",
+	WelcomeStepOne:      "Choose a folder on the external drive.",
+	WelcomeStepTwo:      "Select the caches to move.",
+	WelcomeStepThree:    "Press Move. A cache frees its space after the copy passes the check.",
+	WelcomeStart:        "Choose folder",
+	WelcomeSkip:         "Skip",
 	Subtitle:            "Move developer caches to an external drive.",
 	CheckingThisMac:     "Checking this Mac",
 	CheckingThisMacLine: "Checking this Mac...",
@@ -300,6 +316,10 @@ var englishText = text{
 	DeleteDescriptionNoPath: "Exodrive deletes this cache from this Mac. The data is gone after this step.",
 	NothingDeleted:          "Nothing deleted.",
 
+	InterruptedTitle:   "The window closed during a move",
+	InterruptedBody:    "%s was moving when Exodrive stopped.",
+	InterruptedBodyAny: "A cache was moving when Exodrive stopped.",
+	InterruptedHint:    "Run a scan. A cache that shows On the drive finished its move. Move again only if it shows On this Mac.",
 	NoFolderPathTitle:  "This system names no folder path",
 	NoFolderPathBody:   "Exodrive needs the path of the folder.",
 	NoFolderPathHint:   "Type the folder path in the field.",
@@ -372,6 +392,12 @@ var englishText = text{
 }
 
 var chineseText = text{
+	WelcomeTitle:        "迁移缓存只需三步",
+	WelcomeStepOne:      "选择外接磁盘上的一个目录。",
+	WelcomeStepTwo:      "勾选要迁移的缓存。",
+	WelcomeStepThree:    "点「迁移」。副本校验通过后，缓存才释放空间。",
+	WelcomeStart:        "选择目录",
+	WelcomeSkip:         "跳过",
 	Subtitle:            "把开发缓存搬到外接磁盘。",
 	CheckingThisMac:     "正在检查这台 Mac",
 	CheckingThisMacLine: "正在检查这台 Mac……",
@@ -473,6 +499,10 @@ var chineseText = text{
 	DeleteDescriptionNoPath: "Exodrive 会从本机删除这个缓存。删除后数据无法恢复。",
 	NothingDeleted:          "没有删除任何缓存。",
 
+	InterruptedTitle:   "上一次运行在迁移途中结束",
+	InterruptedBody:    "Exodrive 停止时正在迁移 %s。",
+	InterruptedBodyAny: "Exodrive 停止时有个缓存正在迁移。",
+	InterruptedHint:    "重新检查。显示「在磁盘上」的缓存已完成迁移；仍显示「在本机」的，请再迁移一次。",
 	NoFolderPathTitle:  "这个系统没有给出目录路径",
 	NoFolderPathBody:   "Exodrive 需要目录的路径。",
 	NoFolderPathHint:   "在输入框里填写目录路径。",
