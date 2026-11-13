@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exodrive</title>
+    <meta
+      name="description"
+      content="Move developer caches from your internal disk to an external drive. Exodrive checks every copy before it frees the space."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="top">
+        <a class="brand" href="./"><span class="mark" aria-hidden="true">E</span>Exodrive</a>
+        <nav>
+          <a href="docs/">Documentation</a>
+          <a href="https://github.com/Jungley8/exodrive/releases">Releases</a>
+          <a href="https://github.com/Jungley8/exodrive">Source</a>
+          <a href="zh/" lang="zh-Hans">简体中文</a>
+        </nav>
+      </header>
+
+      <main>
+        <div class="hero">
+          <div>
+            <h1>Make room on the disk that came with your Mac.</h1>
+            <p>
+              Exodrive moves a developer cache to an external drive. It checks
+              every byte first. It frees the space only after the copy passes.
+            </p>
+            <div class="actions">
+              <a class="button" href="https://github.com/Jungley8/exodrive/releases">
+                Download for macOS
+              </a>
+              <a class="button quiet" href="docs/">Read the documentation</a>
+            </div>
+            <p class="note">
+              Apache 2.0. Free to use. macOS 13 or later for the window.
+            </p>
+          </div>
+
+          <div class="gauges" aria-label="Example of the two gauges">
+            <div>
+              <div class="gauge-head">
+                <span>This Mac</span><strong>82 GB free</strong>
+              </div>
+              <div class="bar"><span class="cache" style="width: 31%"></span></div>
+              <div class="legend">
+                <i style="background: var(--amber)"></i>38 GB in caches
+              </div>
+            </div>
+            <div class="arrow">move</div>
+            <div>
+              <div class="gauge-head">
+                <span>External drive</span><strong>1.8 TB free</strong>
+              </div>
+              <div class="bar"><span class="away" style="width: 9%"></span></div>
+              <div class="legend">
+                <i style="background: var(--teal)"></i>6 GB moved here
+              </div>
+            </div>
+            <p class="note">An example. The window reads the real numbers.</p>
+          </div>
+        </div>
+
+        <section id="how">
+          <h2>Every move runs the same five steps</h2>
+          <p>
+            The order is the safety: the local cache stays until the copy is
+            proven.
+          </p>
+          <ol class="steps">
+            <li>
+              <b>Copy</b>
+              <p>The cache goes to the drive with its permissions and times.</p>
+            </li>
+            <li>
+              <b>Check</b>
+              <p>Exodrive reads every file on both sides. One different byte stops the move.</p>
+            </li>
+            <li>
+              <b>Record</b>
+              <p>The move goes into a ledger, so a move back finds it later.</p>
+            </li>
+            <li>
+              <b>Switch</b>
+              <p>The tool reads the new path at its next start.</p>
+            </li>
+            <li>
+              <b>Free</b>
+              <p>Exodrive deletes the local copy. The space is yours again.</p>
+            </li>
+          </ol>
+        </section>
+
+        <section id="safety">
+          <h2>Exodrive stops before it damages data</h2>
+          <p>
+            Each rule refuses the move. None of them continues in a weaker mode.
+          </p>
+          <table>
+            <thead>
+              <tr><th scope="col">Rule</th><th scope="col">What happens</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Filesystem</td>
+                <td>Exodrive uses APFS, HFS+, ext2, ext3, ext4, btrfs, zfs, xfs, f2fs, or bcachefs. It refuses exFAT, FAT32, and NTFS.</td>
+              </tr>
+              <tr>
+                <td>Running tool</td>
+                <td>A package manager or container engine that runs stops the move. Stop it first.</td>
+              </tr>
+              <tr>
+                <td>Shell variable</td>
+                <td>A cache path in your shell wins over the tool setting. Exodrive names the variable and stops.</td>
+              </tr>
+              <tr>
+                <td>Binaries</td>
+                <td>Exodrive moves caches only. Your binaries stay where they are.</td>
+              </tr>
+              <tr>
+                <td>Second move</td>
+                <td>An item in the ledger stays where it is. Move it back first.</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="tools">
+          <h2>What Exodrive moves</h2>
+          <p>
+            Each toolchain uses its own setting or a symbolic link. The card in
+            the window names the change.
+          </p>
+          <table>
+            <thead>
+              <tr><th scope="col">Toolchain</th><th scope="col">What moves</th><th scope="col">How the tool finds it</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>npm</td><td>Global cache</td><td><code>npm config set cache</code></td></tr>
+              <tr><td>pnpm</td><td>Package store</td><td><code>pnpm config set store-dir</code></td></tr>
+              <tr><td>yarn 1.x</td><td>Cache folder</td><td><code>yarn config set cache-folder</code></td></tr>
+              <tr><td>Cargo</td><td><code>registry/</code> and <code>git/</code></td><td>Symbolic link</td></tr>
+              <tr><td>Go</td><td><code>GOCACHE</code>, <code>GOMODCACHE</code></td><td><code>go env -w</code></td></tr>
+              <tr><td>Bun</td><td><code>install/cache</code></td><td>Symbolic link</td></tr>
+              <tr><td>uv</td><td>Cache and Python toolchains</td><td>Symbolic link</td></tr>
+              <tr><td>pip</td><td>Cache</td><td><code>pip config set global.cache-dir</code></td></tr>
+              <tr><td>Docker Desktop</td><td><code>Docker.raw</code></td><td>Symbolic link to the file</td></tr>
+              <tr><td>OrbStack</td><td>VM data and images</td><td><code>data_dir</code></td></tr>
+              <tr><td>Colima</td><td>VM disks</td><td>Symbolic link to <code>~/.colima</code></td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="install">
+          <h2>Install</h2>
+          <p>
+            Download the archive for your Mac. It holds the window, the command
+            line tool, and a checksum file.
+          </p>
+          <pre><code>brew install gh                                    # once
+gh release download --repo Jungley8/exodrive \
+  --pattern '*darwin_arm64.app.zip'                 # Apple silicon
+unzip Exodrive_*.app.zip &amp;&amp; open Exodrive.app</code></pre>
+          <p class="note">
+            Use <code>*darwin_amd64.app.zip</code> on an Intel Mac. The bundle
+            is ad-hoc signed, so the first start asks for your confirmation:
+            right-click the app, then choose Open.
+          </p>
+        </section>
+
+        <section id="platform">
+          <h2>Where Exodrive runs</h2>
+          <p>
+            The promise is narrow on purpose: one platform carries a promise
+            today.
+          </p>
+          <div class="promise">
+            <div>
+              <h3>macOS 13 or later</h3>
+              <p>The window ships here. Every test runs here.</p>
+            </div>
+            <div>
+              <h3>Linux</h3>
+              <p>The command line tool builds and runs. CI tests it on Ubuntu.</p>
+            </div>
+            <div>
+              <h3>Windows</h3>
+              <p>The window builds from source. No build ships and no test covers it.</p>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <span>Exodrive is Apache 2.0 software.</span>
+        <nav>
+          <a href="docs/">Documentation</a>
+          <a href="docs/#trouble">Troubleshooting</a>
+          <a href="https://github.com/Jungley8/exodrive/blob/main/SECURITY.md">Security</a>
+          <a href="zh/" lang="zh-Hans">简体中文</a>
+        </nav>
+      </footer>
+    </div>
+  </body>
+</html>

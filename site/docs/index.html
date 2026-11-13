@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exodrive documentation</title>
+    <meta
+      name="description"
+      content="Install Exodrive, move a cache to an external drive, move it back, and read the ledger."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="top">
+        <a class="brand" href="../"><span class="mark" aria-hidden="true">E</span>Exodrive</a>
+        <nav>
+          <a href="./" aria-current="page">Documentation</a>
+          <a href="https://github.com/Jungley8/exodrive/releases">Releases</a>
+          <a href="https://github.com/Jungley8/exodrive">Source</a>
+          <a href="../zh/docs/" lang="zh-Hans">简体中文</a>
+        </nav>
+      </header>
+
+      <div class="docs">
+        <nav aria-label="On this page">
+          <a href="#install">Install</a>
+          <a href="#window">Use the window</a>
+          <a href="#cli">Use the command line</a>
+          <a href="#ledger">The ledger</a>
+          <a href="#undo">Move a cache back</a>
+          <a href="#stopping">Stop the window</a>
+          <a href="#trouble">Troubleshooting</a>
+          <a href="#platform">Platforms</a>
+          <a href="#security">Security</a>
+        </nav>
+
+        <main>
+          <h1>Documentation</h1>
+          <p>
+            Exodrive moves a developer cache to an external drive. It checks the
+            copy before it frees the space. This page covers the window, the
+            command line, and the ledger.
+          </p>
+
+          <h2 id="install">Install</h2>
+          <p>
+            Exodrive ships as an archive for macOS. The archive holds the window
+            app, the command line tool, the README, and a checksum file.
+          </p>
+          <pre><code>brew install gh                                    # once
+gh release download --repo Jungley8/exodrive \
+  --pattern '*darwin_arm64.app.zip'                 # Apple silicon
+unzip Exodrive_*.app.zip &amp;&amp; open Exodrive.app</code></pre>
+          <p>Use <code>*darwin_amd64.app.zip</code> on an Intel Mac.</p>
+          <p>
+            The app is ad-hoc signed. The first start asks for your
+            confirmation. Right-click the app, then choose <strong>Open</strong>.
+          </p>
+          <p>Check the archive before you open it:</p>
+          <pre><code>shasum -a 256 -c SHA256SUMS</code></pre>
+
+          <h3>Build from source</h3>
+          <pre><code>git clone https://github.com/Jungley8/exodrive
+cd exodrive
+make build        # bin/exodrive and bin/exodrive-gui
+make app          # bin/Exodrive.app, signed with an ad-hoc identity</code></pre>
+          <p>Go 1.27 or later builds the source.</p>
+
+          <h2 id="window">Use the window</h2>
+          <p>The window opens on a check of this Mac. It lists every cache it can move.</p>
+          <ol>
+            <li>
+              <strong>Choose a folder.</strong> Press <strong>Choose</strong> to
+              open the folder panel of macOS. The panel lists every connected
+              drive. You can also type the path.
+            </li>
+            <li>
+              <strong>Select the caches.</strong> Press <strong>Select all</strong>,
+              or press the box on a card.
+            </li>
+            <li>
+              <strong>Move them.</strong> Press <strong>Move</strong>. Read the
+              list in the dialog, then press <strong>Move</strong> again.
+            </li>
+          </ol>
+          <p>
+            The window shows two gauges. The left gauge holds the free space of
+            this Mac and the bytes in caches. The right gauge holds the free
+            space of the chosen drive and the bytes that moved there.
+          </p>
+          <p>
+            A card holds one cache: its size, its state, its folder, its copy,
+            and the change that Exodrive makes. A card also holds the one action
+            that fits the state.
+          </p>
+          <p>
+            The rail on the left groups the caches by toolchain. The filter above
+            the list keeps one place. A change to the filter clears the
+            selection, so a move never acts on a cache you cannot see.
+          </p>
+          <p>
+            The first start shows three steps. Press <strong>Skip</strong> to
+            close that card. The window does not show it again.
+          </p>
+
+          <h2 id="cli">Use the command line</h2>
+          <p>Scan every toolchain:</p>
+          <pre><code>exodrive check</code></pre>
+          <p>Check one cache against a folder, without moving data:</p>
+          <pre><code>exodrive preflight npm.cache --target=/Volumes/External/exodrive</code></pre>
+          <p>Move the caches to a folder:</p>
+          <pre><code>exodrive migrate --target=/Volumes/External/exodrive --all
+exodrive migrate --target=/Volumes/External/exodrive --tools=npm,pnpm</code></pre>
+          <p>Read the plan without moving data:</p>
+          <pre><code>exodrive migrate --target=/Volumes/External/exodrive --all --dry-run</code></pre>
+          <p>Find caches that an earlier change left behind:</p>
+          <pre><code>exodrive orphans
+exodrive orphans --clean</code></pre>
+          <p>
+            The command line exits with a code that a script can read. A refused
+            move is a failure, not a warning.
+          </p>
+
+          <h2 id="ledger">The ledger</h2>
+          <p>
+            Exodrive writes <code>~/.exodrive/manifest.json</code>. Each move
+            adds one record: the item, its old path, its new folder, the change
+            that points the tool at the copy, the size, and the time.
+          </p>
+          <p>
+            Exodrive locks the file while it writes, so two runs cannot lose a
+            record. An item appears once.
+          </p>
+          <p>
+            Set <code>EXODRIVE_MANIFEST_PATH</code> to keep the file somewhere
+            else.
+          </p>
+          <div class="callout">
+            <p>
+              Keep the ledger and the drive together. A move back needs both.
+            </p>
+          </div>
+
+          <h2 id="undo">Move a cache back</h2>
+          <p>Press <strong>Move back</strong> on the card, then confirm.</p>
+          <p>Or use the command line with the item ID:</p>
+          <pre><code>exodrive check                     # lists the item IDs
+exodrive rollback npm.cache</code></pre>
+          <p>
+            Exodrive copies the cache to its old folder and checks the copy. It
+            removes the copy on the drive after the check passes. It removes the
+            record last.
+          </p>
+          <p>
+            When both copies differ, Exodrive stops. It keeps both copies and the
+            record, because it cannot choose for you.
+          </p>
+
+          <h2 id="stopping">Stop the window</h2>
+          <p>
+            macOS closes the window without asking. Exodrive cannot hold the
+            window open during a move.
+          </p>
+          <p>
+            A move writes a record before it starts and removes the record when
+            it ends. The next start reads that record and names the cache that
+            was changing.
+          </p>
+          <p>
+            Press <strong>Stop after this cache</strong> to end a long move
+            between caches. The cache that copies now finishes first.
+          </p>
+          <p>
+            A window that closes in the middle of a copy leaves a partial copy on
+            the drive and the full cache on this Mac. Run a check. If the card
+            still says <strong>On this Mac</strong>, move the cache again.
+          </p>
+
+          <h2 id="trouble">Troubleshooting</h2>
+          <table>
+            <thead>
+              <tr><th scope="col">The window says</th><th scope="col">Do this</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Cannot move</td>
+                <td>The card holds the reason. Fix it, then press <strong>Rescan</strong>.</td>
+              </tr>
+              <tr>
+                <td>A program still uses this cache</td>
+                <td>Quit that program. Press <strong>Rescan</strong>.</td>
+              </tr>
+              <tr>
+                <td>The copy did not match</td>
+                <td>Press <strong>Try again</strong>. A second failure points at the drive.</td>
+              </tr>
+              <tr>
+                <td>This drive cannot hold caches</td>
+                <td>Choose a folder on APFS, HFS+, ext4, btrfs, zfs, xfs, f2fs, or bcachefs.</td>
+              </tr>
+              <tr>
+                <td>Your shell sets the cache path</td>
+                <td>Remove the variable the window names from your shell, then retry.</td>
+              </tr>
+              <tr>
+                <td>The drive is full</td>
+                <td>Free space on the drive, or move fewer caches.</td>
+              </tr>
+              <tr>
+                <td>No record of this move</td>
+                <td>Run a scan. The record file may sit somewhere else.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            A toolchain that Exodrive cannot find does not appear in the list.
+            The window reads the PATH of your login shell. Add the tool to that
+            PATH, then press <strong>Rescan</strong>.
+          </p>
+
+          <h2 id="platform">Platforms</h2>
+          <ul>
+            <li>
+              <strong>macOS 13 or later:</strong> the window ships here. Every
+              test runs here.
+            </li>
+            <li>
+              <strong>Linux:</strong> the command line tool builds and runs. CI
+              tests it on Ubuntu.
+            </li>
+            <li>
+              <strong>Windows:</strong> the window builds from source. No build
+              ships and no test covers it.
+            </li>
+          </ul>
+          <p>
+            A bug on a system without a promise is still a bug. Report it, and
+            the fix follows the same checks.
+          </p>
+
+          <h2 id="security">Security</h2>
+          <p>
+            Exodrive runs as you. It reads the tool settings on this Mac and
+            writes the files the tools use. It opens no network service.
+          </p>
+          <p>
+            The update check reads the public release list from GitHub. Set
+            <code>EXODRIVE_NO_UPDATE_CHECK=1</code> to turn the check off.
+          </p>
+          <p>
+            Report a security problem through the security policy in the
+            repository.
+          </p>
+        </main>
+      </div>
+
+      <footer>
+        <span>Exodrive is Apache 2.0 software.</span>
+        <nav>
+          <a href="../">Home</a>
+          <a href="https://github.com/Jungley8/exodrive/releases">Releases</a>
+          <a href="https://github.com/Jungley8/exodrive/blob/main/SECURITY.md">Security</a>
+          <a href="../zh/docs/" lang="zh-Hans">简体中文</a>
+        </nav>
+      </footer>
+    </div>
+  </body>
+</html>

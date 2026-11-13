@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exodrive 文档</title>
+    <meta
+      name="description"
+      content="安装 Exodrive、把缓存搬到外接磁盘、搬回本机，以及读懂账本。"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../../style.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="top">
+        <a class="brand" href="../"><span class="mark" aria-hidden="true">E</span>Exodrive</a>
+        <nav>
+          <a href="./" aria-current="page">文档</a>
+          <a href="https://github.com/Jungley8/exodrive/releases">发布版</a>
+          <a href="https://github.com/Jungley8/exodrive">源码</a>
+          <a href="../../docs/" lang="en">English</a>
+        </nav>
+      </header>
+
+      <div class="docs">
+        <nav aria-label="本页目录">
+          <a href="#install">安装</a>
+          <a href="#window">使用窗口</a>
+          <a href="#cli">使用命令行</a>
+          <a href="#ledger">账本</a>
+          <a href="#undo">把缓存搬回来</a>
+          <a href="#stopping">停止窗口</a>
+          <a href="#trouble">故障处理</a>
+          <a href="#platform">平台</a>
+          <a href="#security">安全</a>
+        </nav>
+
+        <main>
+          <h1>文档</h1>
+          <p>
+            Exodrive 把开发缓存搬到外接磁盘。副本通过校验后，才释放本机空间。
+            本页讲窗口、命令行和账本。
+          </p>
+
+          <h2 id="install">安装</h2>
+          <p>macOS 版以压缩包发布。包里有窗口程序、命令行工具、README 和校验文件。</p>
+          <pre><code>brew install gh                                    # 只需一次
+gh release download --repo Jungley8/exodrive \
+  --pattern '*darwin_arm64.app.zip'                 # Apple 芯片
+unzip Exodrive_*.app.zip &amp;&amp; open Exodrive.app</code></pre>
+          <p>Intel Mac 用 <code>*darwin_amd64.app.zip</code>。</p>
+          <p>应用为 ad-hoc 签名，首次打开会要求确认。右键点按应用，选择<strong>打开</strong>。</p>
+          <p>打开前先校验压缩包：</p>
+          <pre><code>shasum -a 256 -c SHA256SUMS</code></pre>
+
+          <h3>从源码构建</h3>
+          <pre><code>git clone https://github.com/Jungley8/exodrive
+cd exodrive
+make build        # 生成 bin/exodrive 与 bin/exodrive-gui
+make app          # 生成 bin/Exodrive.app，ad-hoc 签名</code></pre>
+          <p>需要 Go 1.27 或更高版本。</p>
+
+          <h2 id="window">使用窗口</h2>
+          <p>窗口启动时检查这台 Mac，列出所有可迁移的缓存。</p>
+          <ol>
+            <li>
+              <strong>选择目录。</strong>点<strong>选择</strong>打开 macOS 的目录面板。
+              面板列出所有已连接的磁盘。也可以直接输入路径。
+            </li>
+            <li>
+              <strong>勾选缓存。</strong>点<strong>全选</strong>，或点卡片上的勾选框。
+            </li>
+            <li>
+              <strong>迁移。</strong>点<strong>迁移</strong>。看清弹窗里的清单，再点一次<strong>迁移</strong>。
+            </li>
+          </ol>
+          <p>
+            窗口有两条容量条。左边是本机可用空间和缓存占用，右边是所选磁盘的可用空间和已迁入的大小。
+          </p>
+          <p>
+            每个缓存是一张卡片：大小、状态、目录、副本，以及 Exodrive 所做的改动。
+            卡片上还有唯一适合该状态的操作。
+          </p>
+          <p>
+            左侧栏按工具链分组，列表上方的筛选器保留一个位置。切换筛选会清空勾选，
+            所以迁移永远只作用于屏幕上能看到的缓存。
+          </p>
+          <p>首次启动显示三步引导。点<strong>跳过</strong>关闭它，之后不再出现。</p>
+
+          <h2 id="cli">使用命令行</h2>
+          <p>扫描全部工具链：</p>
+          <pre><code>exodrive check</code></pre>
+          <p>针对某个目录检查一个缓存，不动数据：</p>
+          <pre><code>exodrive preflight npm.cache --target=/Volumes/External/exodrive</code></pre>
+          <p>把缓存搬到目录：</p>
+          <pre><code>exodrive migrate --target=/Volumes/External/exodrive --all
+exodrive migrate --target=/Volumes/External/exodrive --tools=npm,pnpm</code></pre>
+          <p>只看计划，不动数据：</p>
+          <pre><code>exodrive migrate --target=/Volumes/External/exodrive --all --dry-run</code></pre>
+          <p>找出早先改动遗留的缓存：</p>
+          <pre><code>exodrive orphans
+exodrive orphans --clean</code></pre>
+          <p>命令行返回脚本可读的退出码。被拒绝的迁移是失败，不是警告。</p>
+
+          <h2 id="ledger">账本</h2>
+          <p>
+            Exodrive 写 <code>~/.exodrive/manifest.json</code>。每次迁移加一条记录：
+            条目、原路径、新目录、让工具指向副本的改动、大小和时间。
+          </p>
+          <p>写文件时加锁，两个进程不会互相覆盖。同一条目只出现一次。</p>
+          <p>设置 <code>EXODRIVE_MANIFEST_PATH</code> 可以把文件放到别处。</p>
+          <div class="callout">
+            <p>账本要和外接磁盘一起保留。搬回需要两者都在。</p>
+          </div>
+
+          <h2 id="undo">把缓存搬回来</h2>
+          <p>点卡片上的<strong>搬回</strong>，然后确认。</p>
+          <p>也可以用命令行，配合条目 ID：</p>
+          <pre><code>exodrive check                     # 列出条目 ID
+exodrive rollback npm.cache</code></pre>
+          <p>
+            Exodrive 把缓存复制回原目录并校验副本。校验通过后删除磁盘上的副本，
+            最后删除账本记录。
+          </p>
+          <p>两份副本内容不同时，Exodrive 停止。它保留两份数据和记录，因为无法替你选择。</p>
+
+          <h2 id="stopping">停止窗口</h2>
+          <p>macOS 关闭窗口时不询问。Exodrive 无法在迁移过程中挂住窗口。</p>
+          <p>
+            迁移开始前写一条记录，结束时删除。下次启动读到这条记录，会指出当时正在变更的缓存。
+          </p>
+          <p>长迁移可以点<strong>本个完成后停止</strong>。正在迁移的这一项会先做完。</p>
+          <p>
+            拷贝中途关闭窗口，磁盘上会留下不完整的副本，本机的缓存完好。
+            重新检查：卡片仍显示<strong>在本机</strong>，就再迁移一次。
+          </p>
+
+          <h2 id="trouble">故障处理</h2>
+          <table>
+            <thead>
+              <tr><th scope="col">窗口显示</th><th scope="col">怎么做</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>无法迁移</td>
+                <td>原因写在卡片上。处理完点<strong>重新检查</strong>。</td>
+              </tr>
+              <tr>
+                <td>有程序仍在使用这个缓存</td>
+                <td>退出该程序，点<strong>重新检查</strong>。</td>
+              </tr>
+              <tr>
+                <td>副本与原文件不一致</td>
+                <td>点<strong>重试</strong>。再次失败说明问题在磁盘。</td>
+              </tr>
+              <tr>
+                <td>这块磁盘不能存放缓存</td>
+                <td>改选 APFS、HFS+、ext4、btrfs、zfs、xfs、f2fs 或 bcachefs 上的目录。</td>
+              </tr>
+              <tr>
+                <td>你的 shell 设置了缓存路径</td>
+                <td>从 shell 移除窗口指出的变量，然后重试。</td>
+              </tr>
+              <tr>
+                <td>磁盘空间不足</td>
+                <td>先释放磁盘空间，或少选几个缓存。</td>
+              </tr>
+              <tr>
+                <td>没有这次迁移的记录</td>
+                <td>重新检查。记录文件可能在别的位置。</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            找不到的工具链不会出现在列表里。窗口读取登录 shell 的 PATH。
+            把工具加进这个 PATH，再点<strong>重新检查</strong>。
+          </p>
+
+          <h2 id="platform">平台</h2>
+          <ul>
+            <li><strong>macOS 13 或更高版本：</strong>窗口在这里发布，所有测试都在这里运行。</li>
+            <li><strong>Linux：</strong>命令行工具可构建可运行，CI 在 Ubuntu 上测试。</li>
+            <li><strong>Windows：</strong>窗口可从源码构建。没有发布包，也没有测试覆盖。</li>
+          </ul>
+          <p>没有承诺的系统上出的问题仍然是问题。报告后按同样的检查修复。</p>
+
+          <h2 id="security">安全</h2>
+          <p>
+            Exodrive 以你的身份运行。它读取本机的工具设置，写入工具使用的文件。
+            它不开放任何网络服务。
+          </p>
+          <p>
+            更新检查只读取 GitHub 的公开发布列表。设置 <code>EXODRIVE_NO_UPDATE_CHECK=1</code> 可关闭检查。
+          </p>
+          <p>安全问题请按仓库里的安全策略报告。</p>
+        </main>
+      </div>
+
+      <footer>
+        <span>Exodrive 采用 Apache 2.0 协议。</span>
+        <nav>
+          <a href="../">首页</a>
+          <a href="https://github.com/Jungley8/exodrive/releases">发布版</a>
+          <a href="https://github.com/Jungley8/exodrive/blob/main/SECURITY.md">安全</a>
+          <a href="../../docs/" lang="en">English</a>
+        </nav>
+      </footer>
+    </div>
+  </body>
+</html>

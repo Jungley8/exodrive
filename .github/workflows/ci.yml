@@ -45,6 +45,9 @@ jobs:
       - name: Test
         run: go test -race -count=1 ./...
 
+      - name: Check the pages
+        run: sh scripts/check-site.sh
+
       - name: Bundle the window
         if: runner.os == 'macOS'
         run: |

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Exodrive</title>
+    <meta
+      name="description"
+      content="把开发缓存从内置磁盘搬到外接磁盘。每份副本校验通过后，Exodrive 才释放空间。"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="../style.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="top">
+        <a class="brand" href="./"><span class="mark" aria-hidden="true">E</span>Exodrive</a>
+        <nav>
+          <a href="docs/">文档</a>
+          <a href="https://github.com/Jungley8/exodrive/releases">发布版</a>
+          <a href="https://github.com/Jungley8/exodrive">源码</a>
+          <a href="../" lang="en">English</a>
+        </nav>
+      </header>
+
+      <main>
+        <div class="hero">
+          <div>
+            <h1>给内置磁盘腾出空间。</h1>
+            <p>
+              Exodrive 把开发缓存搬到外接磁盘。它先逐字节校验副本，校验通过后才释放本机空间。
+            </p>
+            <div class="actions">
+              <a class="button" href="https://github.com/Jungley8/exodrive/releases">
+                下载 macOS 版
+              </a>
+              <a class="button quiet" href="docs/">阅读文档</a>
+            </div>
+            <p class="note">Apache 2.0，免费使用。窗口需要 macOS 13 或更高版本。</p>
+          </div>
+
+          <div class="gauges" aria-label="两条容量条的示例">
+            <div>
+              <div class="gauge-head"><span>这台 Mac</span><strong>82 GB 可用</strong></div>
+              <div class="bar"><span class="cache" style="width: 31%"></span></div>
+              <div class="legend"><i style="background: var(--amber)"></i>缓存占用 38 GB</div>
+            </div>
+            <div class="arrow">迁移</div>
+            <div>
+              <div class="gauge-head"><span>外接磁盘</span><strong>1.8 TB 可用</strong></div>
+              <div class="bar"><span class="away" style="width: 9%"></span></div>
+              <div class="legend"><i style="background: var(--teal)"></i>已迁入 6 GB</div>
+            </div>
+            <p class="note">这是示例。窗口读取真实数字。</p>
+          </div>
+        </div>
+
+        <section id="how">
+          <h2>每次迁移都走同样的五步</h2>
+          <p>顺序就是安全保证：副本被证实之前，本机缓存一字节都不动。</p>
+          <ol class="steps">
+            <li>
+              <b>拷贝</b>
+              <p>缓存复制到磁盘，保留权限和修改时间。</p>
+            </li>
+            <li>
+              <b>校验</b>
+              <p>Exodrive 读取两侧的每个文件。有一个字节不同，迁移立即停止。</p>
+            </li>
+            <li>
+              <b>记账</b>
+              <p>这次迁移写入账本，将来搬回时按账本找到它。</p>
+            </li>
+            <li>
+              <b>切换</b>
+              <p>工具下次启动时读取新路径。</p>
+            </li>
+            <li>
+              <b>回收</b>
+              <p>Exodrive 删除本机副本。空间回到你手里。</p>
+            </li>
+          </ol>
+        </section>
+
+        <section id="safety">
+          <h2>数据可能受损时，Exodrive 直接停下</h2>
+          <p>每条规则都是拒绝执行。没有任何一条会退化为弱安全模式。</p>
+          <table>
+            <thead>
+              <tr><th scope="col">规则</th><th scope="col">发生什么</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>文件系统</td>
+                <td>只接受 APFS、HFS+、ext2、ext3、ext4、btrfs、zfs、xfs、f2fs、bcachefs。拒绝 exFAT、FAT32、NTFS。</td>
+              </tr>
+              <tr>
+                <td>程序在运行</td>
+                <td>包管理器或容器引擎正在运行时，迁移停止。先停止该程序。</td>
+              </tr>
+              <tr>
+                <td>shell 变量</td>
+                <td>shell 里的缓存路径会盖过工具设置。Exodrive 指出变量名并停止。</td>
+              </tr>
+              <tr>
+                <td>二进制</td>
+                <td>只搬缓存。你的可执行文件留在原处。</td>
+              </tr>
+              <tr>
+                <td>重复迁移</td>
+                <td>账本里已有的条目不再迁移。先把它搬回来。</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="tools">
+          <h2>Exodrive 收录哪些缓存</h2>
+          <p>每种工具链用自己的设置项或软链接生效。窗口在卡片上写明改了什么。</p>
+          <table>
+            <thead>
+              <tr><th scope="col">工具链</th><th scope="col">迁移内容</th><th scope="col">工具如何找到新路径</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>npm</td><td>全局缓存</td><td><code>npm config set cache</code></td></tr>
+              <tr><td>pnpm</td><td>包仓库</td><td><code>pnpm config set store-dir</code></td></tr>
+              <tr><td>yarn 1.x</td><td>缓存目录</td><td><code>yarn config set cache-folder</code></td></tr>
+              <tr><td>Cargo</td><td><code>registry/</code> 与 <code>git/</code></td><td>软链接</td></tr>
+              <tr><td>Go</td><td><code>GOCACHE</code>、<code>GOMODCACHE</code></td><td><code>go env -w</code></td></tr>
+              <tr><td>Bun</td><td><code>install/cache</code></td><td>软链接</td></tr>
+              <tr><td>uv</td><td>缓存与 Python 工具链</td><td>软链接</td></tr>
+              <tr><td>pip</td><td>缓存</td><td><code>pip config set global.cache-dir</code></td></tr>
+              <tr><td>Docker Desktop</td><td><code>Docker.raw</code></td><td>指向文件的软链接</td></tr>
+              <tr><td>OrbStack</td><td>VM 数据与镜像</td><td><code>data_dir</code></td></tr>
+              <tr><td>Colima</td><td>VM 磁盘</td><td>指向 <code>~/.colima</code> 的软链接</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="install">
+          <h2>安装</h2>
+          <p>下载对应架构的压缩包。包里有窗口程序、命令行工具和校验文件。</p>
+          <pre><code>brew install gh                                    # 只需一次
+gh release download --repo Jungley8/exodrive \
+  --pattern '*darwin_arm64.app.zip'                 # Apple 芯片
+unzip Exodrive_*.app.zip &amp;&amp; open Exodrive.app</code></pre>
+          <p class="note">
+            Intel Mac 用 <code>*darwin_amd64.app.zip</code>。应用为 ad-hoc 签名，首次打开会要求确认：
+            右键点按应用，选择「打开」。
+          </p>
+        </section>
+
+        <section id="platform">
+          <h2>Exodrive 在哪里运行</h2>
+          <p>承诺刻意写窄：目前只有一个平台背负承诺。</p>
+          <div class="promise">
+            <div>
+              <h3>macOS 13 或更高版本</h3>
+              <p>窗口在这里发布，所有测试都在这里运行。</p>
+            </div>
+            <div>
+              <h3>Linux</h3>
+              <p>命令行工具可构建可运行，CI 在 Ubuntu 上测试。</p>
+            </div>
+            <div>
+              <h3>Windows</h3>
+              <p>窗口可从源码构建。没有发布包，也没有测试覆盖。</p>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <span>Exodrive 采用 Apache 2.0 协议。</span>
+        <nav>
+          <a href="docs/">文档</a>
+          <a href="docs/#trouble">故障处理</a>
+          <a href="https://github.com/Jungley8/exodrive/blob/main/SECURITY.md">安全</a>
+          <a href="../" lang="en">English</a>
+        </nav>
+      </footer>
+    </div>
+  </body>
+</html>
