@@ -60,19 +60,23 @@ func targetMissingError(path string) error {
 		if _, err := os.Stat(mount); os.IsNotExist(err) {
 			return &TargetError{
 				Volume:  filepath.Base(mount),
+				Path:    path,
 				Message: "The external volume " + filepath.Base(mount) + " is not connected. Connect it, then check again.",
 			}
 		}
 	}
 	return &TargetError{
+		Path:    path,
 		Message: "The folder " + path + " does not exist. Choose a folder that exists.",
 	}
 }
 
 // TargetError says why a target folder fails. The window shows Message as it
-// is. Volume names the disconnected volume, or is empty.
+// is. Volume names the disconnected volume, or is empty; Path is the folder
+// that failed the check.
 type TargetError struct {
 	Volume  string
+	Path    string
 	Message string
 }
 

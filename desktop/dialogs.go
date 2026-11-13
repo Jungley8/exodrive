@@ -24,6 +24,7 @@ func renderDialogs(cx *core.Scope, state *AppState) core.Node {
 func confirmMove(cx *core.Scope, state *AppState) core.Node {
 	return core.Dynamic(func(cx *core.Scope) core.Node {
 		colors := ui.ColorsOf(cx)
+		t := state.Text
 		selected := selectedItems(state)
 		var total int64
 		for _, it := range selected {
@@ -34,7 +35,7 @@ func confirmMove(cx *core.Scope, state *AppState) core.Node {
 		rows := make([]core.Node, 0, len(selected)+1)
 		for i, it := range selected {
 			if i == 5 {
-				rows = append(rows, typeLine(fmt.Sprintf("and %d more", len(selected)-i), typeSmall, colors.Muted))
+				rows = append(rows, typeLine(fmt.Sprintf(t.AndMore, len(selected)-i), typeSmall, colors.Muted))
 				break
 			}
 			rows = append(rows, core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
@@ -47,8 +48,7 @@ func confirmMove(cx *core.Scope, state *AppState) core.Node {
 
 		children := make([]core.Node, 0, 2)
 		if target.SameVolume {
-			children = append(children, noteLine(cx, lucide.Info, colors.Warn, "confirm-reminder",
-				"This folder is on this Mac. A move here frees no space."))
+			children = append(children, noteLine(cx, lucide.Info, colors.Warn, "confirm-reminder", t.FolderOnThisMac))
 		}
 		children = append(children, core.View{Style: core.Style{Direction: core.Column, Gap: 4, Padding: core.Symmetric(8, 10), CornerRadius: 8},
 			StyleFunc: ui.Filled(colors.Inset), Children: rows})
@@ -61,14 +61,13 @@ func confirmMove(cx *core.Scope, state *AppState) core.Node {
 				}
 				state.ConfirmOpen.Set(false)
 			},
-			Title: fmt.Sprintf("Move %s?", count(len(selected), "cache", "caches")),
-			Description: fmt.Sprintf("%s moves to %s. Exodrive checks each copy, then frees the space on this Mac.",
-				bytes(total), shortPath(target.Path)),
-			Children: children,
+			Title:       fmt.Sprintf(t.MoveQuestion, t.counted(len(selected))),
+			Description: fmt.Sprintf(t.MoveDescription, bytes(total), shortPath(target.Path)),
+			Children:    children,
 			Footer: []core.Node{
-				ui.Button{Text: "Cancel", Variant: ui.ButtonSecondary, TestID: "confirm-cancel",
-					OnPress: func() { state.ConfirmOpen.Set(false); state.Status.Set("Nothing moved.") }},
-				ui.Button{Text: fmt.Sprintf("Move %s", count(len(selected), "cache", "caches")), Variant: ui.ButtonPrimary, TestID: "confirm-move",
+				ui.Button{Text: t.Cancel, Variant: ui.ButtonSecondary, TestID: "confirm-cancel",
+					OnPress: func() { state.ConfirmOpen.Set(false); state.Status.Set(t.NothingMoved) }},
+				ui.Button{Text: fmt.Sprintf(t.MoveButton, t.counted(len(selected))), Variant: ui.ButtonPrimary, TestID: "confirm-move",
 					OnPress: func() { state.ConfirmOpen.Set(false); triggerMigration(state) }},
 			},
 			TestID: "confirm",
@@ -79,9 +78,10 @@ func confirmMove(cx *core.Scope, state *AppState) core.Node {
 // confirmMoveBack asks before a cache returns to this Mac.
 func confirmMoveBack(cx *core.Scope, state *AppState) core.Node {
 	return core.Dynamic(func(cx *core.Scope) core.Node {
+		t := state.Text
 		id := state.RollbackTarget.Get()
 		it, _ := itemByID(state, id)
-		from := "the drive"
+		from := t.FromTheDrive
 		if it.DestinationPath != "" {
 			from = shortPath(it.DestinationPath)
 		}
@@ -93,16 +93,15 @@ func confirmMoveBack(cx *core.Scope, state *AppState) core.Node {
 				}
 				state.RollbackTarget.Set("")
 				if reason != base.ReasonSelect {
-					state.Status.Set("Nothing moved.")
+					state.Status.Set(t.NothingMoved)
 				}
 			},
-			Title: "Move this cache back?",
-			Description: fmt.Sprintf("Exodrive copies %s from %s to its old folder. It checks the copy, then removes the copy on the drive.",
-				it.Title, from),
+			Title:       t.MoveBackQuestion,
+			Description: fmt.Sprintf(t.MoveBackDescription, it.Title, from),
 			Actions: []ui.AlertAction{
-				{Text: "Cancel", Variant: ui.ButtonSecondary, TestID: "rollback-cancel",
+				{Text: t.Cancel, Variant: ui.ButtonSecondary, TestID: "rollback-cancel",
 					OnPress: func() { state.RollbackTarget.Set("") }},
-				{Text: "Move back", Variant: ui.ButtonPrimary, TestID: "rollback-confirm",
+				{Text: t.MoveBack, Variant: ui.ButtonPrimary, TestID: "rollback-confirm",
 					OnPress: func() { triggerRollback(state, id) }},
 			},
 			TestID: "rollback-dialog",
@@ -113,12 +112,12 @@ func confirmMoveBack(cx *core.Scope, state *AppState) core.Node {
 // confirmDelete asks before an unused cache leaves this Mac for good.
 func confirmDelete(cx *core.Scope, state *AppState) core.Node {
 	return core.Dynamic(func(cx *core.Scope) core.Node {
+		t := state.Text
 		id := state.CleanTarget.Get()
 		it, found := itemByID(state, id)
-		description := "Exodrive deletes this cache from this Mac. The data is gone after this step."
+		description := t.DeleteDescriptionNoPath
 		if found {
-			description = fmt.Sprintf("Exodrive deletes %s from this Mac. The data is gone after this step.",
-				shortPath(it.CurrentPath))
+			description = fmt.Sprintf(t.DeleteDescription, shortPath(it.CurrentPath))
 		}
 		return ui.AlertDialog{
 			Open: func() bool { return state.CleanTarget.Get() != "" },
@@ -128,15 +127,15 @@ func confirmDelete(cx *core.Scope, state *AppState) core.Node {
 				}
 				state.CleanTarget.Set("")
 				if reason != base.ReasonSelect {
-					state.Status.Set("Nothing deleted.")
+					state.Status.Set(t.NothingDeleted)
 				}
 			},
-			Title:       "Delete this cache?",
+			Title:       t.DeleteQuestion,
 			Description: description,
 			Actions: []ui.AlertAction{
-				{Text: "Cancel", Variant: ui.ButtonSecondary, TestID: "clean-cancel",
+				{Text: t.Cancel, Variant: ui.ButtonSecondary, TestID: "clean-cancel",
 					OnPress: func() { state.CleanTarget.Set("") }},
-				{Text: "Delete cache", Variant: ui.ButtonPrimary, Color: func() core.Color { return ui.ColorsOf(cx).Danger() }, TestID: "clean-confirm",
+				{Text: t.DeleteCache, Variant: ui.ButtonPrimary, Color: func() core.Color { return ui.ColorsOf(cx).Danger() }, TestID: "clean-confirm",
 					OnPress: func() { triggerClean(state, id) }},
 			},
 			TestID: "clean-dialog",

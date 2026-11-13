@@ -31,97 +31,98 @@ type friendly struct {
 // explain turns an error into the window's voice. The rules read the error
 // text that the engine and the providers write; an error that matches none of
 // them keeps its own text, so the window never hides a reason.
-func explain(err error, action string) friendly {
+func explain(err error, action string, t text) friendly {
 	if err == nil {
 		return friendly{}
 	}
 	raw := err.Error()
-	f := friendly{Title: "The move stopped", Body: raw, Hint: "Exodrive deleted nothing. Try again."}
+	f := friendly{Title: t.MoveStoppedTitle, Body: raw, Hint: t.RetryHint}
 	switch action {
 	case actionMoveBack:
-		f.Title = "The move back stopped"
+		f.Title = t.MoveBackStopped
 	case actionDelete:
-		f.Title = "The delete stopped"
+		f.Title = t.DeleteStopped
 	case actionChoose:
-		f.Title = "The folder picker did not open"
-		f.Hint = "Type the folder path in the field, then press Choose again."
+		f.Title = t.PickerFailedTitle
+		f.Hint = t.PickerFailedHint
 	}
 
 	var target *exoCore.TargetError
 	switch {
 	case errors.As(err, &target):
-		f.Body, f.Hint = splitSentences(target.Message)
+		f.Body, f.Hint = targetSentences(target, t)
 	case strings.Contains(raw, "is not supported"), strings.Contains(raw, "incompatible filesystem"):
-		f.Title = "Exodrive cannot use this drive"
-		f.Body = "The drive uses a format that Exodrive cannot use for caches."
-		f.Hint = "Choose a folder on another drive. Exodrive supports APFS, HFS+, ext2, ext3, ext4, btrfs, zfs, xfs, f2fs, and bcachefs."
+		f.Title = t.DriveUnsupported
+		f.Body = t.DriveUnsupportedWhy
+		f.Hint = t.DriveUnsupportedFix
 	case strings.Contains(raw, "insufficient space"):
-		f.Title = "The drive is full"
-		f.Body = "The drive does not have enough free space for this cache."
-		f.Hint = "Free space on the drive, or move fewer caches at a time."
+		f.Title = t.DriveFull
+		f.Body = t.DriveFullWhy
+		f.Hint = t.DriveFullFix
 	case strings.Contains(raw, "is running"):
-		f.Title = "A program still uses this cache"
-		f.Body = "A program that writes to this cache is open."
-		f.Hint = "Quit the program, then try again."
+		f.Title = t.StillRunning
+		f.Body = t.StillRunningWhy
+		f.Hint = t.StillRunningFix
 	case strings.Contains(raw, "is already a symlink"):
-		f.Title = "This folder already links elsewhere"
-		f.Body = "The folder points to a copy that Exodrive did not record."
-		f.Hint = "Run a scan. If the row keeps this message, the cache needs no move."
+		f.Title = t.AlreadyLink
+		f.Body = t.AlreadyLinkWhy
+		f.Hint = t.AlreadyLinkFix
 	case strings.Contains(raw, "verification failed"):
-		f.Title = "The copy did not match"
-		f.Body = "The copy on the drive differs from the original."
-		f.Hint = "Exodrive deleted nothing. Try again. If it fails again, check the drive."
+		f.Title = t.CopyMismatch
+		f.Body = t.CopyMismatchWhy
+		f.Hint = t.CopyMismatchFix
 	case strings.Contains(raw, " is set to "):
-		f.Title = "Your shell sets the cache path"
-		f.Body = "A variable in your shell overrides the setting that Exodrive changes."
+		f.Title = t.ShellVariable
+		f.Body = t.ShellVariableWhy
 		name := raw[:strings.Index(raw, " is set to ")]
 		name = name[strings.LastIndex(name, " ")+1:]
-		f.Hint = fmt.Sprintf("Remove %s from your shell, then try again.", name)
+		f.Hint = fmt.Sprintf(t.ShellVariableFix, name)
 	case strings.Contains(raw, "no record"), strings.Contains(raw, "no migration record"):
-		f.Title = "No record of this move"
-		f.Body = "Exodrive cannot find the move that put this cache on the drive."
-		f.Hint = "Run a scan, then choose the cache again."
+		f.Title = t.NoRecord
+		f.Body = t.NoRecordWhy
+		f.Hint = t.NoRecordFix
 	case strings.Contains(raw, "ledger"), strings.Contains(raw, "manifest"):
-		f.Title = "Exodrive cannot read its move records"
-		f.Body = "The record file is missing or unreadable."
-		f.Hint = "Check that the record file is readable, then scan again."
+		f.Title = t.LedgerUnreadable
+		f.Body = t.LedgerUnreadableWhy
+		f.Hint = t.LedgerUnreadableFix
 	case strings.Contains(raw, "exists and differs"):
-		f.Title = "Two copies hold different data"
-		f.Body = "The folder on this Mac and the copy on the drive are not the same."
-		f.Hint = "Both copies are safe. Exodrive stops so it cannot pick one for you."
+		f.Title = t.TwoCopies
+		f.Body = t.TwoCopiesWhy
+		f.Hint = t.TwoCopiesFix
 	case strings.Contains(raw, "does not exist"), strings.Contains(raw, "not available"):
-		f.Title = "The folder is gone"
-		f.Body = "The folder that Exodrive needs is not there."
-		f.Hint = "Choose the folder again, then try again."
+		f.Title = t.FolderGone
+		f.Body = t.FolderGoneWhy
+		f.Hint = t.FolderGoneFix
 	}
 	return f
 }
 
-// splitSentences splits a two-sentence message into the statement and the next
-// step, so each sits on its own line.
-func splitSentences(message string) (body, hint string) {
-	if i := strings.Index(message, ". "); i >= 0 {
-		return message[:i+1], message[i+2:]
+// targetSentences reads a folder error through its fields, so the window says
+// why the folder failed in its own language.
+func targetSentences(target *exoCore.TargetError, t text) (body, hint string) {
+	if target.Volume != "" {
+		return fmt.Sprintf(t.VolumeMissing, target.Volume), t.VolumeMissingFix
 	}
-	return message, ""
+	return fmt.Sprintf(t.FolderMissing, target.Path), t.FolderMissingFix
 }
 
 // targetProblem says why the window cannot use the chosen folder, in words a
 // person can act on.
-func targetProblem(err error) string {
+func targetProblem(err error, t text) string {
 	if err == nil {
 		return ""
 	}
 	var target *exoCore.TargetError
 	if errors.As(err, &target) {
-		return target.Message
+		body, _ := targetSentences(target, t)
+		return body
 	}
 	raw := err.Error()
 	switch {
 	case strings.Contains(raw, "is not supported"):
-		return "This drive cannot hold caches. Choose a folder on an APFS, HFS+, ext2, ext3, ext4, btrfs, zfs, xfs, f2fs, or bcachefs drive."
+		return t.DriveCannotHold
 	case strings.Contains(raw, "does not exist"):
-		return "This folder does not exist. Choose a folder on the drive."
+		return t.TargetMissingMessage
 	}
 	return raw
 }
@@ -141,16 +142,25 @@ func shortPath(path string) string {
 	return path
 }
 
+// familyLabel names a group. The toolchain names stay as they are, because a
+// person reads them in the program's own settings.
+func familyLabel(f cacheFamily, t text) string {
+	if f == familyOther {
+		return t.FamilyOther
+	}
+	return string(f)
+}
+
 // switchNote says what Exodrive changes so the program reaches the copy. A
 // person needs to know if the change waits for a restart.
-func switchNote(method exoCore.RedirectMethod) string {
+func switchNote(method exoCore.RedirectMethod, t text) string {
 	switch method {
 	case exoCore.RedirectNativeConfig:
-		return "Exodrive changes this program's setting. The program reads it at its next start."
+		return t.SwitchNative
 	case exoCore.RedirectSymlink:
-		return "Exodrive links the old folder to the copy. The program sees no change."
+		return t.SwitchLink
 	case exoCore.RedirectManual:
-		return "This cache is not in use. Delete it to free the space."
+		return t.SwitchManual
 	}
 	return ""
 }
@@ -177,16 +187,16 @@ func stateOf(it exoCore.CacheItem) cacheState {
 	return stateLocal
 }
 
-func (s cacheState) label() string {
+func (s cacheState) label(t text) string {
 	switch s {
 	case stateMoved:
-		return "On the drive"
+		return t.OnTheDrive
 	case stateBlocked:
-		return "Cannot move"
+		return t.CannotMove
 	case stateUnused:
-		return "Unused"
+		return t.Unused
 	}
-	return "On this Mac"
+	return t.OnThisMac
 }
 
 // movable reports whether Exodrive can move the cache now.
@@ -228,14 +238,6 @@ func movedUnder(items []exoCore.CacheItem, root string) int64 {
 		}
 	}
 	return sum
-}
-
-// count names a number of caches, with the right plural.
-func count(n int, one, many string) string {
-	if n == 1 {
-		return fmt.Sprintf("%d %s", n, one)
-	}
-	return fmt.Sprintf("%d %s", n, many)
 }
 
 // bytes is a formatted size, for the window's own labels.

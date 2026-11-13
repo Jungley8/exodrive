@@ -109,6 +109,9 @@ type AppState struct {
 	Root *core.Scope
 
 	Engine *exoCore.Engine
+
+	// Text holds every word the window writes, in the language it shows.
+	Text text
 }
 
 // NewEngine builds the engine over every registered toolchain provider.
@@ -194,6 +197,7 @@ func newState(cx *core.Scope, engine *exoCore.Engine) *AppState {
 		AdvancedOpen:    core.NewSignal(cx, false),
 		Root:            cx,
 		Engine:          engine,
+		Text:            texts(languageOf(cx)),
 	}
 	return state
 }
@@ -247,7 +251,7 @@ func setPlace(state *AppState, place string) {
 func openPicker(state *AppState) {
 	state.Root.PickDirectories(core.PickDirectoriesOptions{Limit: 1}, func(dirs []core.Directory, err error) {
 		if err != nil {
-			f := explain(err, actionChoose)
+			f := explain(err, actionChoose, state.Text)
 			state.Notice.Set(notice{Kind: noticeDanger, Title: f.Title, Body: f.Body, Hint: f.Hint})
 			return
 		}
@@ -257,8 +261,8 @@ func openPicker(state *AppState) {
 		if dirs[0].Path == "" {
 			// A system that names no path cannot fill the field. Say so
 			// rather than check a folder the window cannot name.
-			state.Notice.Set(notice{Kind: noticeWarn, Title: "This system names no folder path",
-				Body: "Exodrive needs the path of the folder.", Hint: "Type the folder path in the field."})
+			state.Notice.Set(notice{Kind: noticeWarn, Title: state.Text.NoFolderPathTitle,
+				Body: state.Text.NoFolderPathBody, Hint: state.Text.NoFolderPathHint})
 			return
 		}
 		chooseFolder(state, dirs[0].Path)
@@ -341,7 +345,7 @@ func triggerTargetCheck(state *AppState) {
 				return
 			}
 			if err != nil {
-				state.Target.Set(targetState{Path: target, Problem: targetProblem(err)})
+				state.Target.Set(targetState{Path: target, Problem: targetProblem(err, state.Text)})
 				return
 			}
 			state.Target.Set(targetState{
@@ -359,7 +363,7 @@ func triggerScan(state *AppState) {
 	}
 	state.IsScanning.Set(true)
 	state.Notice.Set(notice{})
-	state.Status.Set("Checking this Mac for caches...")
+	state.Status.Set(state.Text.CheckingCaches)
 
 	go func() {
 		ctx := context.Background()
@@ -375,8 +379,8 @@ func triggerScan(state *AppState) {
 				// local one. Keep the list empty and say why.
 				state.Items.Set(nil)
 				state.Selected.Set(map[string]bool{})
-				f := explain(err, actionMove)
-				f.Title = "Exodrive cannot check this Mac"
+				f := explain(err, actionMove, state.Text)
+				f.Title = state.Text.CheckFailedTitle
 				state.Notice.Set(notice{Kind: noticeDanger, Title: f.Title, Body: f.Body, Hint: f.Hint})
 				state.Status.Set("")
 				return
@@ -392,13 +396,13 @@ func triggerScan(state *AppState) {
 
 			if err != nil {
 				state.Notice.Set(notice{Kind: noticeWarn,
-					Title: "Part of the check did not run",
-					Body:  "Exodrive could not read every program, so the list may be short.",
-					Hint:  "Quit the programs below and scan again."})
+					Title: state.Text.CheckPartialTitle,
+					Body:  state.Text.CheckPartialBody,
+					Hint:  state.Text.CheckPartialHint})
 			}
 			_, _, _, canMove := tally(items)
-			state.Status.Set(fmt.Sprintf("Exodrive found %s. %d can move.",
-				count(len(items), "cache", "caches"), canMove))
+			state.Status.Set(fmt.Sprintf(state.Text.FoundCaches,
+				state.Text.counted(len(items)), canMove))
 		})
 	}()
 }
@@ -409,13 +413,15 @@ func triggerMigration(state *AppState) {
 	}
 	target := state.Target.Get()
 	if !target.Ready {
-		state.Notice.Set(notice{Kind: noticeDanger, Title: "Choose a folder first", Body: "Exodrive needs a checked folder on the external drive.", Hint: "Choose a folder, then try again."})
+		state.Notice.Set(notice{Kind: noticeDanger, Title: state.Text.ChooseFirstTitle,
+			Body: state.Text.ChooseFirstBody, Hint: state.Text.ChooseFirstHint})
 		return
 	}
 	toMigrate := selectedItems(state)
 	if len(toMigrate) == 0 {
 		return
 	}
+	t := state.Text
 
 	state.IsMigrating.Set(true)
 	state.CancelRequested.Set(false)
@@ -424,7 +430,7 @@ func triggerMigration(state *AppState) {
 	state.MoveDone.Set(0)
 	state.MoveCurrent.Set(toMigrate[0].Title)
 	state.Notice.Set(notice{})
-	state.Status.Set(fmt.Sprintf("Moving %s...", count(len(toMigrate), "cache", "caches")))
+	state.Status.Set(fmt.Sprintf(state.Text.MovingStatus, state.Text.counted(len(toMigrate))))
 
 	// The failures map is copied here, on the window thread, so the move
 	// goroutine never reads a signal. A cache that runs again drops its old
@@ -490,7 +496,7 @@ func triggerMigration(state *AppState) {
 				Verify: report(exoCore.PhaseVerify),
 			})
 			if err != nil {
-				failures[it.ID] = explain(err, actionMove)
+				failures[it.ID] = explain(err, actionMove, t)
 				failed++
 				continue
 			}
@@ -516,16 +522,19 @@ func triggerMigration(state *AppState) {
 
 			switch {
 			case stopped:
-				state.Status.Set(fmt.Sprintf("Stopped. %s moved. The other caches stay on this Mac.",
-					count(moved, "cache", "caches")))
+				state.Status.Set(fmt.Sprintf(t.StoppedStatus, t.counted(moved)))
 			case failed > 0:
-				state.Status.Set(fmt.Sprintf("%s moved. %s did not move.", count(moved, "cache", "caches"), count(failed, "cache", "caches")))
+				state.Status.Set(fmt.Sprintf(t.SomeMovedStatus, t.counted(moved), t.counted(failed)))
+				title := fmt.Sprintf(t.SomeMovedTitleMany, failed)
+				if failed == 1 {
+					title = t.SomeMovedTitleOne
+				}
 				state.Notice.Set(notice{Kind: noticeWarn,
-					Title: count(failed, "cache did not move", "caches did not move"),
-					Body:  "Each reason sits on its cache row below. Exodrive deleted nothing.",
-					Hint:  "Open a cache to read the reason, then try again."})
+					Title: title,
+					Body:  t.SomeMovedBody,
+					Hint:  t.SomeMovedHint})
 			default:
-				state.Status.Set(fmt.Sprintf("Moved %s. %s is now free on this Mac.", count(moved, "cache", "caches"), bytes(freed)))
+				state.Status.Set(fmt.Sprintf(t.MovedStatus, t.counted(moved), bytes(freed)))
 			}
 		})
 	}()
@@ -537,14 +546,15 @@ func triggerClean(state *AppState, id string) {
 	}
 	item, found := itemByID(state, id)
 	if !found {
-		state.Status.Set("This cache is not in the list anymore. Run a scan.")
+		state.Status.Set(state.Text.NotInListStatus)
 		return
 	}
 
 	state.IsCleaning.Set(true)
-	state.Status.Set(fmt.Sprintf("Deleting %s...", item.Title))
+	state.Status.Set(fmt.Sprintf(state.Text.DeletingStatus, item.Title))
 	state.Notice.Set(notice{})
 
+	t := state.Text
 	go func() {
 		ctx := context.Background()
 		err := state.Engine.CleanOrphan(item.CurrentPath)
@@ -558,7 +568,7 @@ func triggerClean(state *AppState, id string) {
 			}
 			state.Local.Set(local)
 			if err != nil {
-				f := explain(err, actionDelete)
+				f := explain(err, actionDelete, t)
 				next := state.Failures.GetUntracked()
 				next[id] = f
 				state.Failures.Set(next)
@@ -566,7 +576,7 @@ func triggerClean(state *AppState, id string) {
 				return
 			}
 			state.Failures.Set(map[string]friendly{})
-			state.Status.Set(fmt.Sprintf("Deleted %s. %s is now free.", item.Title, bytes(item.SizeBytes)))
+			state.Status.Set(fmt.Sprintf(t.DeletedStatus, item.Title, bytes(item.SizeBytes)))
 		})
 	}()
 }
@@ -576,9 +586,10 @@ func triggerRollback(state *AppState, id string) {
 		return
 	}
 	state.IsRollingBack.Set(true)
-	state.Status.Set("Moving the cache back to this Mac...")
+	state.Status.Set(state.Text.RollingBackStatus)
 	state.Notice.Set(notice{})
 
+	t := state.Text
 	go func() {
 		ctx := context.Background()
 		err := state.Engine.Rollback(ctx, id)
@@ -592,7 +603,7 @@ func triggerRollback(state *AppState, id string) {
 			}
 			state.Local.Set(local)
 			if err != nil {
-				f := explain(err, actionMoveBack)
+				f := explain(err, actionMoveBack, t)
 				next := state.Failures.GetUntracked()
 				next[id] = f
 				state.Failures.Set(next)
@@ -600,7 +611,7 @@ func triggerRollback(state *AppState, id string) {
 				return
 			}
 			state.Failures.Set(map[string]friendly{})
-			state.Status.Set("The cache is back on this Mac. Exodrive removed the record of the move.")
+			state.Status.Set(t.RolledBackStatus)
 		})
 	}()
 }

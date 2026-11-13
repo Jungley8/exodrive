@@ -20,12 +20,12 @@ func renderRow(cx *core.Scope, state *AppState, item func() exoCore.CacheItem) c
 
 	children := []core.Node{rowHead(cx, state, it, place, failed)}
 	if it.CurrentPath != "" {
-		children = append(children, pathLine(cx, "Folder", it.CurrentPath, "path-"+id))
+		children = append(children, pathLine(cx, state.Text.Folder, it.CurrentPath, "path-"+id))
 	}
 	if it.DestinationPath != "" {
-		children = append(children, pathLine(cx, "Copy", it.DestinationPath, "destination-"+id))
+		children = append(children, pathLine(cx, state.Text.Copy, it.DestinationPath, "destination-"+id))
 	}
-	if line := rowProblem(cx, it, place, failed); line != nil {
+	if line := rowProblem(cx, it, place, failed, state.Text); line != nil {
 		children = append(children, line)
 	}
 	if failure.Title != "" {
@@ -71,22 +71,22 @@ func rowHead(cx *core.Scope, state *AppState, it exoCore.CacheItem, place cacheS
 			StyleFunc: func() core.Style { return core.Style{Color: colors.Text()} },
 		},
 		typeLine(bytes(it.SizeBytes), figures(typeSmall), colors.Muted),
-		stateChip(cx, place, failed, id),
+		stateChip(cx, place, failed, id, state.Text),
 	}}
 }
 
 // stateChip says where the cache lives. It carries the word, so the color is
 // never the only signal.
-func stateChip(cx *core.Scope, place cacheState, failed bool, id string) core.Node {
+func stateChip(cx *core.Scope, place cacheState, failed bool, id string, t text) core.Node {
 	colors := ui.ColorsOf(cx)
 	tints := ui.TintsOf(cx)
-	label := place.label()
+	label := place.label(t)
 	fill, ink := tints.Warn, colors.Warn
 	switch {
 	case failed && place == stateMoved:
-		label, fill, ink = "Move back failed", tints.Danger, colors.Danger
+		label, fill, ink = t.MoveBackFailed, tints.Danger, colors.Danger
 	case failed:
-		label, fill, ink = "Move failed", tints.Danger, colors.Danger
+		label, fill, ink = t.MoveFailed, tints.Danger, colors.Danger
 	case place == stateMoved:
 		fill, ink = tints.Up, colors.Up
 	case place == stateBlocked, place == stateUnused:
@@ -104,17 +104,17 @@ func stateChip(cx *core.Scope, place cacheState, failed bool, id string) core.No
 
 // rowProblem is the line a cache needs beside its facts: why it cannot move, a
 // warning, or that a move stopped.
-func rowProblem(cx *core.Scope, it exoCore.CacheItem, place cacheState, failed bool) core.Node {
+func rowProblem(cx *core.Scope, it exoCore.CacheItem, place cacheState, failed bool, t text) core.Node {
 	colors := ui.ColorsOf(cx)
 	switch {
 	case it.BlockedReason != "":
 		return inlineNote(cx, lucide.TriangleAlert, colors.Danger, it.BlockedReason)
 	case failed:
-		return inlineNote(cx, lucide.TriangleAlert, colors.Danger, "The move below stopped. Read the reason, then try again.")
+		return inlineNote(cx, lucide.TriangleAlert, colors.Danger, t.MoveStopped)
 	case it.Warning != "":
 		return inlineNote(cx, lucide.TriangleAlert, colors.Warn, it.Warning)
 	case place == stateUnused:
-		return inlineNote(cx, lucide.Info, colors.Muted, "The program does not use this cache anymore.")
+		return inlineNote(cx, lucide.Info, colors.Muted, t.UnusedNote)
 	}
 	return nil
 }
@@ -150,7 +150,7 @@ func failureBlock(cx *core.Scope, state *AppState, it exoCore.CacheItem, failure
 		lines = append(lines, typeLine(failure.Hint, typeSmall, colors.Muted))
 	}
 	lines = append(lines, core.View{Style: core.Style{Direction: core.Row, Padding: core.Edges{Top: 4}}, Children: []core.Node{
-		ui.Button{Text: "Try again", Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.RotateCcw,
+		ui.Button{Text: state.Text.TryAgain, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.RotateCcw,
 			Disabled: func() bool { return busy(state) }, OnPress: func() { retry(state, it) }, TestID: "retry-" + it.ID},
 	}})
 	return core.View{
@@ -193,7 +193,7 @@ func moveOne(state *AppState, it exoCore.CacheItem) {
 func rowFoot(cx *core.Scope, state *AppState, it exoCore.CacheItem, place cacheState) core.Node {
 	colors := ui.ColorsOf(cx)
 	action := rowAction(state, it, place)
-	note := switchNote(it.RedirectMethod)
+	note := switchNote(it.RedirectMethod, state.Text)
 	if action == nil && note == "" {
 		return nil
 	}
@@ -216,15 +216,16 @@ func rowFoot(cx *core.Scope, state *AppState, it exoCore.CacheItem, place cacheS
 // card says what to fix first.
 func rowAction(state *AppState, it exoCore.CacheItem, place cacheState) core.Node {
 	disabled := func() bool { return busy(state) }
+	t := state.Text
 	switch place {
 	case stateLocal:
-		return ui.Button{Text: "Move", Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.ArrowRight,
+		return ui.Button{Text: t.Move, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.ArrowRight,
 			Disabled: disabled, OnPress: func() { moveOne(state, it) }, TestID: "move-" + it.ID}
 	case stateMoved:
-		return ui.Button{Text: "Move back", Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.Undo2,
+		return ui.Button{Text: t.MoveBack, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.Undo2,
 			Disabled: disabled, OnPress: func() { state.RollbackTarget.Set(it.ID) }, TestID: "rollback-" + it.ID}
 	case stateUnused:
-		return ui.Button{Text: "Delete cache", Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.Trash,
+		return ui.Button{Text: t.DeleteCache, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.Trash,
 			Disabled: disabled, OnPress: func() { state.CleanTarget.Set(it.ID) }, TestID: "clean-" + it.ID}
 	}
 	return nil

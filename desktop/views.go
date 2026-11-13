@@ -68,7 +68,7 @@ func renderHeader(cx *core.Scope, state *AppState) core.Node {
 				brandMark(cx, state),
 				core.View{Style: core.Style{Direction: core.Column, Gap: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, Children: []core.Node{
 					typeLine("Exodrive", brandWordmark, colors.Text),
-					typeLine("Move developer caches to an external drive.", typeSmall, colors.Muted),
+					typeLine(state.Text.Subtitle, typeSmall, colors.Muted),
 				}},
 			}},
 			core.Dynamic(func(cx *core.Scope) core.Node { return renderHeaderNote(cx, state) }),
@@ -82,13 +82,13 @@ func renderHeaderNote(cx *core.Scope, state *AppState) core.Node {
 	colors := ui.ColorsOf(cx)
 	if state.IsScanning.Get() {
 		return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
-			ui.Spinner{Size: 14, Label: "Checking this Mac"},
-			typeLine("Checking this Mac...", typeSmall, colors.Muted),
+			ui.Spinner{Size: 14, Label: state.Text.CheckingThisMac},
+			typeLine(state.Text.CheckingThisMacLine, typeSmall, colors.Muted),
 		}}
 	}
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6, FlexShrink: 1}, Children: []core.Node{
 		ui.Icon(lucide.ShieldCheck, 14, colors.Muted),
-		typeLine("A cache frees its space only after the copy passes the check.", typeSmall, colors.Muted),
+		typeLine(state.Text.CheckPromise, typeSmall, colors.Muted),
 	}}
 }
 
@@ -103,7 +103,7 @@ func renderDrives(cx *core.Scope, state *AppState) core.Node {
 		Children: []core.Node{
 			core.Dynamic(func(cx *core.Scope) core.Node {
 				localBytes, _, _, _ := tally(state.Items.Get())
-				return thisMacGauge(cx, state.Local.Get(), localBytes)
+				return thisMacGauge(cx, state.Local.Get(), localBytes, state.Text)
 			}),
 			driveLane(cx),
 			core.View{
@@ -169,15 +169,15 @@ func gaugeNote(cx *core.Scope, c func() core.Color, content string) core.Node {
 	}}
 }
 
-func thisMacGauge(cx *core.Scope, local diskState, cacheBytes int64) core.Node {
+func thisMacGauge(cx *core.Scope, local diskState, cacheBytes int64, t text) core.Node {
 	colors := ui.ColorsOf(cx)
-	head := "Free space unknown"
+	head := t.FreeUnknown
 	if local.Known {
-		head = bytes(local.Free) + " free"
+		head = fmt.Sprintf(t.FreeAmount, bytes(local.Free))
 	}
-	note := "No caches found"
+	note := t.NoCachesFound
 	if cacheBytes > 0 {
-		note = bytes(cacheBytes) + " in caches"
+		note = fmt.Sprintf(t.InCaches, bytes(cacheBytes))
 	}
 	other := local.Total - local.Free - cacheBytes
 	if !local.Known || other < 0 {
@@ -186,7 +186,7 @@ func thisMacGauge(cx *core.Scope, local diskState, cacheBytes int64) core.Node {
 	return core.View{
 		Style: core.Style{FlexGrow: 1, FlexBasis: core.Pt(0), MinWidth: core.Pt(0), Direction: core.Column, Gap: 8},
 		Children: []core.Node{
-			gaugeHead(cx, lucide.Laptop, "This Mac", head),
+			gaugeHead(cx, lucide.Laptop, t.ThisMac, head),
 			gaugeBar(cx, local.Total, []barPart{{cacheBytes, colors.Warn}, {other, colors.Muted}}),
 			gaugeNote(cx, colors.Warn, note),
 		},
@@ -210,42 +210,43 @@ func driveLane(cx *core.Scope) core.Node {
 // bar, and the note that names the colored part.
 func externalGaugeHead(cx *core.Scope, state *AppState) core.Node {
 	colors := ui.ColorsOf(cx)
+	t := state.Text
 	target := state.Target.Get()
 	moved := movedUnder(state.Items.Get(), target.Path)
 
-	head, note := "No folder chosen", volumeHint()
+	head, note := t.NoFolderChosen, volumeHint(t)
 	noteColor := colors.Muted
 	total, other := int64(0), int64(0)
 	switch {
 	case target.Ready:
-		head = bytes(target.Free) + " free"
+		head = fmt.Sprintf(t.FreeAmount, bytes(target.Free))
 		other = target.Total - target.Free - moved
 		if other < 0 {
 			other = 0
 		}
 		total = target.Total
 		if moved > 0 {
-			note, noteColor = bytes(moved)+" moved here", colors.Up
+			note, noteColor = fmt.Sprintf(t.MovedHere, bytes(moved)), colors.Up
 		} else {
-			note = "No caches moved yet"
+			note = t.NoCachesMovedYet
 		}
 	case target.Path != "":
-		head = "Not ready"
-		note = "The folder failed the check."
+		head = t.NotReady
+		note = t.FolderFailedCheck
 	default:
 		// No folder yet. The drive that has the most room still answers the
 		// question a person opens this window with: how much space is there.
 		if v, ok := bestVolume(); ok {
-			head = bytes(v.Free) + " free"
+			head = fmt.Sprintf(t.FreeAmount, bytes(v.Free))
 			total, other = v.Total, v.Total-v.Free
-			note = volumeReadyNote(v)
+			note = volumeReadyNote(v, t)
 		}
 	}
 
 	return core.View{
 		Style: core.Style{Direction: core.Column, Gap: 8},
 		Children: []core.Node{
-			gaugeHead(cx, lucide.Usb, "External drive", head),
+			gaugeHead(cx, lucide.Usb, t.ExternalDrive, head),
 			gaugeBar(cx, total, []barPart{{moved, colors.Up}, {other, colors.Muted}}),
 			gaugeNote(cx, noteColor, note),
 		},
@@ -260,8 +261,7 @@ func targetNote(cx *core.Scope, state *AppState) core.Node {
 	target := state.Target.Get()
 	switch {
 	case target.Ready && target.SameVolume:
-		return noteLine(cx, lucide.Info, colors.Warn, "target-reminder",
-			"This folder is on this Mac. A move here frees no space.")
+		return noteLine(cx, lucide.Info, colors.Warn, "target-reminder", state.Text.FolderOnThisMac)
 	case target.Path != "" && !target.Ready && target.Problem != "":
 		return noteLine(cx, lucide.TriangleAlert, colors.Danger, "target-problem", target.Problem)
 	}
@@ -287,7 +287,7 @@ func targetInput(cx *core.Scope, state *AppState) core.Node {
 			ui.Field{Input: core.Input{
 				Style:       core.Style{Height: core.Pt(26), Padding: core.Symmetric(0, 8), FontSize: 12},
 				Value:       func() string { return state.TargetDir.Get() },
-				Placeholder: "Folder on the drive",
+				Placeholder: state.Text.FolderPlaceholder,
 				OnChange: func(text string) {
 					state.TargetDir.Set(strings.TrimSpace(text))
 					triggerTargetCheck(state)
@@ -296,7 +296,7 @@ func targetInput(cx *core.Scope, state *AppState) core.Node {
 			}},
 		}},
 		ui.Button{
-			Text: "Choose", Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.FolderOpen,
+			Text: state.Text.Choose, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.FolderOpen,
 			OnPress: func() { openPicker(state) },
 			TestID:  "browse",
 		},
@@ -316,24 +316,24 @@ func bestVolume() (exoCore.VolumeSpace, bool) {
 
 // volumeReadyNote names the drive beside the free space, and says what the next
 // step is. It never claims a folder Exodrive has not checked.
-func volumeReadyNote(v exoCore.VolumeSpace) string {
+func volumeReadyNote(v exoCore.VolumeSpace, t text) string {
 	if others := len(exoCore.ExternalVolumes()) - 1; others > 0 {
-		return fmt.Sprintf("%s has the most free space. %d more connected. Choose a folder.", v.Name, others)
+		return fmt.Sprintf(t.DriveMostFree, v.Name, others)
 	}
-	return v.Name + ": choose a folder to move caches here."
+	return fmt.Sprintf(t.DriveChooseFolder, v.Name)
 }
 
 // volumeHint says whether an external volume is connected. Without one, the
 // folder picker lists only the internal disk.
-func volumeHint() string {
+func volumeHint(t text) string {
 	volumes := exoCore.ExternalVolumes()
 	switch len(volumes) {
 	case 0:
-		return "No external drive is connected."
+		return t.NoExternalDrive
 	case 1:
-		return volumes[0] + " is connected."
+		return fmt.Sprintf(t.DriveConnected, volumes[0])
 	default:
-		return fmt.Sprintf("%d drives are connected.", len(volumes))
+		return fmt.Sprintf(t.DrivesConnected, len(volumes))
 	}
 }
 
@@ -353,7 +353,7 @@ func renderAction(cx *core.Scope, state *AppState) core.Node {
 		total += it.SizeBytes
 	}
 
-	title, helper := actionCopy(target, len(visible), len(selected), canMove, total)
+	title, helper := actionCopy(target, len(visible), len(selected), canMove, total, state.Text)
 	colors := ui.ColorsOf(cx)
 	children := []core.Node{
 		core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 16}, Children: []core.Node{
@@ -371,37 +371,38 @@ func renderAction(cx *core.Scope, state *AppState) core.Node {
 }
 
 // actionCopy names the next step and what it will do.
-func actionCopy(target targetState, shown, selected, canMove int, total int64) (title, helper string) {
+func actionCopy(target targetState, shown, selected, canMove int, total int64, t text) (title, helper string) {
 	switch {
 	case !target.Ready && target.Problem != "":
-		return "Choose another folder", "Exodrive checked the folder and cannot use it."
+		return t.ChooseAnotherFolder, t.ChooseAnotherHelper
 	case !target.Ready:
-		return "Choose a folder for the caches", "The caches move to this folder. Keep the drive connected."
+		return t.ChooseFolderTitle, t.ChooseFolderHelper
 	case shown == 0:
-		return "No caches in this view", "Choose All, or another group in the list on the left."
+		return t.NoCachesInView, t.NoCachesInViewHelper
 	case canMove == 0:
-		return "Nothing can move now", "Every cache is already on the drive, or it cannot move."
+		return t.NothingCanMove, t.NothingCanMoveHelper
 	case selected == 0:
-		return "Select the caches to move", "A cache stays on this Mac until the copy passes the check."
+		return t.SelectCaches, t.SelectCachesHelper
 	default:
-		return "Move " + count(selected, "cache", "caches"),
-			fmt.Sprintf("%s moves to the drive. Exodrive checks each copy before it frees space.", bytes(total))
+		return fmt.Sprintf(t.MoveTitle, t.counted(selected)),
+			fmt.Sprintf(t.MoveHelper, bytes(total))
 	}
 }
 
 func actionButton(state *AppState, target targetState, selected, canMove, shown int) core.Node {
 	disabled := func() bool { return busy(state) }
+	t := state.Text
 	switch {
 	case !target.Ready:
-		return ui.Button{Text: "Choose folder", Variant: ui.ButtonPrimary, Icon: lucide.FolderOpen,
+		return ui.Button{Text: t.ChooseFolderButton, Variant: ui.ButtonPrimary, Icon: lucide.FolderOpen,
 			Disabled: disabled, OnPress: func() { openPicker(state) }, TestID: "choose-target"}
 	case canMove == 0 || shown == 0:
 		return core.View{}
 	case selected == 0:
-		return ui.Button{Text: fmt.Sprintf("Select all %d", canMove), Variant: ui.ButtonPrimary, Icon: lucide.Check,
+		return ui.Button{Text: fmt.Sprintf(t.SelectAll, canMove), Variant: ui.ButtonPrimary, Icon: lucide.Check,
 			Disabled: disabled, OnPress: func() { selectAll(state, true) }, TestID: "select-all"}
 	default:
-		return ui.Button{Text: "Move " + count(selected, "cache", "caches"), Variant: ui.ButtonPrimary, Icon: lucide.ArrowRight,
+		return ui.Button{Text: fmt.Sprintf(t.MoveButton, t.counted(selected)), Variant: ui.ButtonPrimary, Icon: lucide.ArrowRight,
 			Disabled: disabled, OnPress: func() { state.ConfirmOpen.Set(true) }, TestID: "migrate"}
 	}
 }
@@ -448,16 +449,17 @@ func progressRow(cx *core.Scope, state *AppState) core.Node {
 	pct := state.ProgressPct.Get()
 	stopping := state.CancelRequested.Get()
 
-	title := "Moving " + current
+	t := state.Text
+	title := fmt.Sprintf(t.Moving, current)
 	if state.MovePhase.Get() == exoCore.PhaseVerify {
-		title = "Checking the copy of " + current
+		title = fmt.Sprintf(t.CheckingCopy, current)
 	}
-	detail := fmt.Sprintf("Cache %d of %d. %.0f%% done.", done+1, total, pct*100)
+	detail := fmt.Sprintf(t.CacheOfDone, done+1, total, pct*100)
 	if total == 0 {
-		title, detail = "Moving the caches", ""
+		title, detail = t.MovingCaches, ""
 	}
 	if stopping {
-		title, detail = "Finishing "+current, "Stopping after this cache."
+		title, detail = fmt.Sprintf(t.Finishing, current), t.StoppingAfter
 	}
 
 	text := []core.Node{
@@ -469,7 +471,7 @@ func progressRow(cx *core.Scope, state *AppState) core.Node {
 	}
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 16}, Children: []core.Node{
 		core.View{Style: core.Style{FlexGrow: 1, FlexShrink: 1, MinWidth: core.Pt(0), Direction: core.Column, Gap: 6}, Children: text},
-		ui.Button{Text: "Stop after this cache", Variant: ui.ButtonSecondary, Icon: lucide.CircleX,
+		ui.Button{Text: t.StopAfterThisCache, Variant: ui.ButtonSecondary, Icon: lucide.CircleX,
 			Disabled: func() bool { return state.CancelRequested.Get() },
 			OnPress:  func() { state.CancelRequested.Set(true) },
 			TestID:   "cancel-move"},
@@ -485,22 +487,23 @@ func renderListHeader(cx *core.Scope, state *AppState) core.Node {
 		_, _, _, canMove := tally(visible)
 		selected := len(selectedItems(state))
 
+		t := state.Text
 		children := []core.Node{
-			typeLine("Caches", typeLabel, colors.Text),
+			typeLine(t.Caches, typeLabel, colors.Text),
 			typeLine(fmt.Sprintf("%d", len(visible)), figures(typeSmall), colors.Muted),
 			fill(),
 			placeFilter(cx, state),
 		}
 		if selected > 0 {
-			children = append(children, typeLine(fmt.Sprintf("%d selected", selected), figures(typeSmall), colors.Muted))
-			children = append(children, ui.Button{Text: "Clear", Variant: ui.ButtonGhost, Size: ui.SizeSmall,
+			children = append(children, typeLine(fmt.Sprintf(t.Selected, selected), figures(typeSmall), colors.Muted))
+			children = append(children, ui.Button{Text: t.Clear, Variant: ui.ButtonGhost, Size: ui.SizeSmall,
 				OnPress: func() { selectAll(state, false) }, TestID: "clear-selection"})
 		}
 		if selected > 0 && selected < canMove {
-			children = append(children, ui.Button{Text: fmt.Sprintf("Select all %d", canMove), Variant: ui.ButtonGhost, Size: ui.SizeSmall,
+			children = append(children, ui.Button{Text: fmt.Sprintf(t.SelectAll, canMove), Variant: ui.ButtonGhost, Size: ui.SizeSmall,
 				OnPress: func() { selectAll(state, true) }, TestID: "select-all-rest"})
 		}
-		children = append(children, ui.Button{Text: "Rescan", Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.RefreshCw,
+		children = append(children, ui.Button{Text: t.Rescan, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.RefreshCw,
 			Disabled: func() bool { return busy(state) }, OnPress: func() { triggerScan(state) }, TestID: "rescan"})
 
 		return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8}, Children: children}
@@ -511,10 +514,11 @@ func renderListHeader(cx *core.Scope, state *AppState) core.Node {
 // words match the state on every card, so a press reads as a filter on what
 // the cards already say.
 func placeFilter(cx *core.Scope, state *AppState) core.Node {
-	return ui.ToggleGroup{Label: "Place", TestID: "place-filter", Children: []core.Node{
-		placeToggle(state, placeAll, "All", "place-all"),
-		placeToggle(state, placeLocal, "On this Mac", "place-this-mac"),
-		placeToggle(state, placeMoved, "On the drive", "place-drive"),
+	t := state.Text
+	return ui.ToggleGroup{Label: t.Place, TestID: "place-filter", Children: []core.Node{
+		placeToggle(state, placeAll, t.All, "place-all"),
+		placeToggle(state, placeLocal, t.OnThisMac, "place-this-mac"),
+		placeToggle(state, placeMoved, t.OnTheDrive, "place-drive"),
 	}}
 }
 
@@ -557,10 +561,10 @@ func renderRail(cx *core.Scope, state *AppState) core.Node {
 	all := familyStat{Family: placeAllFamily, Count: len(items), Local: local + unused, Moved: moved}
 	total := all.Local + all.Moved
 
-	children := []core.Node{typeLine("Detected", typeLabel, colors.Text),
-		railRow(cx, state, all, total, "All caches", "rail-all")}
+	children := []core.Node{typeLine(state.Text.Detected, typeLabel, colors.Text),
+		railRow(cx, state, all, total, state.Text.AllCaches, "rail-all")}
 	for _, stat := range stats {
-		children = append(children, railRow(cx, state, stat, total, string(stat.Family), "rail-"+string(stat.Family)))
+		children = append(children, railRow(cx, state, stat, total, familyLabel(stat.Family, state.Text), "rail-"+string(stat.Family)))
 	}
 
 	return core.View{
@@ -603,7 +607,7 @@ func railRow(cx *core.Scope, state *AppState, stat familyStat, total int64, labe
 			}
 			setFamily(state, stat.Family)
 		},
-		LabelFunc: func() string { return fmt.Sprintf("%s, %s", label, count(stat.Count, "cache", "caches")) },
+		LabelFunc: func() string { return fmt.Sprintf(state.Text.RailLabel, label, state.Text.counted(stat.Count)) },
 		TestID:    testID,
 		Children: []core.Node{
 			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 6}, Children: []core.Node{
@@ -648,8 +652,8 @@ func emptyList(cx *core.Scope, state *AppState) core.Node {
 			Style: core.Style{FlexGrow: 1, MinHeight: core.Pt(0), Direction: core.Column, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 4},
 			Children: []core.Node{
 				ui.Icon(lucide.Funnel, 22, colors.Faint),
-				typeLine("No caches in this view", typeLead, colors.Text),
-				typeLine("Choose All, or another group in the list on the left.", typeSmall, colors.Muted),
+				typeLine(state.Text.EmptyThisView, typeLead, colors.Text),
+				typeLine(state.Text.EmptyThisViewHelp, typeSmall, colors.Muted),
 			},
 		}
 	}
@@ -657,8 +661,8 @@ func emptyList(cx *core.Scope, state *AppState) core.Node {
 		Style: core.Style{FlexGrow: 1, MinHeight: core.Pt(0), Direction: core.Column, AlignItems: core.AlignCenter, JustifyContent: core.JustifyCenter, Gap: 4},
 		Children: []core.Node{
 			ui.Icon(lucide.Package, 22, colors.Faint),
-			typeLine("No caches found", typeLead, colors.Text),
-			typeLine("Exodrive checks npm, pnpm, yarn, cargo, Go, bun, uv, pip, and Docker.", typeSmall, colors.Muted),
+			typeLine(state.Text.NoCachesFound, typeLead, colors.Text),
+			typeLine(state.Text.EmptyCheckList, typeSmall, colors.Muted),
 		},
 	}
 }
@@ -672,9 +676,9 @@ func renderAdvanced(cx *core.Scope, state *AppState) core.Node {
 		StyleFunc: func() core.Style { return core.Style{Background: colors.Inset(), BorderColor: colors.Border()} },
 		TestID:    "advanced",
 		Children: []core.Node{
-			typeLine("Move records", typeLabel, colors.Text),
+			typeLine(state.Text.MoveRecords, typeLabel, colors.Text),
 			typeLine(shortPath(exoCore.GetManifestPath()), typeMono, colors.Muted),
-			typeLine("A move back needs the record file and the drive. Keep both.", typeSmall, colors.Muted),
+			typeLine(state.Text.MoveRecordsHelp, typeSmall, colors.Muted),
 		},
 	}
 }
@@ -687,11 +691,11 @@ func renderFooter(cx *core.Scope, state *AppState) core.Node {
 		core.Show{
 			When: func() bool { return state.AdvancedOpen.Get() },
 			Then: func(cx *core.Scope) core.Node {
-				return ui.Button{Text: "Hide details", Variant: ui.ButtonGhost, Size: ui.SizeSmall, Icon: lucide.ChevronDown,
+				return ui.Button{Text: state.Text.HideDetails, Variant: ui.ButtonGhost, Size: ui.SizeSmall, Icon: lucide.ChevronDown,
 					OnPress: func() { state.AdvancedOpen.Set(false) }, TestID: "advanced-toggle"}
 			},
 			Else: func(cx *core.Scope) core.Node {
-				return ui.Button{Text: "Details", Variant: ui.ButtonGhost, Size: ui.SizeSmall, Icon: lucide.ChevronRight,
+				return ui.Button{Text: state.Text.Details, Variant: ui.ButtonGhost, Size: ui.SizeSmall, Icon: lucide.ChevronRight,
 					OnPress: func() { state.AdvancedOpen.Set(true) }, TestID: "advanced-toggle"}
 			},
 		},

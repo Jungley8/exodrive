@@ -100,7 +100,7 @@ func TestExplainNamesTheCauseAndTheNextStep(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := explain(tc.err, tc.action)
+			got := explain(tc.err, tc.action, englishText)
 			if got.Title != tc.title {
 				t.Fatalf("title is %q, want %q", got.Title, tc.title)
 			}
@@ -124,7 +124,7 @@ func TestExplainKeepsTheTitleByAction(t *testing.T) {
 		actionMoveBack: "The move back stopped",
 		actionDelete:   "The delete stopped",
 	} {
-		got := explain(unknown, action)
+		got := explain(unknown, action, englishText)
 		if got.Title != want {
 			t.Fatalf("%s: title is %q, want %q", action, got.Title, want)
 		}
@@ -133,16 +133,17 @@ func TestExplainKeepsTheTitleByAction(t *testing.T) {
 		}
 	}
 
-	if got := explain(nil, actionMove); got.Title != "" || got.Body != "" || got.Hint != "" {
+	if got := explain(nil, actionMove, englishText); got.Title != "" || got.Body != "" || got.Hint != "" {
 		t.Fatalf("a nil error made a message: %+v", got)
 	}
 }
 
-// TestExplainSplitsATargetError keeps the statement and the next step on their
-// own lines.
-func TestExplainSplitsATargetError(t *testing.T) {
-	err := &exoCore.TargetError{Volume: "SSD", Message: "The external volume SSD is not connected. Connect it, then check again."}
-	got := explain(err, actionMove)
+// TestTargetErrorKeepsBothSentences keeps the statement and the next step on
+// their own lines, and names the folder when no volume answers.
+func TestTargetErrorKeepsBothSentences(t *testing.T) {
+	err := &exoCore.TargetError{Volume: "SSD", Path: "/Volumes/SSD/caches",
+		Message: "The external volume SSD is not connected. Connect it, then check again."}
+	got := explain(err, actionMove, englishText)
 	if got.Body != "The external volume SSD is not connected." {
 		t.Fatalf("body is %q", got.Body)
 	}
@@ -150,42 +151,39 @@ func TestExplainSplitsATargetError(t *testing.T) {
 		t.Fatalf("hint is %q", got.Hint)
 	}
 
-	one := explain(errors.New("one sentence only"), actionMove)
+	folder := explain(&exoCore.TargetError{Path: "/Volumes/Old/caches"}, actionChoose, englishText)
+	if folder.Body != "The folder /Volumes/Old/caches does not exist." {
+		t.Fatalf("a missing folder reads as %q", folder.Body)
+	}
+	if folder.Hint != "Choose a folder that exists." {
+		t.Fatalf("a missing folder suggests %q", folder.Hint)
+	}
+
+	one := explain(errors.New("one sentence only"), actionMove, englishText)
 	if one.Hint != "Exodrive deleted nothing. Try again." {
 		t.Fatalf("an error without a second sentence lost its next step: %q", one.Hint)
-	}
-}
-
-func TestSplitSentences(t *testing.T) {
-	body, hint := splitSentences("The first part. The second part.")
-	if body != "The first part." || hint != "The second part." {
-		t.Fatalf("split gave (%q, %q)", body, hint)
-	}
-	body, hint = splitSentences("Only one part")
-	if body != "Only one part" || hint != "" {
-		t.Fatalf("split gave (%q, %q)", body, hint)
 	}
 }
 
 // TestTargetProblemSpeaksToTheChooser keeps the folder check in the window's
 // words and keeps the path that the person typed.
 func TestTargetProblemSpeaksToTheChooser(t *testing.T) {
-	if got := targetProblem(nil); got != "" {
+	if got := targetProblem(nil, englishText); got != "" {
 		t.Fatalf("a folder that passed the check got a problem: %q", got)
 	}
-	got := targetProblem(&exoCore.TargetError{Message: "The folder /Volumes/Old does not exist. Choose a folder that exists."})
+	got := targetProblem(&exoCore.TargetError{Path: "/Volumes/Old"}, englishText)
 	if !strings.HasPrefix(got, "The folder /Volumes/Old does not exist.") {
 		t.Fatalf("a target error lost its detail: %q", got)
 	}
-	unsupported := targetProblem(errors.New("filesystem 'msdos' is not supported: choose APFS"))
+	unsupported := targetProblem(errors.New("filesystem 'msdos' is not supported: choose APFS"), englishText)
 	if !strings.HasPrefix(unsupported, "This drive cannot hold caches.") {
 		t.Fatalf("an unsupported drive reads as %q", unsupported)
 	}
-	missing := targetProblem(errors.New("open /Volumes/Old: does not exist"))
+	missing := targetProblem(errors.New("open /Volumes/Old: does not exist"), englishText)
 	if !strings.HasPrefix(missing, "This folder does not exist.") {
 		t.Fatalf("a missing folder reads as %q", missing)
 	}
-	raw := targetProblem(errors.New("stat /Volumes/X: input/output error"))
+	raw := targetProblem(errors.New("stat /Volumes/X: input/output error"), englishText)
 	if raw != "stat /Volumes/X: input/output error" {
 		t.Fatalf("an unknown problem hid its reason: %q", raw)
 	}
@@ -218,19 +216,19 @@ func TestShortPathHidesOnlyTheHomeFolder(t *testing.T) {
 // where it lives, not why it would not move.
 func TestStateOfReadsTheMoveFirst(t *testing.T) {
 	moved := exoCore.CacheItem{ID: "x", IsMigrated: true, IsActive: true, BlockedReason: "in use"}
-	if got := stateOf(moved); got != stateMoved || got.label() != "On the drive" {
+	if got := stateOf(moved); got != stateMoved || got.label(englishText) != "On the drive" {
 		t.Fatalf("a moved cache reads as %v", got)
 	}
 	unused := exoCore.CacheItem{ID: "x", IsActive: false, BlockedReason: "in use"}
-	if got := stateOf(unused); got != stateUnused || got.label() != "Unused" {
+	if got := stateOf(unused); got != stateUnused || got.label(englishText) != "Unused" {
 		t.Fatalf("an unused cache reads as %v", got)
 	}
 	blocked := exoCore.CacheItem{ID: "x", IsActive: true, BlockedReason: "in use"}
-	if got := stateOf(blocked); got != stateBlocked || got.label() != "Cannot move" {
+	if got := stateOf(blocked); got != stateBlocked || got.label(englishText) != "Cannot move" {
 		t.Fatalf("a blocked cache reads as %v", got)
 	}
 	local := exoCore.CacheItem{ID: "x", IsActive: true}
-	if got := stateOf(local); got != stateLocal || got.label() != "On this Mac" {
+	if got := stateOf(local); got != stateLocal || got.label(englishText) != "On this Mac" {
 		t.Fatalf("a local cache reads as %v", got)
 	}
 }
@@ -279,15 +277,20 @@ func TestTallyCountsEachPlaceOnce(t *testing.T) {
 	}
 }
 
-func TestCountKeepsThePlural(t *testing.T) {
-	if got := count(1, "cache", "caches"); got != "1 cache" {
+// TestCountedKeepsThePlural keeps a count that names caches in each language.
+// Chinese has one form, so both arguments carry it.
+func TestCountedKeepsThePlural(t *testing.T) {
+	if got := englishText.counted(1); got != "1 cache" {
 		t.Fatalf("count(1) is %q", got)
 	}
-	if got := count(0, "cache", "caches"); got != "0 caches" {
+	if got := englishText.counted(0); got != "0 caches" {
 		t.Fatalf("count(0) is %q", got)
 	}
-	if got := count(2, "cache", "caches"); got != "2 caches" {
+	if got := englishText.counted(2); got != "2 caches" {
 		t.Fatalf("count(2) is %q", got)
+	}
+	if got := chineseText.counted(2); got != "2 个缓存" {
+		t.Fatalf("Chinese count(2) is %q", got)
 	}
 }
 
