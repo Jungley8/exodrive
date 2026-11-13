@@ -141,8 +141,17 @@
               <tr><td>Ollama</td><td>模型仓库</td><td>指向模型目录的软链接</td></tr>
               <tr><td>Hugging Face</td><td><code>HF_HOME</code> 下的 <code>hub/</code></td><td>软链接</td></tr>
               <tr><td>LM Studio</td><td>模型仓库</td><td>指向模型目录的软链接</td></tr>
+              <tr><td>Xcode</td><td>DerivedData、Archives、DeviceSupport、Previews 与 Xcode 缓存</td><td>分别为每个目录建立软链接</td></tr>
+              <tr><td>Maven</td><td><code>repository/</code></td><td>软链接</td></tr>
+              <tr><td>Gradle</td><td><code>caches/</code> 与 <code>wrapper/dists/</code></td><td>软链接</td></tr>
+              <tr><td>CocoaPods</td><td>缓存与 spec 仓库</td><td>软链接</td></tr>
+              <tr><td>SwiftPM</td><td>包缓存</td><td>软链接</td></tr>
             </tbody>
           </table>
+          <p class="note">
+            Exodrive 不迁移 <code>~/Library/Developer/CoreSimulator/Devices</code>。
+            软链接会让 Xcode 无法创建模拟器设备。
+          </p>
         </section>
 
         <section id="install">

@@ -15,8 +15,8 @@ func TestRegistry(t *testing.T) {
 	}
 
 	all := reg.All()
-	if len(all) != 13 {
-		t.Fatalf("expected 13 providers registered, got %d", len(all))
+	if len(all) != 18 {
+		t.Fatalf("expected 18 providers registered, got %d", len(all))
 	}
 
 	expectedNames := map[string]bool{
@@ -29,6 +29,11 @@ func TestRegistry(t *testing.T) {
 		"uv":          false,
 		"pip":         false,
 		"docker":      false,
+		"xcode":       false,
+		"maven":       false,
+		"gradle":      false,
+		"cocoapods":   false,
+		"swiftpm":     false,
 		"orphan":      false,
 		"ollama":      false,
 		"huggingface": false,

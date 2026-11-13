@@ -52,6 +52,11 @@ func NewRegistry() *Registry {
 		NewUVProvider(),
 		NewPipProvider(),
 		NewDockerProvider(),
+		NewXcodeProvider(),
+		NewMavenProvider(),
+		NewGradleProvider(),
+		NewCocoaPodsProvider(),
+		NewSwiftPMProvider(),
 		NewOrphanProvider(),
 	)
 	r.Register(Models()...)

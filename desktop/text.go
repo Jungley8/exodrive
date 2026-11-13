@@ -300,7 +300,7 @@ var englishText = text{
 	AllCaches:         "All caches",
 	RailLabel:         "%s, %s",
 	FamilyOther:       "Other",
-	EmptyCheckList:    "Exodrive checks npm, pnpm, yarn, cargo, Go, bun, uv, pip, and Docker.",
+	EmptyCheckList:    "Exodrive found no cache. Run a tool that keeps a cache, then scan again.",
 	EmptyThisView:     "No caches in this view",
 	EmptyThisViewHelp: "Choose All, or another group in the list on the left.",
 
@@ -505,7 +505,7 @@ var chineseText = text{
 	AllCaches:         "全部缓存",
 	RailLabel:         "%s，%s",
 	FamilyOther:       "其他",
-	EmptyCheckList:    "Exodrive 检查 npm、pnpm、yarn、cargo、Go、bun、uv、pip 和 Docker。",
+	EmptyCheckList:    "未找到缓存。先运行一个会生成缓存的工具，再重新扫描。",
 	EmptyThisView:     "当前视图没有缓存",
 	EmptyThisViewHelp: "点左侧的「全部」或其他分组。",
 

@@ -15,6 +15,10 @@ Supported toolchains:
 - Go: `go-build` (GOCACHE), `gomod` (GOMODCACHE)
 - Python: `uv` (cache and Python toolchains), `pip`
 - Containers: `docker` (OrbStack, Docker Desktop, Colima)
+- JVM: `maven` (`repository/`), `gradle` (`caches/`, `wrapper/dists/`)
+- Xcode: `xcode` (DerivedData, Archives, DeviceSupport, Previews, app cache;
+  the simulator folder stays blocked)
+- Apple dependency stores: `cocoapods` (cache, spec repos), `swiftpm` (cache)
 - AI model stores: `ollama`, `huggingface` (`hub/` under `HF_HOME`), `lmstudio`
 - Legacy/Orphans: abandoned cache folders from earlier configuration changes
 
@@ -47,8 +51,11 @@ internal/
   fsutil/                 # copy, verify, symlink, disk check, process lock
   plugins/                # Providers for each toolchain
     provider.go           # Provider interface and registry
+    move.go               # shared copy, verify, record, and link step
+    linked.go             # table-driven provider for fixed folders
     rollback.go           # shared rollback and cleanup helpers
-    npm.go pnpm.go yarn.go cargo.go golang.go bun.go uv.go pip.go docker.go orphan.go
+    npm.go pnpm.go yarn.go cargo.go golang.go bun.go uv.go pip.go docker.go
+    xcode.go jvm.go apple.go orphan.go
   ui/                     # terminal table and progress bar
 desktop/                  # nsgo reactive window
 packaging/Info.plist.in   # app bundle template
@@ -67,7 +74,7 @@ type Provider interface {
     Name() string
     Detect(ctx context.Context) ([]core.CacheItem, error)
     PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error
-    Migrate(ctx context.Context, item core.CacheItem, targetRoot string, onProgress fsutil.CopyProgressCallback) error
+    Migrate(ctx context.Context, item core.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error
     Rollback(ctx context.Context, item core.CacheItem) error
 }
 ```
@@ -81,12 +88,13 @@ type Provider interface {
 4. The provider copies the data with `fsutil.CopyDir` or `fsutil.CopyFile`.
    Both preserve the file mode and the modification time. `CopyDir` restores
    directory modes and times after the copy.
-5. The provider calls `fsutil.VerifyTreeProgress`. It reads every regular file
+5. The provider calls `fsutil.VerifyTreeSummary`. It reads every regular file
    in both trees and compares the bytes by SHA-256. It also compares the file
    count, the per-file sizes, and every symbolic link with its target. A single
    different byte stops the migration before any switch. The check reports its
-   progress through `MigrateProgress.Verify`. A single-file copy goes through
-   `fsutil.VerifyFile`, which makes the same comparison.
+   progress through `MigrateProgress.Verify` and returns the digest of the copy.
+   A single-file copy goes through `fsutil.VerifyFileSummary`, which makes the
+   same comparison and also returns a digest.
    `CopyDir` refuses a destination that is not empty, is a symbolic link, or is
    a file, because a merge would overwrite data the copy does not own.
 6. The provider calls `core.RecordMigration`. The record exists before the
@@ -158,12 +166,22 @@ refuses the migration; none of them falls back to a weaker mode.
      nor POSIX modes.
 2. **Process lock**:
    - `docker` refuses to run while Docker Desktop, OrbStack, or Colima runs.
+   - `xcode` refuses to run while Xcode, `xcodebuild`, or `XCBuildService`
+     runs. `CoreSimulatorService` is not in the list: it always runs, so every
+     preflight would fail.
+   - `maven` refuses while `mvn` or `mvnd` runs. `gradle` refuses while `gradle`
+     or the daemon runs. `cocoapods` refuses while `pod` runs. `swiftpm` refuses
+     while `swift`, `swiftc`, or `xcodebuild` runs.
    - Each package manager refuses to run while its own process runs.
    - The check reads the process table and matches the executable and the
      arguments. A tool that starts through an interpreter is still found:
      `node .../npm-cli.js` matches `npm`. A flag token is skipped, so
      `--tools=cargo` does not match `cargo`. A shell assignment is skipped, so
      `CARGO_HOME=/tmp/cargo exodrive migrate` does not match `cargo`.
+   - A Java main class names its tool through the last segment of a dotted
+     token: `org.gradle.launcher.daemon.bootstrap.GradleDaemon` matches
+     `GradleDaemon`. The rule needs a capital letter, so `notes.go` does not
+     match `go`.
    - macOS and Linux read `ps -axo pid=,args=`. Windows reads
      `Get-CimInstance Win32_Process` through PowerShell, because the command
      line decides whether `node.exe` runs npm.
@@ -178,9 +196,23 @@ refuses the migration; none of them falls back to a weaker mode.
      Exodrive does not refuse it. The switch replaces the folder with a link,
      so the variable still names a path that works. The guard exists for a
      native configuration switch, where the variable would win.
+   - `GRADLE_USER_HOME` and `CP_HOME_DIR` name a root folder, and Exodrive moves
+     a folder inside that root. The link keeps the variable valid, so the guard
+     does not apply.
 4. **Binary isolation**:
    - Exodrive never moves `~/.cargo/bin`, `~/.bun/bin`, or `$GOPATH/bin`.
    - Cargo moves only `registry/` and `git/`. Bun moves only `install/cache`.
+   - Exodrive never moves `~/Library/Developer/CoreSimulator/Devices`.
+     CoreSimulatorService cannot write its device store to an external volume,
+     so a link there stops device creation and breaks the Files app inside the
+     simulator. The item stays visible with `BlockedReason`.
+   - Exodrive never moves `~/Library/Developer/Xcode/UserData`, and it never
+     moves `UserData/IB Support`. Asset catalog builds write there. Only
+     `UserData/Previews` moves.
+   - Gradle moves only `caches/` and `wrapper/dists/`. `daemon/`, `native/`, and
+     `init.d/` stay. Maven moves only `repository/`.
+   - CocoaPods moves only `repos/` out of the CocoaPods home folder, which
+     `CP_HOME_DIR` may name. `trunk/` stays.
 5. **Cross-volume hardlink notice**:
    - The pnpm store and the uv cache use hard links or clones. A store on
      another volume makes pnpm and uv copy files. The item carries a warning.
@@ -274,6 +306,7 @@ refuses the migration; none of them falls back to a weaker mode.
 | Process table unreadable | Preflight error, nothing copied |
 | Environment variable pins the cache path | Preflight error, nothing copied |
 | Tool does not answer its path query | Item shows Blocked, nothing copied |
+| Folder must stay on this Mac (simulator devices) | Item shows Blocked with the reason, nothing copied |
 | Target folder does not exist | Preflight error, nothing copied |
 | External volume is not connected | Check reports the volume, Preflight error |
 | Copy fails | Error, local data intact |
@@ -332,8 +365,10 @@ refuses the migration; none of them falls back to a weaker mode.
   and `Move back`. An unused cache offers `Delete cache`. Each one asks for
   confirmation. The delete names the path and says the data is gone.
 - The rail lists what the check found, by group: Node, Python, Rust, Go,
-  Docker, and Other. Each group shows its count and a bar split by place, so a
-  press on a group reads before it filters. A group with no cache is absent.
+  Apple, JVM, Docker, and Other. Each group shows its count and a bar split by
+  place, so a press on a group reads before it filters. A group with no cache
+  is absent. `familyLabel` returns the group name itself, so Apple and JVM read
+  the same in both languages.
 - A place filter above the list keeps `On this Mac` or `On the drive`. The
   words match the state chip on every card.
 - The rail and the place filter both narrow the list. A move acts on the caches
@@ -606,3 +641,5 @@ machine unless a person opens an issue.
 - The window shows **Check the copy** on a card whose record names a copy. The
   answer stays on the card. A check that stops shows a banner and no failure
   block: the block's **Try again** moves data, and a check moves none.
+- A blocked item writes no record. The move stops in preflight, so the ledger
+  holds no entry for an item that never moved.

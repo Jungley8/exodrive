@@ -305,10 +305,12 @@ func TestFamiliesGroupsTheCachesByToolchain(t *testing.T) {
 		{ID: "4", ToolName: "cargo", SizeBytes: 80, IsMigrated: true, IsActive: true},
 		{ID: "5", ToolName: "docker", SizeBytes: 160, IsActive: true},
 		{ID: "6", ToolName: "something-new", SizeBytes: 320, IsActive: true},
+		{ID: "7", ToolName: "xcode", SizeBytes: 640, IsActive: true},
+		{ID: "8", ToolName: "maven", SizeBytes: 1280, IsActive: true},
 	}
 
 	got := families(items)
-	want := []cacheFamily{familyNode, familyPython, familyRust, familyDocker, familyOther}
+	want := []cacheFamily{familyNode, familyPython, familyRust, familyApple, familyJVM, familyDocker, familyOther}
 	if len(got) != len(want) {
 		t.Fatalf("families returned %d groups, want %d: %+v", len(got), len(want), got)
 	}
@@ -326,6 +328,14 @@ func TestFamiliesGroupsTheCachesByToolchain(t *testing.T) {
 
 	if !hasFamily(items, familyOther) || hasFamily(items, familyGo) {
 		t.Fatalf("hasFamily does not follow the items")
+	}
+	for tool, family := range map[string]cacheFamily{
+		"xcode": familyApple, "cocoapods": familyApple, "swiftpm": familyApple,
+		"maven": familyJVM, "gradle": familyJVM,
+	} {
+		if got := familyOf(tool); got != family {
+			t.Fatalf("familyOf(%q) is %q, want %q", tool, got, family)
+		}
 	}
 	if !inFamily(items[0], familyNode) || !inFamily(items[0], "") {
 		t.Fatalf("inFamily drops a cache it should keep")

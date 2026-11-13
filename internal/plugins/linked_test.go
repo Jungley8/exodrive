@@ -1,0 +1,349 @@
+package plugins
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"exodrive/internal/core"
+	"exodrive/internal/fsutil"
+)
+
+// findItem returns the item with the given ID, or fails the test.
+func findItem(t *testing.T, items []core.CacheItem, id string) core.CacheItem {
+	t.Helper()
+	for _, item := range items {
+		if item.ID == id {
+			return item
+		}
+	}
+	t.Fatalf("no item %q in %+v", id, items)
+	return core.CacheItem{}
+}
+
+// testLinkedMove runs one move and one rollback for a row of a linked provider.
+// The folder is removed at the end, so the next row starts from an empty home.
+func testLinkedMove(t *testing.T, env *mockEnv, p Provider, id, path, subdir string) {
+	t.Helper()
+	ctx := context.Background()
+
+	payload := bytes.Repeat([]byte("c"), 2048)
+	if err := os.MkdirAll(filepath.Join(path, "entry"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "entry", "data"), payload, 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
+
+	items, err := p.Detect(ctx)
+	if err != nil {
+		t.Fatalf("Detect failed: %v", err)
+	}
+	item := findItem(t, items, id)
+	if item.ToolName != p.Name() {
+		t.Fatalf("tool name is %q, want %q", item.ToolName, p.Name())
+	}
+	if item.CurrentPath != path {
+		t.Fatalf("current path is %q, want %q", item.CurrentPath, path)
+	}
+	if item.TargetSubdir != subdir {
+		t.Fatalf("target subdir is %q, want %q", item.TargetSubdir, subdir)
+	}
+	if item.IsMigrated {
+		t.Fatal("a folder on this disk must not report a move")
+	}
+	if item.SizeBytes <= 0 {
+		t.Fatalf("size is %d, want the bytes on disk", item.SizeBytes)
+	}
+
+	if err := p.PreflightCheck(ctx, item, env.targetRoot); err != nil {
+		t.Fatalf("PreflightCheck refused the move: %v", err)
+	}
+	if err := p.Migrate(ctx, item, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	dest := filepath.Join(env.targetRoot, item.TargetSubdir)
+	copied, err := os.ReadFile(filepath.Join(dest, "entry", "data"))
+	if err != nil {
+		t.Fatalf("the copy holds no data: %v", err)
+	}
+	if !bytes.Equal(copied, payload) {
+		t.Fatal("the copy holds different bytes")
+	}
+	if !fsutil.IsSymlink(path) {
+		t.Fatal("the folder is not a link after the move")
+	}
+	if target := fsutil.ReadSymlinkTarget(path); target != dest {
+		t.Fatalf("the link points at %q, want %q", target, dest)
+	}
+
+	manifest, err := core.LoadManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec, ok := manifest.Records[item.ID]
+	if !ok {
+		t.Fatalf("the ledger holds no record for %s", item.ID)
+	}
+	if rec.TreeDigest == "" {
+		t.Fatal("the record holds no digest")
+	}
+	if rec.FileCount != 1 || rec.TotalBytes != int64(len(payload)) {
+		t.Fatalf("the record holds %d files and %d bytes, want 1 and %d", rec.FileCount, rec.TotalBytes, len(payload))
+	}
+
+	// The tool reads the old path through the link.
+	through, err := os.ReadFile(filepath.Join(path, "entry", "data"))
+	if err != nil {
+		t.Fatalf("the old path no longer reaches the data: %v", err)
+	}
+	if !bytes.Equal(through, payload) {
+		t.Fatal("the old path returns different bytes")
+	}
+
+	if err := p.Rollback(ctx, item); err != nil {
+		t.Fatalf("Rollback failed: %v", err)
+	}
+	if fsutil.IsSymlink(path) {
+		t.Fatal("the folder is still a link after the rollback")
+	}
+	restored, err := os.ReadFile(filepath.Join(path, "entry", "data"))
+	if err != nil {
+		t.Fatalf("the rollback lost the data: %v", err)
+	}
+	if !bytes.Equal(restored, payload) {
+		t.Fatal("the rollback restored different bytes")
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Fatalf("the copy on the drive is still there: %v", err)
+	}
+	manifest, err = core.LoadManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Records) != 0 {
+		t.Fatalf("the ledger still holds %d records", len(manifest.Records))
+	}
+}
+
+func TestLifecycle_Xcode(t *testing.T) {
+	env := setupMockEnv(t)
+	p := NewXcodeProvider()
+
+	cases := []struct{ id, rel, subdir string }{
+		{"xcode.derived-data", "Library/Developer/Xcode/DerivedData", "xcode/DerivedData"},
+		{"xcode.archives", "Library/Developer/Xcode/Archives", "xcode/Archives"},
+		{"xcode.device-support-ios", "Library/Developer/Xcode/iOS DeviceSupport", "xcode/DeviceSupport/iOS"},
+		{"xcode.device-support-watchos", "Library/Developer/Xcode/watchOS DeviceSupport", "xcode/DeviceSupport/watchOS"},
+		{"xcode.device-support-tvos", "Library/Developer/Xcode/tvOS DeviceSupport", "xcode/DeviceSupport/tvOS"},
+		{"xcode.device-support-visionos", "Library/Developer/Xcode/visionOS DeviceSupport", "xcode/DeviceSupport/visionOS"},
+		{"xcode.previews", "Library/Developer/Xcode/UserData/Previews", "xcode/Previews"},
+		{"xcode.app-cache", "Library/Caches/com.apple.dt.Xcode", "xcode/AppCache"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.id, func(t *testing.T) {
+			testLinkedMove(t, env, p, tc.id, filepath.Join(env.home, filepath.FromSlash(tc.rel)), filepath.FromSlash(tc.subdir))
+		})
+	}
+}
+
+func TestXcodeSimulatorStaysBlocked(t *testing.T) {
+	env := setupMockEnv(t)
+	ctx := context.Background()
+	p := NewXcodeProvider()
+
+	path := filepath.Join(env.home, "Library", "Developer", "CoreSimulator", "Devices")
+	if err := os.MkdirAll(filepath.Join(path, "ABC", "data"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
+
+	item := findItem(t, mustDetect(t, p), "xcode.simulator-devices")
+	if item.BlockedReason == "" {
+		t.Fatal("the simulator folder reports no reason")
+	}
+	for _, want := range []string{"CoreSimulatorService", "external volume", "Keep this folder on this Mac"} {
+		if !strings.Contains(item.BlockedReason, want) {
+			t.Fatalf("the reason does not say %q: %s", want, item.BlockedReason)
+		}
+	}
+	if item.IsMigrated {
+		t.Fatal("a blocked folder must not report a move")
+	}
+
+	if err := p.PreflightCheck(ctx, item, env.targetRoot); err == nil {
+		t.Fatal("PreflightCheck accepted the simulator folder")
+	}
+	engine := core.NewEngine(p)
+	if err := engine.Preflight(ctx, item, env.targetRoot); err == nil {
+		t.Fatal("Engine.Preflight accepted the simulator folder")
+	}
+	if err := engine.Migrate(ctx, item, env.targetRoot, fsutil.MigrateProgress{}); err == nil {
+		t.Fatal("Engine.Migrate moved the simulator folder")
+	}
+	if _, err := os.Stat(filepath.Join(path, "ABC")); err != nil {
+		t.Fatalf("the simulator folder changed: %v", err)
+	}
+	manifest, err := core.LoadManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Records) != 0 {
+		t.Fatalf("a blocked folder wrote %d records", len(manifest.Records))
+	}
+}
+
+func TestLifecycle_JVM(t *testing.T) {
+	env := setupMockEnv(t)
+
+	t.Run("maven", func(t *testing.T) {
+		testLinkedMove(t, env, NewMavenProvider(), "maven.repository",
+			filepath.Join(env.home, ".m2", "repository"), filepath.Join("maven", "repository"))
+	})
+	t.Run("gradle caches", func(t *testing.T) {
+		testLinkedMove(t, env, NewGradleProvider(), "gradle.caches",
+			filepath.Join(env.home, ".gradle", "caches"), filepath.Join("gradle", "caches"))
+	})
+	t.Run("gradle wrapper", func(t *testing.T) {
+		testLinkedMove(t, env, NewGradleProvider(), "gradle.wrapper",
+			filepath.Join(env.home, ".gradle", "wrapper", "dists"), filepath.Join("gradle", "wrapper"))
+	})
+}
+
+// TestGradleHomeFollowsTheEnvironment keeps the provider on the folder that
+// GRADLE_USER_HOME names, not the default.
+func TestGradleHomeFollowsTheEnvironment(t *testing.T) {
+	setupMockEnv(t)
+	root := filepath.Join(t.TempDir(), "gradle-home")
+	t.Setenv("GRADLE_USER_HOME", root)
+
+	path := filepath.Join(root, "caches")
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
+
+	item := findItem(t, mustDetect(t, NewGradleProvider()), "gradle.caches")
+	if item.CurrentPath != path {
+		t.Fatalf("current path is %q, want %q", item.CurrentPath, path)
+	}
+}
+
+func TestLifecycle_AppleStores(t *testing.T) {
+	env := setupMockEnv(t)
+
+	t.Run("cocoapods cache", func(t *testing.T) {
+		testLinkedMove(t, env, NewCocoaPodsProvider(), "cocoapods.cache",
+			filepath.Join(env.home, "Library", "Caches", "CocoaPods"),
+			filepath.Join("cocoapods", "cache"))
+	})
+	t.Run("cocoapods repos", func(t *testing.T) {
+		testLinkedMove(t, env, NewCocoaPodsProvider(), "cocoapods.repos",
+			filepath.Join(env.home, ".cocoapods", "repos"),
+			filepath.Join("cocoapods", "repos"))
+	})
+	t.Run("swiftpm cache", func(t *testing.T) {
+		testLinkedMove(t, env, NewSwiftPMProvider(), "swiftpm.cache",
+			filepath.Join(env.home, "Library", "Caches", "org.swift.swiftpm"),
+			filepath.Join("swiftpm", "cache"))
+	})
+}
+
+// TestCocoaPodsHomeFollowsTheEnvironment keeps the provider on the folder that
+// CP_HOME_DIR names.
+func TestCocoaPodsHomeFollowsTheEnvironment(t *testing.T) {
+	setupMockEnv(t)
+	root := filepath.Join(t.TempDir(), "cp-home")
+	t.Setenv("CP_HOME_DIR", root)
+
+	path := filepath.Join(root, "repos")
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
+
+	item := findItem(t, mustDetect(t, NewCocoaPodsProvider()), "cocoapods.repos")
+	if item.CurrentPath != path {
+		t.Fatalf("current path is %q, want %q", item.CurrentPath, path)
+	}
+}
+
+// TestNewStoresStayHiddenWithoutAFolder keeps a scan quiet: a folder that does
+// not exist must not add a card.
+func TestNewStoresStayHiddenWithoutAFolder(t *testing.T) {
+	setupMockEnv(t)
+	ctx := context.Background()
+
+	for _, p := range []Provider{
+		NewXcodeProvider(), NewMavenProvider(), NewGradleProvider(),
+		NewCocoaPodsProvider(), NewSwiftPMProvider(),
+	} {
+		items, err := p.Detect(ctx)
+		if err != nil {
+			t.Fatalf("%s: Detect failed: %v", p.Name(), err)
+		}
+		if len(items) != 0 {
+			t.Fatalf("%s reports %d items without a folder", p.Name(), len(items))
+		}
+	}
+}
+
+// TestNewStoresRefuseWhileTheToolRuns covers the process lock of each family.
+func TestNewStoresRefuseWhileTheToolRuns(t *testing.T) {
+	env := setupMockEnv(t)
+	ctx := context.Background()
+
+	cases := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"xcode", "/Applications/Xcode.app/Contents/MacOS/Xcode", "Xcode is running"},
+		{"xcodebuild", "/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project A.xcodeproj", "xcodebuild is running"},
+		{"gradle daemon", "/usr/bin/java -cp /x org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.5", "GradleDaemon is running"},
+		{"cocoapods", "/opt/homebrew/bin/pod install", "pod is running"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			writeMockCLI(t, env.bin, "ps", "echo \"99999 "+tc.line+"\"")
+			t.Cleanup(func() { writeMockCLI(t, env.bin, "ps", "exit 0") })
+
+			path := filepath.Join(env.home, ".probe")
+			if err := os.MkdirAll(path, 0755); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(path) })
+
+			item := core.CacheItem{ID: "probe.item", ToolName: "probe", Title: "Probe", CurrentPath: path}
+			err := NewXcodeProvider().PreflightCheck(ctx, item, env.targetRoot)
+			if tc.name == "gradle daemon" {
+				err = NewGradleProvider().PreflightCheck(ctx, item, env.targetRoot)
+			}
+			if tc.name == "cocoapods" {
+				err = NewCocoaPodsProvider().PreflightCheck(ctx, item, env.targetRoot)
+			}
+			if err == nil {
+				t.Fatalf("PreflightCheck accepted the move while %s runs", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error is %q, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// mustDetect runs Detect and fails the test on an error.
+func mustDetect(t *testing.T, p Provider) []core.CacheItem {
+	t.Helper()
+	items, err := p.Detect(context.Background())
+	if err != nil {
+		t.Fatalf("%s: Detect failed: %v", p.Name(), err)
+	}
+	return items
+}

@@ -118,9 +118,10 @@ make app          # bin/Exodrive.app, signed with an ad-hoc identity</code></pre
             that fits the state.
           </p>
           <p>
-            The rail on the left groups the caches by toolchain. The filter above
-            the list keeps one place. A change to the filter clears the
-            selection, so a move never acts on a cache you cannot see.
+            The rail on the left groups the caches by toolchain: Node, Python,
+            Rust, Go, Apple, JVM, and Docker. The filter above the list keeps one
+            place. A change to the filter clears the selection, so a move never
+            acts on a cache you cannot see.
           </p>
           <p>
             The first start shows three steps. Press <strong>Skip</strong> to
@@ -265,6 +266,14 @@ exodrive rollback npm.cache</code></pre>
               <tr>
                 <td>The drive is full</td>
                 <td>Free space on the drive, or move fewer caches.</td>
+              </tr>
+              <tr>
+                <td>Cannot move, and the card names the simulator folder</td>
+                <td>Keep the folder on this Mac. Delete the simulators you do not use in Xcode.</td>
+              </tr>
+              <tr>
+                <td>Xcode created a real folder in place of the link</td>
+                <td>A rollback compares the two folders first. When they differ, both stay.</td>
               </tr>
               <tr>
                 <td>No record of this move</td>

@@ -257,13 +257,18 @@ const (
 	familyPython cacheFamily = "Python"
 	familyRust   cacheFamily = "Rust"
 	familyGo     cacheFamily = "Go"
+	familyApple  cacheFamily = "Apple"
+	familyJVM    cacheFamily = "JVM"
 	familyDocker cacheFamily = "Docker"
 	familyOther  cacheFamily = "Other"
 )
 
 // familyOrder is the order the rail lists the groups in. A group with no cache
 // does not appear.
-var familyOrder = []cacheFamily{familyNode, familyPython, familyRust, familyGo, familyDocker, familyOther}
+var familyOrder = []cacheFamily{
+	familyNode, familyPython, familyRust, familyGo,
+	familyApple, familyJVM, familyDocker, familyOther,
+}
 
 // familyOf maps a toolchain to its group. A toolchain the window does not know
 // falls in Other, so its caches stay visible and cannot hide.
@@ -277,6 +282,10 @@ func familyOf(tool string) cacheFamily {
 		return familyRust
 	case "go", "golang":
 		return familyGo
+	case "xcode", "cocoapods", "swiftpm":
+		return familyApple
+	case "maven", "gradle":
+		return familyJVM
 	case "docker", "orbstack":
 		return familyDocker
 	}

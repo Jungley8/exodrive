@@ -160,8 +160,17 @@
               <tr><td>Ollama</td><td>Model store</td><td>Symbolic link to the models folder</td></tr>
               <tr><td>Hugging Face</td><td><code>hub/</code> under <code>HF_HOME</code></td><td>Symbolic link</td></tr>
               <tr><td>LM Studio</td><td>Model store</td><td>Symbolic link to the models folder</td></tr>
+              <tr><td>Xcode</td><td>Derived Data, Archives, Device Support, Previews, and the Xcode cache</td><td>Symbolic link for each folder</td></tr>
+              <tr><td>Maven</td><td><code>repository/</code></td><td>Symbolic link</td></tr>
+              <tr><td>Gradle</td><td><code>caches/</code> and <code>wrapper/dists/</code></td><td>Symbolic link</td></tr>
+              <tr><td>CocoaPods</td><td>Cache and spec repos</td><td>Symbolic link</td></tr>
+              <tr><td>SwiftPM</td><td>Package cache</td><td>Symbolic link</td></tr>
             </tbody>
           </table>
+          <p class="note">
+            Exodrive does not move <code>~/Library/Developer/CoreSimulator/Devices</code>.
+            A link stops Xcode from creating simulator devices.
+          </p>
         </section>
 
         <section id="install">

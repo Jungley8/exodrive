@@ -56,6 +56,8 @@ func setupMockEnv(t *testing.T) *mockEnv {
 	t.Setenv("ORBSTACK_DATA_DIR", filepath.Join(home, "Library", "Application Support", "OrbStack", "data"))
 	t.Setenv("OLLAMA_MODELS", filepath.Join(home, ".ollama", "models"))
 	t.Setenv("HF_HOME", filepath.Join(home, ".cache", "huggingface"))
+	t.Setenv("GRADLE_USER_HOME", filepath.Join(home, ".gradle"))
+	t.Setenv("CP_HOME_DIR", filepath.Join(home, ".cocoapods"))
 
 	// Provide a hermetic process table that holds no tool processes.
 	writeMockCLI(t, bin, "ps", "exit 0")

@@ -36,7 +36,7 @@ flowchart LR
     CLI["exodrive 命令行"] --> Engine
     GUI["exodrive-gui 窗口"] --> Engine
     Engine --> Registry["Provider 注册表"]
-    Registry --> P["npm、pnpm、yarn、cargo、go、<br/>bun、uv、pip、docker、<br/>AI 模型缓存、孤儿缓存"]
+    Registry --> P["npm、pnpm、yarn、cargo、go、<br/>bun、uv、pip、docker、<br/>Xcode、Maven、Gradle、<br/>CocoaPods、SwiftPM、<br/>AI 模型缓存、孤儿缓存"]
     Engine --> FS["fsutil<br/>拷贝、校验、软链接、<br/>磁盘检查、进程锁"]
     FS --> Ledger["~/.exodrive/manifest.json"]
 ```
@@ -47,10 +47,13 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 
 - npm、pnpm、yarn、pip、Go 在命令启动时读取配置。开一个新终端，或重新启动该工具。
 - cargo、bun、uv、Docker Desktop、Colima 以及 AI 模型缓存的路径不变。Exodrive 把原目录或原文件换成软链接，下次启动直接使用外置副本。
+- Xcode、Maven、Gradle、CocoaPods、SwiftPM 的路径同样不变。Exodrive 把目录换成软链接。
 - OrbStack 在启动时读取 `data_dir`。重新启动 OrbStack。
 - 已经在运行的进程仍持有旧路径。迁移在工具运行时拒绝执行，所以先停止工具。
 
 执行 `exodrive check` 确认结果。已迁移的缓存状态显示为 Migrated。
+
+Xcode 可能删除 DerivedData 或 Previews 目录，并在原位置重建真实目录。账本里的记录仍然保留，所以回滚会先比对两个目录。回滚会丢失较新的文件时，Exodrive 停止，两个目录都保留。
 
 ## 安全规则
 
@@ -61,7 +64,7 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 | 文件系统白名单 | 目标必须是 APFS、HFS+、ext2/3/4、btrfs、zfs、xfs、f2fs、bcachefs 或 NTFS。拒绝 exFAT、FAT32，以及任何未知类型。 |
 | 进程互斥 | 包管理器或容器引擎正在运行时，拒绝迁移。先停止该工具。 |
 | 环境变量检查 | 缓存路径的环境变量优先于工具配置。Exodrive 拒绝迁移，并指出该变量。清除后再执行。 |
-| 二进制隔离 | 只迁移缓存，不迁移 `~/.cargo/bin`、`~/.bun/bin`、`$GOPATH/bin`。 |
+| 二进制隔离 | 只迁移缓存，不迁移 `~/.cargo/bin`、`~/.bun/bin`、`$GOPATH/bin`。也不迁移 `~/Library/Developer/CoreSimulator/Devices`。 |
 | 账本校验 | 先读取两侧全部文件、比对内容，通过后才写入账本。回滚只认账本记录，没有记录就拒绝执行。 |
 | 工具自报路径 | 只迁移工具自己报告的目录。工具不回答时，该缓存显示 Blocked，不做任何移动。 |
 | 目标目录检查 | 目标目录不存在时拒绝执行。外置盘未连接时，提示先连接磁盘。 |
@@ -86,6 +89,11 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 | Ollama | 模型仓库 | 指向模型目录的软链接 | 先停止 `ollama`。目录由 `OLLAMA_MODELS` 指定。 |
 | Hugging Face | `HF_HOME` 下的 `hub/` | 软链接 | 先停止正在进行的下载。`HF_HOME` 指向根目录，软链接让它继续有效。 |
 | LM Studio | 模型仓库 | 指向模型目录的软链接 | 先退出 LM Studio。 |
+| Xcode | DerivedData、Archives、iOS/watchOS/tvOS/visionOS DeviceSupport、Previews 与 Xcode 缓存 | 分别为每个目录建立软链接 | 先退出 Xcode。`~/Library/Developer/CoreSimulator/Devices` 保留在本机。 |
+| Maven | `repository/` | 软链接 | 先停止所有 Maven 构建。 |
+| Gradle | `caches/` 与 `wrapper/dists/` | 软链接 | 先执行 `gradle --stop` 停止守护进程。 |
+| CocoaPods | 缓存与 spec 仓库 | 软链接 | 先退出 Xcode。需要时 CocoaPods 会重新下载。 |
+| SwiftPM | 包缓存 | 软链接 | 先退出 Xcode。需要时 SwiftPM 会重新下载依赖包。 |
 | 孤儿缓存 | 配置变更后遗留的本地缓存 | `exodrive orphans --clean` 删除 | 先执行 `exodrive orphans` 查看列表。 |
 
 ## 环境要求
@@ -248,7 +256,7 @@ exodrive verify --all --json
 
 每个缓存是一张卡片。卡片显示名称、大小和一个状态词：**On this Mac**、**On the drive**、**Cannot move** 或 **Unused**；同时列出该缓存的目录、副本目录，以及 Exodrive 做的改动。改程序配置的，程序下次启动时生效；建软链接的，程序侧没有任何变化。
 
-左侧的栏按工具链分组列出检测结果：Node、Python、Rust、Go、Docker。每个分组下的横条显示这一组有多少还在本机、多少已经搬走。点某个分组，右边只显示该组的缓存；点 **All caches** 恢复全部。
+左侧的栏按工具链分组列出检测结果：Node、Python、Rust、Go、Apple、JVM、Docker。每个分组下的横条显示这一组有多少还在本机、多少已经搬走。点某个分组，右边只显示该组的缓存；点 **All caches** 恢复全部。
 
 列表上方的筛选器保留一个位置：**All**、**On this Mac** 或 **On the drive**。分组和位置筛选都会收窄列表，迁移只作用于屏幕上看到的缓存；切换筛选会清空当前勾选。
 
@@ -325,6 +333,9 @@ exodrive verify --all --json
 - 迁移需要目标磁盘容纳完整副本。
 - 回滚需要外置磁盘上的副本仍然存在。
 - 进程锁读取进程表。启动方式特殊的工具可能绕过检查，迁移前请自行停止该工具。
+- Exodrive 不读取 Xcode 的自定义 DerivedData 位置设置。该位置的缓存不会出现在列表里。
+- 不能迁移的目录（例如模拟器目录）每次扫描都会统计大小。目录很大时扫描会变慢。
+- 迁移保留文件权限、修改时间和软链接，不保留扩展属性。
 - 应用包为 ad-hoc 签名。使用 Developer ID 需要你自己的证书。
 
 ## 开发
