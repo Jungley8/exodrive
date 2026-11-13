@@ -875,3 +875,24 @@ func TestWindowDropsTheSelectionOnAFilter(t *testing.T) {
 		t.Fatalf("the selection survived a filter, so a hidden cache could move:\n%s", app.Dump())
 	}
 }
+
+// TestWindowKeepsItsMarkWhileAnActionRuns mounts the mark in both of its
+// states: still at rest, and moving while the window checks this Mac. The
+// moving form starts an animation, so a broken branch would lose the mark.
+func TestWindowKeepsItsMarkWhileAnActionRuns(t *testing.T) {
+	app := nsgotest.Start(t, NewMain(newSlowFakeEngine(fakeCache(), 300*time.Millisecond)), nsgotest.Size(900, 720))
+	if !app.Exists("id:brand-mark-moving") {
+		t.Fatalf("the mark does not move while the check runs:\n%s", app.Dump())
+	}
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
+	app.Settle()
+	if !app.Exists("id:brand-mark") || app.Exists("id:brand-mark-moving") {
+		t.Fatalf("the mark still moves after the check:\n%s", app.Dump())
+	}
+	// The plate draws its two colors as a gradient. Without it the mark would
+	// be an arrow on nothing, which no other test would see.
+	mark := app.Query("id:brand-mark")
+	if len(mark) != 1 || mark[0].Style.Effects == nil || len(mark[0].Style.Effects.Gradients) != 1 {
+		t.Fatalf("the mark carries no gradient:\n%s", app.Dump())
+	}
+}

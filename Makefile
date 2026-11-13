@@ -2,7 +2,7 @@ RAW_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
 VERSION ?= $(if $(RAW_VERSION),$(patsubst v%,%,$(RAW_VERSION)),dev)
 BIN := bin
 
-.PHONY: all build app test race vet lint fmt check install clean
+.PHONY: all build icon app test race vet lint fmt check install clean
 
 all: build
 
@@ -11,6 +11,11 @@ build:
 	@mkdir -p $(BIN)
 	go build -trimpath -ldflags "-X main.version=$(VERSION)" -o $(BIN)/exodrive ./cmd/exodrive
 	go build -trimpath -o $(BIN)/exodrive-gui ./cmd/exodrive-gui
+
+## icon: rebuild packaging/AppIcon.icns from packaging/icon.svg
+##       Needs macOS: Quick Look renders the SVG, iconutil packs it.
+icon:
+	@scripts/make-icon.sh
 
 ## app: bundle the window into bin/Exodrive.app and sign it
 ##      Set SIGN_IDENTITY to sign with a Developer ID; otherwise ad hoc.

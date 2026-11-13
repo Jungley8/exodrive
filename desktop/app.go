@@ -140,8 +140,16 @@ func window(cx *core.Scope, state *AppState) core.Node {
 	triggerScan(state)
 
 	return core.View{
-		Style:     core.Style{Direction: core.Column, Width: core.Pct(100), Height: core.Pct(100), Padding: core.All(20), Gap: 14},
-		StyleFunc: func() core.Style { return core.Style{Background: ui.ColorsOf(cx).Background()} },
+		Style: core.Style{Direction: core.Column, Width: core.Pct(100), Height: core.Pct(100), Padding: core.All(20), Gap: 14},
+		StyleFunc: func() core.Style {
+			// One wash, from the accent toward nothing, so the page has a
+			// light side. It carries the mark's first color and stops before
+			// the list, where a tint would fight the state colors.
+			colors := ui.ColorsOf(cx)
+			return core.Style{Background: colors.Background(), Gradients: []core.Gradient{
+				core.LinearGradient(135, ui.Alpha(colors.Accent(), 0.07), ui.Alpha(colors.Accent(), 0.02), ui.Alpha(colors.Accent(), 0)),
+			}}
+		},
 		Children: []core.Node{
 			renderHeader(cx, state),
 			renderDrives(cx, state),

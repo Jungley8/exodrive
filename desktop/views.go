@@ -14,11 +14,14 @@ import (
 // The window's type: a small scale, with the figures set in one width so they
 // line up and do not jump while a move runs.
 var (
-	typeTitle = core.Style{FontSize: 20, LineHeight: 26, FontWeight: ui.Semibold}
 	typeLead  = core.Style{FontSize: 15, LineHeight: 20, FontWeight: ui.Semibold}
 	typeLabel = core.Style{FontSize: 13, LineHeight: 18, FontWeight: ui.Medium}
 	typeSmall = core.Style{FontSize: 12, LineHeight: 16}
 	typeMono  = core.Style{FontSize: 11.5, LineHeight: 16, FontFamily: ui.Mono}
+
+	// brandWordmark sets the name beside the mark. The tracking is tighter
+	// than body text, so the name reads as one shape rather than five letters.
+	brandWordmark = core.Style{FontSize: 20, LineHeight: 26, FontWeight: ui.Semibold, LetterSpacing: -0.4}
 )
 
 // typeLine is one line of text in s, in color c.
@@ -61,9 +64,12 @@ func renderHeader(cx *core.Scope, state *AppState) core.Node {
 	return core.View{
 		Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, JustifyContent: core.JustifySpaceBetween, Gap: 16},
 		Children: []core.Node{
-			core.View{Style: core.Style{Direction: core.Column, Gap: 1, FlexShrink: 1}, Children: []core.Node{
-				typeLine("Exodrive", typeTitle, colors.Text),
-				typeLine("Move developer caches to an external drive.", typeSmall, colors.Muted),
+			core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 12, FlexShrink: 1, MinWidth: core.Pt(0)}, Children: []core.Node{
+				brandMark(cx, state),
+				core.View{Style: core.Style{Direction: core.Column, Gap: 1, FlexShrink: 1, MinWidth: core.Pt(0)}, Children: []core.Node{
+					typeLine("Exodrive", brandWordmark, colors.Text),
+					typeLine("Move developer caches to an external drive.", typeSmall, colors.Muted),
+				}},
 			}},
 			core.Dynamic(func(cx *core.Scope) core.Node { return renderHeaderNote(cx, state) }),
 		},

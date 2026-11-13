@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- One plate runs from the accent to the drive's color, the two colors
+         the window's gauges use. -->
+    <linearGradient id="plate" x1="0.12" y1="0" x2="0.88" y2="1">
+      <stop offset="0" stop-color="#6a58e0"/>
+      <stop offset="0.5" stop-color="#4b62c2"/>
+      <stop offset="1" stop-color="#16705c"/>
+    </linearGradient>
+    <!-- A light falls from the top edge, so the plate reads as an object. -->
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.20"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="188" fill="url(#plate)"/>
+  <rect x="100" y="100" width="824" height="824" rx="188" fill="url(#sheen)"/>
+  <path d="M 352 512 H 596" stroke="#ffffff" stroke-width="76" stroke-linecap="round"/>
+  <path d="M 528 424 L 616 512 L 528 600" fill="none" stroke="#ffffff" stroke-width="76"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

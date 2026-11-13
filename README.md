@@ -302,6 +302,7 @@ Keep the ledger and the external volume together. A rollback needs both.
 ```sh
 make build     # build both binaries
 make app       # build and sign bin/Exodrive.app
+make icon      # rebuild packaging/AppIcon.icns from packaging/icon.svg
 make test      # go test -race ./...
 make lint      # gofmt, go vet, golangci-lint
 make check     # test and lint

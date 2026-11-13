@@ -5,6 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key><string>en</string>
 	<key>CFBundleDisplayName</key><string>Exodrive</string>
 	<key>CFBundleExecutable</key><string>Exodrive</string>
+	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundleIdentifier</key><string>net.jungley.exodrive</string>
 	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
 	<key>CFBundleName</key><string>Exodrive</string>

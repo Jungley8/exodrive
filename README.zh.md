@@ -238,6 +238,7 @@ exodrive rollback npm.cache
 ```sh
 make build     # 构建两个二进制
 make app       # 构建并签名 bin/Exodrive.app
+make icon      # 由 packaging/icon.svg 重新生成 packaging/AppIcon.icns
 make test      # go test -race ./...
 make lint      # gofmt、go vet、golangci-lint
 make check     # 测试与检查
