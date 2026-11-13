@@ -45,7 +45,7 @@ flowchart LR
     CLI["exodrive CLI"] --> Engine
     GUI["exodrive-gui"] --> Engine
     Engine --> Registry["Provider registry"]
-    Registry --> P["npm, pnpm, yarn, cargo, go,<br/>bun, uv, pip, docker,<br/>Xcode, Maven, Gradle,<br/>CocoaPods, SwiftPM,<br/>AI model stores, orphan"]
+    Registry --> P["npm, pnpm, yarn, cargo, go,<br/>bun, uv, pip, conda, docker,<br/>Xcode, Maven, Gradle,<br/>CocoaPods, SwiftPM,<br/>Dart, Android, Homebrew,<br/>AI model stores, orphan"]
     Engine --> FS["fsutil<br/>copy, verify, symlink,<br/>disk check, process lock"]
     FS --> Ledger["~/.exodrive/manifest.json"]
 ```
@@ -60,8 +60,8 @@ effect at the next start of the tool.
 - cargo, bun, uv, Docker Desktop, Colima, and the AI model stores keep their
   path. Exodrive replaces the folder or the file with a symbolic link, so the
   next start uses the external copy.
-- Xcode, Maven, Gradle, CocoaPods, and SwiftPM keep their path too. Exodrive
-  replaces the folder with a symbolic link.
+- Xcode, Maven, Gradle, CocoaPods, SwiftPM, Dart, Android, Conda, and Homebrew
+  keep their path too. Exodrive replaces the folder with a symbolic link.
 - OrbStack reads `data_dir` at launch. Start OrbStack again.
 - A process that already runs keeps the old path. The migration stops while a
   tool runs, so stop the tool first.
@@ -112,6 +112,10 @@ holds. Run `exodrive rollback <item>` first.
 | Gradle | `caches/` and `wrapper/dists/` | Symbolic link | Stop the daemon with `gradle --stop` first. |
 | CocoaPods | The cache and the spec repos | Symbolic link | Quit Xcode first. CocoaPods downloads the data again when it needs it. |
 | SwiftPM | The package cache | Symbolic link | Quit Xcode first. SwiftPM downloads the packages again when it needs them. |
+| Dart and Flutter | `hosted/` and `git/` under the pub cache | Symbolic link for each folder | Stop every build first. `PUB_CACHE` names the root. `bin/` stays on the internal disk. |
+| Android | The build cache | Symbolic link | Stop the Gradle daemon with `gradle --stop` first. |
+| Conda | Every package folder that `conda info` reports | Symbolic link for each folder | Stop every conda command first. Conda copies packages across volumes, so environments use more space. |
+| Homebrew | `downloads/` under the Homebrew cache | Symbolic link | Stop every brew command first. `HOMEBREW_CACHE` names the root. Homebrew downloads the files again when it needs them. |
 | Orphans | Local caches left by an earlier change | `exodrive orphans --clean` deletes them | Run `exodrive orphans` first to review the list. |
 
 ## Requirements
@@ -318,9 +322,9 @@ setting applies at the next start of the program. A symbolic link changes
 nothing for the program.
 
 The rail on the left lists the groups that Exodrive found: Node, Python, Rust,
-Go, Apple, JVM, and Docker. A bar under each name shows how much of that group
-sits on this Mac and how much already moved. Press a group to show only its
-caches. Press **All caches** to show every group.
+Go, Apple, JVM, Mobile, Homebrew, and Docker. A bar under each name shows how
+much of that group sits on this Mac and how much already moved. Press a group
+to show only its caches. Press **All caches** to show every group.
 
 The filter above the list keeps one place: **All**, **On this Mac**, or **On the
 drive**. The rail and the filter both narrow the list, and a move acts on the

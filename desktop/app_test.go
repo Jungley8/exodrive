@@ -1054,3 +1054,28 @@ func TestWindowBlockedCacheNamesNoChange(t *testing.T) {
 		t.Fatalf("a blocked cache claims a change:\n%s", app.Dump())
 	}
 }
+
+// TestWindowRailNamesTheNewGroups keeps the rail readable: a group name comes
+// from the window, so a new toolchain needs no catalog entry.
+func TestWindowRailNamesTheNewGroups(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	useVolumesRoot(t, t.TempDir())
+
+	dart := fakeCache()
+	dart.ID, dart.ToolName, dart.Title = "dart.pub-cache", "dart", "Dart Pub Package Cache"
+	brew := fakeCache()
+	brew.ID, brew.ToolName, brew.Title = "homebrew.downloads", "homebrew", "Homebrew Downloads"
+
+	engine := exoCore.NewEngine(&fakeProvider{name: "fake", items: []exoCore.CacheItem{dart, brew}})
+	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Dart Pub Package Cache") })
+	app.Settle()
+
+	for _, group := range []string{"Mobile", "Homebrew"} {
+		// The quoted selector reads the whole text, so a card title that holds
+		// the word does not stand in for the rail label.
+		if !app.Exists(`text:"` + group + `"`) {
+			t.Fatalf("the rail does not name the %s group:\n%s", group, app.Dump())
+		}
+	}
+}

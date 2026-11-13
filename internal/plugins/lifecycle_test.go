@@ -58,9 +58,13 @@ func setupMockEnv(t *testing.T) *mockEnv {
 	t.Setenv("HF_HOME", filepath.Join(home, ".cache", "huggingface"))
 	t.Setenv("GRADLE_USER_HOME", filepath.Join(home, ".gradle"))
 	t.Setenv("CP_HOME_DIR", filepath.Join(home, ".cocoapods"))
+	t.Setenv("PUB_CACHE", filepath.Join(home, ".pub-cache"))
+	t.Setenv("HOMEBREW_CACHE", filepath.Join(home, "Library", "Caches", "Homebrew"))
 
 	// Provide a hermetic process table that holds no tool processes.
 	writeMockCLI(t, bin, "ps", "exit 0")
+	// conda answers with a folder list, so no test reads the machine's install.
+	writeMockCLI(t, bin, "conda", "exit 1")
 
 	return &mockEnv{
 		home:       home,

@@ -57,6 +57,10 @@ func NewRegistry() *Registry {
 		NewGradleProvider(),
 		NewCocoaPodsProvider(),
 		NewSwiftPMProvider(),
+		NewDartProvider(),
+		NewAndroidProvider(),
+		NewCondaProvider(),
+		NewHomebrewProvider(),
 		NewOrphanProvider(),
 	)
 	r.Register(Models()...)

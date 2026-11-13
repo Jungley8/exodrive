@@ -307,10 +307,15 @@ func TestFamiliesGroupsTheCachesByToolchain(t *testing.T) {
 		{ID: "6", ToolName: "something-new", SizeBytes: 320, IsActive: true},
 		{ID: "7", ToolName: "xcode", SizeBytes: 640, IsActive: true},
 		{ID: "8", ToolName: "maven", SizeBytes: 1280, IsActive: true},
+		{ID: "9", ToolName: "dart", SizeBytes: 2560, IsActive: true},
+		{ID: "10", ToolName: "android", SizeBytes: 5120, IsActive: true},
+		{ID: "11", ToolName: "homebrew", SizeBytes: 10240, IsActive: true},
+		{ID: "12", ToolName: "conda", SizeBytes: 20480, IsActive: true},
 	}
 
 	got := families(items)
-	want := []cacheFamily{familyNode, familyPython, familyRust, familyApple, familyJVM, familyDocker, familyOther}
+	want := []cacheFamily{familyNode, familyPython, familyRust, familyApple, familyJVM,
+		familyMobile, familyHomebrew, familyDocker, familyOther}
 	if len(got) != len(want) {
 		t.Fatalf("families returned %d groups, want %d: %+v", len(got), len(want), got)
 	}
@@ -332,6 +337,8 @@ func TestFamiliesGroupsTheCachesByToolchain(t *testing.T) {
 	for tool, family := range map[string]cacheFamily{
 		"xcode": familyApple, "cocoapods": familyApple, "swiftpm": familyApple,
 		"maven": familyJVM, "gradle": familyJVM,
+		"dart": familyMobile, "android": familyMobile,
+		"homebrew": familyHomebrew, "conda": familyPython,
 	} {
 		if got := familyOf(tool); got != family {
 			t.Fatalf("familyOf(%q) is %q, want %q", tool, got, family)

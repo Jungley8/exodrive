@@ -19,6 +19,10 @@ Supported toolchains:
 - Xcode: `xcode` (DerivedData, Archives, DeviceSupport, Previews, app cache;
   the simulator folder stays blocked)
 - Apple dependency stores: `cocoapods` (cache, spec repos), `swiftpm` (cache)
+- Mobile: `dart` (`hosted/`, `git/` under the pub cache), `android`
+  (`build-cache/`)
+- conda: `conda` (every `pkgs_dirs` entry that `conda info --json` reports)
+- Homebrew: `homebrew` (`downloads/` under the Homebrew cache)
 - AI model stores: `ollama`, `huggingface` (`hub/` under `HF_HOME`), `lmstudio`
 - Legacy/Orphans: abandoned cache folders from earlier configuration changes
 
@@ -55,7 +59,7 @@ internal/
     linked.go             # table-driven provider for fixed folders
     rollback.go           # shared rollback and cleanup helpers
     npm.go pnpm.go yarn.go cargo.go golang.go bun.go uv.go pip.go docker.go
-    xcode.go jvm.go apple.go orphan.go
+    xcode.go jvm.go apple.go dart.go android.go conda.go homebrew.go orphan.go
   ui/                     # terminal table and progress bar
 desktop/                  # nsgo reactive window
 packaging/Info.plist.in   # app bundle template
@@ -172,6 +176,9 @@ refuses the migration; none of them falls back to a weaker mode.
    - `maven` refuses while `mvn` or `mvnd` runs. `gradle` refuses while `gradle`
      or the daemon runs. `cocoapods` refuses while `pod` runs. `swiftpm` refuses
      while `swift`, `swiftc`, or `xcodebuild` runs.
+   - `dart` refuses while `dart`, `flutter`, or `pub` runs. `android` refuses
+     while `gradle` or the daemon runs. `conda` refuses while `conda`, `mamba`,
+     or `micromamba` runs. `homebrew` refuses while `brew` runs.
    - Each package manager refuses to run while its own process runs.
    - The check reads the process table and matches the executable and the
      arguments. A tool that starts through an interpreter is still found:
@@ -198,7 +205,10 @@ refuses the migration; none of them falls back to a weaker mode.
      native configuration switch, where the variable would win.
    - `GRADLE_USER_HOME` and `CP_HOME_DIR` name a root folder, and Exodrive moves
      a folder inside that root. The link keeps the variable valid, so the guard
-     does not apply.
+     does not apply. `PUB_CACHE` and `HOMEBREW_CACHE` follow the same rule.
+   - `conda` never guesses a prefix. It reads `pkgs_dirs` from
+     `conda info --json`. A missing tool adds no item, and an unreadable reply
+     is an error that the scan shows.
 4. **Binary isolation**:
    - Exodrive never moves `~/.cargo/bin`, `~/.bun/bin`, or `$GOPATH/bin`.
    - Cargo moves only `registry/` and `git/`. Bun moves only `install/cache`.
@@ -213,9 +223,17 @@ refuses the migration; none of them falls back to a weaker mode.
      `init.d/` stay. Maven moves only `repository/`.
    - CocoaPods moves only `repos/` out of the CocoaPods home folder, which
      `CP_HOME_DIR` may name. `trunk/` stays.
+   - Dart moves only `hosted/` and `git/` out of the pub cache. `bin/` and
+     `global_packages/` stay, so a global command on `PATH` keeps working when
+     the drive is away. Homebrew moves only `downloads/`; `api/` stays.
+   - Android moves only `~/.android/build-cache`. The emulator data stays,
+     because an emulator on another volume runs far slower.
 5. **Cross-volume hardlink notice**:
    - The pnpm store and the uv cache use hard links or clones. A store on
      another volume makes pnpm and uv copy files. The item carries a warning.
+   - conda hardlinks packages into an environment on the same volume. Across
+     volumes it copies them, so an environment uses more space. The item
+     carries a warning.
 6. **Ledger and rollback**:
    - The ledger is `~/.exodrive/manifest.json`, overridden by
      `EXODRIVE_MANIFEST_PATH`.
@@ -365,10 +383,10 @@ refuses the migration; none of them falls back to a weaker mode.
   and `Move back`. An unused cache offers `Delete cache`. Each one asks for
   confirmation. The delete names the path and says the data is gone.
 - The rail lists what the check found, by group: Node, Python, Rust, Go,
-  Apple, JVM, Docker, and Other. Each group shows its count and a bar split by
-  place, so a press on a group reads before it filters. A group with no cache
-  is absent. `familyLabel` returns the group name itself, so Apple and JVM read
-  the same in both languages.
+  Apple, JVM, Mobile, Homebrew, Docker, and Other. Each group shows its count
+  and a bar split by place, so a press on a group reads before it filters. A
+  group with no cache is absent. `familyLabel` returns the group name itself,
+  so Apple, JVM, Mobile, and Homebrew read the same in both languages.
 - A place filter above the list keeps `On this Mac` or `On the drive`. The
   words match the state chip on every card.
 - The rail and the place filter both narrow the list. A move acts on the caches

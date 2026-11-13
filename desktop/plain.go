@@ -253,21 +253,23 @@ func bytes(n int64) string { return internalUi.FormatBytes(n) }
 type cacheFamily string
 
 const (
-	familyNode   cacheFamily = "Node"
-	familyPython cacheFamily = "Python"
-	familyRust   cacheFamily = "Rust"
-	familyGo     cacheFamily = "Go"
-	familyApple  cacheFamily = "Apple"
-	familyJVM    cacheFamily = "JVM"
-	familyDocker cacheFamily = "Docker"
-	familyOther  cacheFamily = "Other"
+	familyNode     cacheFamily = "Node"
+	familyPython   cacheFamily = "Python"
+	familyRust     cacheFamily = "Rust"
+	familyGo       cacheFamily = "Go"
+	familyApple    cacheFamily = "Apple"
+	familyJVM      cacheFamily = "JVM"
+	familyMobile   cacheFamily = "Mobile"
+	familyHomebrew cacheFamily = "Homebrew"
+	familyDocker   cacheFamily = "Docker"
+	familyOther    cacheFamily = "Other"
 )
 
 // familyOrder is the order the rail lists the groups in. A group with no cache
 // does not appear.
 var familyOrder = []cacheFamily{
 	familyNode, familyPython, familyRust, familyGo,
-	familyApple, familyJVM, familyDocker, familyOther,
+	familyApple, familyJVM, familyMobile, familyHomebrew, familyDocker, familyOther,
 }
 
 // familyOf maps a toolchain to its group. A toolchain the window does not know
@@ -276,7 +278,7 @@ func familyOf(tool string) cacheFamily {
 	switch strings.ToLower(strings.TrimSpace(tool)) {
 	case "npm", "pnpm", "yarn", "bun":
 		return familyNode
-	case "pip", "uv":
+	case "pip", "uv", "conda":
 		return familyPython
 	case "cargo":
 		return familyRust
@@ -286,6 +288,10 @@ func familyOf(tool string) cacheFamily {
 		return familyApple
 	case "maven", "gradle":
 		return familyJVM
+	case "dart", "android":
+		return familyMobile
+	case "homebrew":
+		return familyHomebrew
 	case "docker", "orbstack":
 		return familyDocker
 	}

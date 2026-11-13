@@ -273,8 +273,141 @@ func TestCocoaPodsHomeFollowsTheEnvironment(t *testing.T) {
 	}
 }
 
+func TestLifecycle_Dart(t *testing.T) {
+	env := setupMockEnv(t)
+
+	t.Run("hosted packages", func(t *testing.T) {
+		testLinkedMove(t, env, NewDartProvider(), "dart.pub-cache",
+			filepath.Join(env.home, ".pub-cache", "hosted"), filepath.Join("dart", "hosted"))
+	})
+	t.Run("git packages", func(t *testing.T) {
+		testLinkedMove(t, env, NewDartProvider(), "dart.pub-git",
+			filepath.Join(env.home, ".pub-cache", "git"), filepath.Join("dart", "git"))
+	})
+}
+
+// TestPubCacheFollowsTheEnvironment keeps the provider on the folder that
+// PUB_CACHE names.
+func TestPubCacheFollowsTheEnvironment(t *testing.T) {
+	setupMockEnv(t)
+	root := filepath.Join(t.TempDir(), "pub-cache")
+	t.Setenv("PUB_CACHE", root)
+
+	path := filepath.Join(root, "hosted")
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
+
+	item := findItem(t, mustDetect(t, NewDartProvider()), "dart.pub-cache")
+	if item.CurrentPath != path {
+		t.Fatalf("current path is %q, want %q", item.CurrentPath, path)
+	}
+}
+
+func TestLifecycle_Android(t *testing.T) {
+	env := setupMockEnv(t)
+	testLinkedMove(t, env, NewAndroidProvider(), "android.build-cache",
+		filepath.Join(env.home, ".android", "build-cache"), filepath.Join("android", "build-cache"))
+}
+
+func TestLifecycle_Homebrew(t *testing.T) {
+	env := setupMockEnv(t)
+	testLinkedMove(t, env, NewHomebrewProvider(), "homebrew.downloads",
+		filepath.Join(env.home, "Library", "Caches", "Homebrew", "downloads"),
+		filepath.Join("homebrew", "downloads"))
+}
+
+// TestHomebrewCacheFollowsTheEnvironment keeps the provider on the folder that
+// HOMEBREW_CACHE names.
+func TestHomebrewCacheFollowsTheEnvironment(t *testing.T) {
+	setupMockEnv(t)
+	root := filepath.Join(t.TempDir(), "brew-cache")
+	t.Setenv("HOMEBREW_CACHE", root)
+
+	path := filepath.Join(root, "downloads")
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
+
+	item := findItem(t, mustDetect(t, NewHomebrewProvider()), "homebrew.downloads")
+	if item.CurrentPath != path {
+		t.Fatalf("current path is %q, want %q", item.CurrentPath, path)
+	}
+}
+
+// TestLifecycle_Conda follows the package folders that the tool reports. The
+// list holds a repeated folder, so the test also proves the provider drops it.
+func TestLifecycle_Conda(t *testing.T) {
+	env := setupMockEnv(t)
+	first := filepath.Join(env.home, "miniconda3", "pkgs")
+	second := filepath.Join(env.home, "miniforge3", "pkgs")
+	t.Setenv("MOCK_CONDA_A", first)
+	t.Setenv("MOCK_CONDA_B", second)
+	writeMockCLI(t, env.bin, "conda", `if [ "$1" = "info" ] && [ "$2" = "--json" ]; then
+	printf '{"pkgs_dirs": ["%s", "%s", "%s"]}\n' "$MOCK_CONDA_A" "$MOCK_CONDA_B" "$MOCK_CONDA_A"
+fi`)
+	for _, dir := range []string{first, second} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() {
+		_ = os.RemoveAll(filepath.Join(env.home, "miniconda3"))
+		_ = os.RemoveAll(filepath.Join(env.home, "miniforge3"))
+	})
+
+	items := mustDetect(t, NewCondaProvider())
+	if len(items) != 2 {
+		t.Fatalf("Detect reports %d package caches, want 2: %+v", len(items), items)
+	}
+	if items[0].CurrentPath != first || items[1].CurrentPath != second {
+		t.Fatalf("Detect reports %q and %q", items[0].CurrentPath, items[1].CurrentPath)
+	}
+	if items[0].ID == items[1].ID {
+		t.Fatalf("both caches share the ID %q", items[0].ID)
+	}
+	if items[0].TargetSubdir == items[1].TargetSubdir {
+		t.Fatalf("both caches share the target %q", items[0].TargetSubdir)
+	}
+	if again := mustDetect(t, NewCondaProvider()); again[0].ID != items[0].ID || again[1].ID != items[1].ID {
+		t.Fatalf("a second scan renames the caches: %q, %q", again[0].ID, again[1].ID)
+	}
+
+	t.Run("first", func(t *testing.T) {
+		testLinkedMove(t, env, NewCondaProvider(), items[0].ID, first, items[0].TargetSubdir)
+	})
+	t.Run("second", func(t *testing.T) {
+		testLinkedMove(t, env, NewCondaProvider(), items[1].ID, second, items[1].TargetSubdir)
+	})
+}
+
+// TestCondaStaysQuietWithoutAnAnswer proves that a missing tool adds no card, so
+// Exodrive never guesses a prefix.
+func TestCondaStaysQuietWithoutAnAnswer(t *testing.T) {
+	env := setupMockEnv(t)
+	writeMockCLI(t, env.bin, "conda", "exit 1")
+
+	items := mustDetect(t, NewCondaProvider())
+	if len(items) != 0 {
+		t.Fatalf("Detect reports %d caches without an answer", len(items))
+	}
+}
+
+// TestCondaReportsABrokenAnswer keeps a bad reply visible instead of silent.
+func TestCondaReportsABrokenAnswer(t *testing.T) {
+	env := setupMockEnv(t)
+	writeMockCLI(t, env.bin, "conda", `echo "not json"`)
+
+	if _, err := NewCondaProvider().Detect(context.Background()); err == nil {
+		t.Fatal("Detect accepted a reply it cannot read")
+	}
+}
+
 // TestNewStoresStayHiddenWithoutAFolder keeps a scan quiet: a folder that does
-// not exist must not add a card.
+// not exist must not add a card. Conda has its own tests, because it asks the
+// tool for the folder.
 func TestNewStoresStayHiddenWithoutAFolder(t *testing.T) {
 	setupMockEnv(t)
 	ctx := context.Background()
@@ -282,6 +415,7 @@ func TestNewStoresStayHiddenWithoutAFolder(t *testing.T) {
 	for _, p := range []Provider{
 		NewXcodeProvider(), NewMavenProvider(), NewGradleProvider(),
 		NewCocoaPodsProvider(), NewSwiftPMProvider(),
+		NewDartProvider(), NewAndroidProvider(), NewHomebrewProvider(),
 	} {
 		items, err := p.Detect(ctx)
 		if err != nil {
@@ -299,14 +433,19 @@ func TestNewStoresRefuseWhileTheToolRuns(t *testing.T) {
 	ctx := context.Background()
 
 	cases := []struct {
-		name string
-		line string
-		want string
+		name     string
+		line     string
+		want     string
+		provider Provider
 	}{
-		{"xcode", "/Applications/Xcode.app/Contents/MacOS/Xcode", "Xcode is running"},
-		{"xcodebuild", "/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project A.xcodeproj", "xcodebuild is running"},
-		{"gradle daemon", "/usr/bin/java -cp /x org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.5", "GradleDaemon is running"},
-		{"cocoapods", "/opt/homebrew/bin/pod install", "pod is running"},
+		{"xcode", "/Applications/Xcode.app/Contents/MacOS/Xcode", "Xcode is running", NewXcodeProvider()},
+		{"xcodebuild", "/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -project A.xcodeproj", "xcodebuild is running", NewXcodeProvider()},
+		{"gradle daemon", "/usr/bin/java -cp /x org.gradle.launcher.daemon.bootstrap.GradleDaemon 8.5", "GradleDaemon is running", NewGradleProvider()},
+		{"cocoapods", "/opt/homebrew/bin/pod install", "pod is running", NewCocoaPodsProvider()},
+		{"flutter", "/Users/x/flutter/bin/dart run build_runner", "dart is running", NewDartProvider()},
+		{"android build", "/opt/homebrew/bin/gradle assemble", "gradle is running", NewAndroidProvider()},
+		{"conda", "/opt/miniconda3/bin/conda install numpy", "conda is running", NewCondaProvider()},
+		{"homebrew", "/opt/homebrew/bin/brew install jq", "brew is running", NewHomebrewProvider()},
 	}
 
 	for _, tc := range cases {
@@ -321,13 +460,7 @@ func TestNewStoresRefuseWhileTheToolRuns(t *testing.T) {
 			t.Cleanup(func() { _ = os.RemoveAll(path) })
 
 			item := core.CacheItem{ID: "probe.item", ToolName: "probe", Title: "Probe", CurrentPath: path}
-			err := NewXcodeProvider().PreflightCheck(ctx, item, env.targetRoot)
-			if tc.name == "gradle daemon" {
-				err = NewGradleProvider().PreflightCheck(ctx, item, env.targetRoot)
-			}
-			if tc.name == "cocoapods" {
-				err = NewCocoaPodsProvider().PreflightCheck(ctx, item, env.targetRoot)
-			}
+			err := tc.provider.PreflightCheck(ctx, item, env.targetRoot)
 			if err == nil {
 				t.Fatalf("PreflightCheck accepted the move while %s runs", tc.name)
 			}
