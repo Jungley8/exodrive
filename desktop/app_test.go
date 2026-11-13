@@ -1030,3 +1030,27 @@ func TestWindowNeverCallsAnOldMoveChecked(t *testing.T) {
 		t.Fatalf("the window called an unchecked copy good:\n%s", app.Dump())
 	}
 }
+
+// TestWindowBlockedCacheNamesNoChange keeps a blocked card honest. The simulator
+// folder carries a redirect method for the record, but Exodrive never moves it,
+// so the card must not say that it makes a link.
+func TestWindowBlockedCacheNamesNoChange(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	useVolumesRoot(t, t.TempDir())
+
+	const reason = "Exodrive cannot move this folder. Keep this folder on this Mac."
+	blocked := fakeCache()
+	blocked.BlockedReason = reason
+	blocked.RedirectMethod = exoCore.RedirectSymlink
+
+	app := nsgotest.Start(t, NewMain(newFakeEngine(blocked)), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
+	app.Settle()
+
+	if !app.Exists("text:" + reason) {
+		t.Fatalf("a blocked cache holds no reason:\n%s", app.Dump())
+	}
+	if app.Exists("text:" + englishText.SwitchLink) {
+		t.Fatalf("a blocked cache claims a change:\n%s", app.Dump())
+	}
+}

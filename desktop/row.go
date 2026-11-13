@@ -199,7 +199,11 @@ func moveOne(state *AppState, it exoCore.CacheItem) {
 func rowFoot(cx *core.Scope, state *AppState, it exoCore.CacheItem, place cacheState) core.Node {
 	colors := ui.ColorsOf(cx)
 	actions := rowActions(state, it, place)
-	note := switchNote(it.RedirectMethod, state.Text)
+	// A blocked cache never moves, so the card names no change.
+	note := ""
+	if place != stateBlocked {
+		note = switchNote(it.RedirectMethod, state.Text)
+	}
 	if len(actions) == 0 && note == "" {
 		return nil
 	}
