@@ -163,18 +163,18 @@
 
         <section id="install">
           <h2>Install</h2>
-          <p>
-            Download the archive for your Mac. It holds the window, the command
-            line tool, and a checksum file.
-          </p>
-          <pre><code>brew install gh                                    # once
-gh release download --repo Jungley8/exodrive \
-  --pattern '*darwin_arm64.app.zip'                 # Apple silicon
-unzip Exodrive_*.app.zip &amp;&amp; open Exodrive.app</code></pre>
+          <p>Install the newest release with one command:</p>
+          <pre><code>curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh</code></pre>
           <p class="note">
-            Use <code>*darwin_amd64.app.zip</code> on an Intel Mac. The bundle
-            is ad-hoc signed, so the first start asks for your confirmation:
+            The script downloads the archive for this Mac and checks it against
+            SHA256SUMS. A mismatch stops the install. Read it first:
+            <a href="https://jungley8.github.io/exodrive/install.sh">install.sh</a>. The bundle is ad-hoc signed, so a
+            download from a browser asks for your confirmation on the first start:
             right-click the app, then choose Open.
+          </p>
+          <p class="note">
+            Prefer an archive? Download it from the
+            <a href="https://github.com/Jungley8/exodrive/releases">releases page</a>.
           </p>
         </section>
 

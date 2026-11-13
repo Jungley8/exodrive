@@ -103,13 +103,26 @@ Exodrive 可为 macOS、Linux、Windows 构建。承诺只覆盖一个平台：
 
 ## 安装
 
-从[发布页](https://github.com/Jungley8/exodrive/releases)下载 macOS 或 Linux 的构建包。压缩包内含命令行工具、窗口程序、README 和许可证。用 `SHA256SUMS` 校验文件。
-
-对应架构的 macOS 包还含 `Exodrive.app`。该应用为 ad-hoc 签名，macOS 首次打开时会要求确认：右键点按应用，选择**打开**。也可在终端里一次性去掉隔离标记：
+一条命令安装最新版本：
 
 ```sh
-xattr -d com.apple.quarantine Exodrive.app
+curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh
 ```
+
+脚本读取最新版本，下载对应本机的包，并用 `SHA256SUMS` 校验。校验不通过就停止，不写入任何文件。macOS 上把 `Exodrive.app` 装到 `~/Applications`，命令行工具装到 `~/.local/bin`；Linux 上只装命令行工具。
+
+运行前可以先读脚本：<https://jungley8.github.io/exodrive/install.sh>
+
+| 选项 | 作用 |
+|---|---|
+| `--cli` | 只装命令行工具 |
+| `--app` | 只装应用（macOS） |
+| `--version <tag>` | 安装指定版本，例如 `v0.7.0` |
+| `--dir <folder>` | 装到指定目录 |
+
+也可以从[发布页](https://github.com/Jungley8/exodrive/releases)手动下载。压缩包内含命令行工具、窗口程序、README 和许可证。用 `SHA256SUMS` 校验文件。
+
+从浏览器下载的文件带隔离标记，macOS 首次打开时会要求确认：右键点按应用，选择**打开**。安装脚本用 `curl`，不会加这个标记。
 
 也可以从源码构建命令行工具：
 

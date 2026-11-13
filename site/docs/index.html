@@ -51,20 +51,28 @@
           </p>
 
           <h2 id="install">Install</h2>
+          <p>Install the newest release with one command:</p>
+          <pre><code>curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh</code></pre>
           <p>
-            Exodrive ships as an archive for macOS. The archive holds the window
-            app, the command line tool, the README, and a checksum file.
+            The script downloads the archive for this machine and checks it
+            against <code>SHA256SUMS</code>. A mismatch stops the install before
+            it writes anything. On macOS it installs <code>Exodrive.app</code>
+            to <code>~/Applications</code> and the command line tool to
+            <code>~/.local/bin</code>. On Linux it installs the command line
+            tool only.
           </p>
-          <pre><code>brew install gh                                    # once
-gh release download --repo Jungley8/exodrive \
-  --pattern '*darwin_arm64.app.zip'                 # Apple silicon
-unzip Exodrive_*.app.zip &amp;&amp; open Exodrive.app</code></pre>
-          <p>Use <code>*darwin_amd64.app.zip</code> on an Intel Mac.</p>
+          <p>Read the script before you run it: <a href="https://jungley8.github.io/exodrive/install.sh">install.sh</a></p>
+          <p>Install one part, or another version:</p>
+          <pre><code>curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh -s -- --cli
+curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh -s -- --app
+curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh -s -- --version v0.7.0</code></pre>
           <p>
-            The app is ad-hoc signed. The first start asks for your
-            confirmation. Right-click the app, then choose <strong>Open</strong>.
+            A download from a browser adds the quarantine flag, and macOS asks
+            for your confirmation on the first start. Right-click the app, then
+            choose <strong>Open</strong>. The script uses <code>curl</code>, so
+            no flag is added.
           </p>
-          <p>Check the archive before you open it:</p>
+          <p>Or download the archive from the <a href="https://github.com/Jungley8/exodrive/releases">releases page</a>, then check it:</p>
           <pre><code>shasum -a 256 -c SHA256SUMS</code></pre>
 
           <h3>Build from source</h3>

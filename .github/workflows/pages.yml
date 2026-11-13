@@ -30,6 +30,9 @@ jobs:
       - name: Check the pages
         run: sh scripts/check-site.sh
 
+      - name: Add the install script
+        run: cp scripts/install.sh site/install.sh
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3

@@ -147,7 +147,7 @@ jobs:
 
       - name: Write checksums
         working-directory: dist
-        run: sha256sum ./*.tar.gz ./*.zip > SHA256SUMS
+        run: sha256sum *.tar.gz *.zip > SHA256SUMS
 
       - uses: softprops/action-gh-release@v2
         with:

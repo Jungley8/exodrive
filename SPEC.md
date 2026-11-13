@@ -425,6 +425,8 @@ and return an error with the record intact.
   as a notarized build.
 - The release build passes `-X main.version=${VERSION}` to both the command
   line tool and the window. The window reports that value to the update check.
+- `SHA256SUMS` names each asset without a path prefix, so a script matches one
+  line. Releases before v0.8.0 wrote `./name`; the install script reads both.
 
 ## 8. Pages contract
 
@@ -435,9 +437,30 @@ and return an error with the record intact.
   the other language. CI runs it in the test job, and `pages.yml` runs it again
   before it uploads.
 - A page in one language that names a page in the other language uses a
-  relative link, so the pair works under any base path.
+  relative link, so the pair works under any base path. A link that names a
+  file the page does not ship, such as `install.sh`, uses the full site URL.
 - `pages.yml` publishes `site/` to GitHub Pages on a push to `main` that
   touches a page. The repository needs the Pages source set to GitHub Actions.
+
+### The install script
+
+- `scripts/install.sh` is the one-line install:
+  `curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh`.
+- `pages.yml` copies it to `site/install.sh` before it uploads, so `site/` holds
+  no second copy in Git.
+- The script reads the newest tag from the redirect of
+  `/releases/latest`, picks `exodrive_<tag>_<os>_<arch>.tar.gz` or
+  `Exodrive_<tag>_darwin_<arch>.app.zip`, and fetches with `curl` or `wget`.
+- It reads the one line of `SHA256SUMS` that names the asset and checks it with
+  `shasum` or `sha256sum`. A download that fails, a line that is missing, or a
+  hash that differs stops the script before it writes a file.
+- It installs the command line tool to `~/.local/bin` and the app bundle to
+  `~/Applications`. `--cli`, `--app`, `--version <tag>`, and `--dir <folder>`
+  change that, and an unknown option exits 2.
+- It never removes the quarantine flag. A browser download keeps the Gatekeeper
+  prompt, and `curl` adds no flag, so the two paths differ and the script says
+  which one applies.
+- CI runs `sh -n scripts/install.sh`, so a syntax error fails the build.
 
 ## 9. Failure log contract
 

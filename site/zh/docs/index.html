@@ -50,14 +50,23 @@
           </p>
 
           <h2 id="install">安装</h2>
-          <p>macOS 版以压缩包发布。包里有窗口程序、命令行工具、README 和校验文件。</p>
-          <pre><code>brew install gh                                    # 只需一次
-gh release download --repo Jungley8/exodrive \
-  --pattern '*darwin_arm64.app.zip'                 # Apple 芯片
-unzip Exodrive_*.app.zip &amp;&amp; open Exodrive.app</code></pre>
-          <p>Intel Mac 用 <code>*darwin_amd64.app.zip</code>。</p>
-          <p>应用为 ad-hoc 签名，首次打开会要求确认。右键点按应用，选择<strong>打开</strong>。</p>
-          <p>打开前先校验压缩包：</p>
+          <p>一条命令安装最新版本：</p>
+          <pre><code>curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh</code></pre>
+          <p>
+            脚本下载对应本机的包，并用 <code>SHA256SUMS</code> 校验。校验不通过就停止，不写入任何文件。
+            macOS 上把 <code>Exodrive.app</code> 装到 <code>~/Applications</code>，命令行工具装到
+            <code>~/.local/bin</code>；Linux 上只装命令行工具。
+          </p>
+          <p>运行前可以先读脚本：<a href="https://jungley8.github.io/exodrive/install.sh">install.sh</a></p>
+          <p>只装其中一项，或装指定版本：</p>
+          <pre><code>curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh -s -- --cli
+curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh -s -- --app
+curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh -s -- --version v0.7.0</code></pre>
+          <p>
+            从浏览器下载的文件带隔离标记，macOS 首次打开时会要求确认：右键点按应用，选择<strong>打开</strong>。
+            脚本用 <code>curl</code>，不会加这个标记。
+          </p>
+          <p>也可以从<a href="https://github.com/Jungley8/exodrive/releases">发布页</a>下载，再校验：</p>
           <pre><code>shasum -a 256 -c SHA256SUMS</code></pre>
 
           <h3>从源码构建</h3>

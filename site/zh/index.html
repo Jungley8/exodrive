@@ -144,14 +144,15 @@
 
         <section id="install">
           <h2>安装</h2>
-          <p>下载对应架构的压缩包。包里有窗口程序、命令行工具和校验文件。</p>
-          <pre><code>brew install gh                                    # 只需一次
-gh release download --repo Jungley8/exodrive \
-  --pattern '*darwin_arm64.app.zip'                 # Apple 芯片
-unzip Exodrive_*.app.zip &amp;&amp; open Exodrive.app</code></pre>
+          <p>一条命令安装最新版本：</p>
+          <pre><code>curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh</code></pre>
           <p class="note">
-            Intel Mac 用 <code>*darwin_amd64.app.zip</code>。应用为 ad-hoc 签名，首次打开会要求确认：
-            右键点按应用，选择「打开」。
+            脚本下载对应本机的包，并用 SHA256SUMS 校验；校验不通过就停止。运行前可以先读脚本：
+            <a href="https://jungley8.github.io/exodrive/install.sh">install.sh</a>。
+            应用为 ad-hoc 签名，从浏览器下载的文件首次打开会要求确认：右键点按应用，选择「打开」。
+          </p>
+          <p class="note">
+            也可以从<a href="https://github.com/Jungley8/exodrive/releases">发布页</a>直接下载压缩包。
           </p>
         </section>
 

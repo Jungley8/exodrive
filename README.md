@@ -118,19 +118,36 @@ follows the same checks.
 
 ## Install
 
-Download a release build for macOS or Linux from the
+Install the newest release with one command:
+
+```sh
+curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh
+```
+
+The script reads the newest release, downloads the archive for this machine,
+and checks it against `SHA256SUMS`. A mismatch stops it before it writes
+anything. On macOS it installs `Exodrive.app` to `~/Applications` and the
+command line tool to `~/.local/bin`. On Linux it installs the command line tool
+only.
+
+Read the script before you run it:
+<https://jungley8.github.io/exodrive/install.sh>
+
+| Option | Effect |
+|---|---|
+| `--cli` | Install the command line tool only |
+| `--app` | Install the app bundle only (macOS) |
+| `--version <tag>` | Install one release, e.g. `v0.7.0` |
+| `--dir <folder>` | Install into another folder |
+
+Or download the archive from the
 [releases page](https://github.com/Jungley8/exodrive/releases). The archive
 holds the command line tool, the window, the README, and the license. Check the
 archive against `SHA256SUMS`.
 
-The macOS archive for your architecture also holds `Exodrive.app`. This bundle
-is ad-hoc signed. macOS asks for your confirmation the first time you open it:
-right-click the app, then choose **Open**. Or remove the quarantine flag one
-time:
-
-```sh
-xattr -d com.apple.quarantine Exodrive.app
-```
+A download from a browser adds the quarantine flag. macOS asks for your
+confirmation the first time you open the app: right-click it, then choose
+**Open**. The install script uses `curl`, so no flag is added.
 
 Or build the command line tool from source:
 

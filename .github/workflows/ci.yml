@@ -48,6 +48,9 @@ jobs:
       - name: Check the pages
         run: sh scripts/check-site.sh
 
+      - name: Check the install script
+        run: sh -n scripts/install.sh
+
       - name: Bundle the window
         if: runner.os == 'macOS'
         run: |
