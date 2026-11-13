@@ -13,6 +13,10 @@ so you can move a cache back at any time.
 
 Exodrive ships a command line tool and a native macOS window.
 
+[Landing page](https://jungley8.github.io/exodrive/) ·
+[Documentation](https://jungley8.github.io/exodrive/docs/) ·
+[中文文档](https://jungley8.github.io/exodrive/zh/docs/)
+
 ## Status
 
 Exodrive is pre-release software. The version is `0.x`. The ledger format and
@@ -96,10 +100,21 @@ holds. Run `exodrive rollback <item>` first.
 
 ## Requirements
 
-- macOS 13 or later for the window. The command line builds on macOS and Linux.
-- Go 1.27 or later to build from source.
 - An external volume with a supported filesystem.
 - Free space on the target volume for one complete copy of each cache.
+- Go 1.27 or later to build from source.
+
+Exodrive builds for macOS, Linux, and Windows. The support promise covers one
+platform only:
+
+| Platform | Window | Command line | Tests |
+|---|---|---|---|
+| macOS 13 or later | Ships | Ships | Every test runs on macOS |
+| Linux | Not shipped | Ships | CI runs the suite on Ubuntu |
+| Windows | Builds from source | Builds from source | No test covers it |
+
+A bug on a platform without a promise is still a bug. Report it, and the fix
+follows the same checks.
 
 ## Install
 
@@ -220,7 +235,8 @@ exodrive check
 
 ## Use the window
 
-1. Open `bin/exodrive-gui`, or `Exodrive.app`.
+1. Open `bin/exodrive-gui`, or `Exodrive.app`. The first start shows three
+   steps. Press **Skip** to close the card. The window does not show it again.
 2. Choose a folder on the external drive. Press **Choose** to open the folder
    panel of macOS, or type the path. The panel lists every connected drive.
    The window checks the folder and shows the free space of the drive. A folder
@@ -272,6 +288,35 @@ Yarn 2 and later are blocked: they read `cacheFolder` from each project's
 `.yarnrc.yml`, so a global move does not reach them. Delete that cache, or keep
 it. A cache is also blocked when its tool does not report the cache folder. Put
 the tool on PATH, then press **Rescan**.
+
+### Language
+
+The window shows English or Simplified Chinese. It reads the system language.
+Set `EXODRIVE_LANG=zh` or `EXODRIVE_LANG=en` to choose one for a single start.
+
+Exodrive translates the words the window writes. A message from a toolchain or
+from the filesystem stays as that program wrote it, so the reason stays exact.
+
+### A newer release
+
+The window checks the public release list of GitHub once per start. A newer
+release adds one line to the footer with a button that opens the release page.
+Exodrive does not download or replace its own app bundle. Set
+`EXODRIVE_NO_UPDATE_CHECK=1` to turn the check off. A failed check shows
+nothing.
+
+### Stop the window
+
+macOS closes the window without asking, and Exodrive cannot hold the close
+open. A move writes `~/.exodrive/inflight.json` before it starts and removes
+that file when it ends. The next start names the cache that was changing.
+
+Press **Stop after this cache** to end a long move between caches. The cache
+that copies now finishes first.
+
+A window that closes in the middle of a copy leaves a partial copy on the drive
+and the full cache on this Mac. Run a check. If the card still says **On this
+Mac**, move the cache again.
 
 ## The ledger
 

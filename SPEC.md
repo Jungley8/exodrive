@@ -17,6 +17,21 @@ Supported toolchains:
 - Containers: `docker` (OrbStack, Docker Desktop, Colima)
 - Legacy/Orphans: abandoned cache folders from earlier configuration changes
 
+### Platform promise
+
+The promise is deliberately narrow. Only macOS carries a support promise.
+
+| Platform | Window | Command line | Tests |
+|---|---|---|---|
+| macOS 13+ | Ships as an app bundle | Ships | Every test runs on `macos-latest` |
+| Linux | Not shipped | Ships | CI runs the suite on `ubuntu-latest` |
+| Windows | Builds from source | Builds from source | No test covers it |
+
+- A bug on a platform without a promise is still a bug. A fix follows the
+  same checks as a fix on macOS.
+- The window uses nsgo, which chooses its native toolkit at build time. A
+  Windows window is unverified; no part of this specification claims it works.
+
 ## 2. Architecture & Contracts
 
 ```
@@ -34,7 +49,9 @@ internal/
 desktop/                  # nsgo reactive window
 packaging/Info.plist.in   # app bundle template
 scripts/make-app.sh       # bundle and sign Exodrive.app
-.github/workflows/        # CI and release
+scripts/check-site.sh     # guard for the pages under site/
+site/                     # landing page and documentation, served by GitHub Pages
+.github/workflows/        # CI, release, and pages
 ```
 
 ### Provider contract
@@ -314,6 +331,65 @@ and return an error with the record intact.
   from Finder or the Dock inherits the launchd PATH, which holds no Homebrew,
   nvm, or custom folder. Without that step, every tool query fails and each
   cache shows `Cannot move`.
+- The window sets its own title through `desktop.SetTitle` before the first
+  frame, because `nsgo.Run` sets none. `WindowTitle` lives in
+  `desktop/logo.go`.
+
+### Language
+
+- `desktop/text.go` holds two catalogs, `englishText` and `chineseText`, as one
+  struct type. A field that one catalog lacks does not compile, so a new
+  string cannot ship in one language only.
+- `languageOf` picks the catalog: `EXODRIVE_LANG` first (`zh`, `zh-Hans`, or
+  `zh-*` give Chinese), then `cx.Env().Locale()`. No other value changes it.
+- The window owns only the text it writes: labels, buttons, notices, dialogs,
+  and the two sentences inside `TargetError`. A provider message, a filesystem
+  error, and a tool's own output stay as written, because the reason matters
+  more than the language.
+- `text_test.go` reflects over both catalogs and fails when a field is empty,
+  when a Chinese field equals its English twin, or when a window renders
+  English while the language is Chinese.
+
+### First run
+
+- `AppState.WelcomeOpen` starts true unless `StatePath("welcome")` exists.
+  The card lists three numbered steps and two buttons: `Skip` and `Choose
+  folder`.
+- `markWelcomeSeen` writes the marker. A folder that passes `Engine.CheckTarget`,
+  or a press on `Skip`, closes the card and writes the marker. A failed check
+  keeps the card open.
+- The card sits above the drive panel, so a person reads the steps before the
+  field. It never blocks a press on anything below it.
+
+### Stop and quit
+
+- nsgo exposes no quit hook, so the window cannot hold a quit open. The
+  specification does not promise one.
+- A move, a move back, and a delete write `inflight.json` through
+  `WriteInFlight` before they start. Each one calls `ClearInFlight` in a
+  `defer`, so the file is present only while a change runs.
+- The next window start reads that file through `interruptedNotice` and shows
+  the cache that was changing. It then deletes the file, so the notice appears
+  once.
+- A record with no ID, or one that does not parse, is ignored: `ReadInFlight`
+  reports `false` and the window stays quiet. A stale file must never stop a
+  start.
+- This record warns. It does not repair. A window that closed mid-copy leaves a
+  partial copy on the drive and the full cache on this Mac. The next check
+  reads the ledger and shows the cache as `On this Mac`.
+
+### Update check
+
+- `checkForUpdate` reads the public release list from GitHub once per start, on
+  a background goroutine, and posts the result to the UI thread.
+- A newer tag puts one line in the footer with a button that opens the release
+  page through `cx.OpenURL`. Exodrive never downloads or replaces its own
+  bundle: an ad-hoc signed app cannot swap itself safely.
+- `EXODRIVE_NO_UPDATE_CHECK=1` turns the check off. A missing network, a
+  non-200 reply, or a tag that does not parse leaves the footer without the
+  line. The check never shows a failure.
+- `desktop.Version` comes from `-ldflags -X main.version`; a development build
+  reads `dev` and never sees an update.
 
 ## 6. Command line contract
 
@@ -347,3 +423,18 @@ and return an error with the record intact.
   rejects the upload, or when Gatekeeper still rejects the stapled bundle.
 - A bundle that carries no ticket keeps the Gatekeeper prompt. It must not ship
   as a notarized build.
+- The release build passes `-X main.version=${VERSION}` to both the command
+  line tool and the window. The window reports that value to the update check.
+
+## 8. Pages contract
+
+- `site/` holds four pages: `index.html`, `zh/index.html`, `docs/index.html`,
+  and `zh/docs/index.html`. They have no build step.
+- `scripts/check-site.sh` is the build: each page needs `lang`, `title`, and
+  `viewport`, each relative link must resolve, and each page needs its twin in
+  the other language. CI runs it in the test job, and `pages.yml` runs it again
+  before it uploads.
+- A page in one language that names a page in the other language uses a
+  relative link, so the pair works under any base path.
+- `pages.yml` publishes `site/` to GitHub Pages on a push to `main` that
+  touches a page. The repository needs the Pages source set to GitHub Actions.

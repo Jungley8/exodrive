@@ -11,6 +11,10 @@
 
 Exodrive 提供一个命令行工具和一个 macOS 原生窗口。
 
+[产品主页](https://jungley8.github.io/exodrive/zh/) ·
+[文档](https://jungley8.github.io/exodrive/zh/docs/) ·
+[English docs](https://jungley8.github.io/exodrive/docs/)
+
 ## 状态
 
 Exodrive 处于预发布阶段，版本号为 `0.x`。1.0 之前，账本格式和命令行参数可能变化。
@@ -83,10 +87,19 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 
 ## 环境要求
 
-- 窗口需要 macOS 13 或更高版本。命令行可在 macOS 和 Linux 上构建。
-- 从源码构建需要 Go 1.27 或更高版本。
 - 需要一块文件系统受支持的外置磁盘。
 - 目标磁盘需要容纳每个缓存的完整副本。
+- 从源码构建需要 Go 1.27 或更高版本。
+
+Exodrive 可为 macOS、Linux、Windows 构建。承诺只覆盖一个平台：
+
+| 平台 | 窗口 | 命令行 | 测试 |
+|---|---|---|---|
+| macOS 13 或更高版本 | 发布 | 发布 | 全部测试在 macOS 上运行 |
+| Linux | 不发布 | 发布 | CI 在 Ubuntu 上运行测试 |
+| Windows | 可从源码构建 | 可从源码构建 | 没有测试覆盖 |
+
+没有承诺的平台上的 bug 仍然是 bug。请报告，修复走同样的检查。
 
 ## 安装
 
@@ -191,7 +204,7 @@ exodrive rollback npm.cache
 
 ## 窗口用法
 
-1. 打开 `bin/exodrive-gui` 或 `Exodrive.app`。
+1. 打开 `bin/exodrive-gui` 或 `Exodrive.app`。首次启动显示三步引导。点 **Skip** 关闭该卡片，之后不再显示。
 2. 选择外置磁盘上的一个目录。点 **Choose** 打开 macOS 的目录面板，或直接在输入框里填路径。面板列出所有已连接的磁盘。窗口会检查该目录，并显示磁盘可用空间。选在本机的目录不会释放空间，窗口会提示这一点，但不阻止迁移。
 3. 勾选要迁移的缓存。点 **Select all N** 全选，或点每张卡片左侧的勾选框。
 4. 点 **Move N caches**。看清列出的条目，再点 **Move** 开始。长时间迁移会显示进度；点 **Stop after this cache** 会让当前这一项做完后停下。只搬一项时，点该卡片上的 **Move**。
@@ -213,6 +226,24 @@ exodrive rollback npm.cache
 窗口启动时读取登录 shell 的 PATH。从 Finder 或 Dock 打开时，Homebrew、nvm 或自定义目录里的工具同样能找到。
 
 每次扫描、迁移和回滚后，列表自动刷新。Exodrive 无法迁移的缓存显示 **Cannot move**，原因在卡片上。yarn 2 及更高版本都会被阻止：它们的 `cacheFolder` 写在每个项目的 `.yarnrc.yml` 里，全局切换无法覆盖。可删除该缓存，或保留。工具没有报告缓存目录时同样显示 **Cannot move**：把该工具加入 PATH，再点 **Rescan**。
+
+### 界面语言
+
+窗口支持英文和简体中文，默认跟随系统语言。用 `EXODRIVE_LANG=zh` 或 `EXODRIVE_LANG=en` 指定单次启动的语言。
+
+Exodrive 只翻译窗口自己写的字。工具链或文件系统给出的消息保持原样，原因不被改写。
+
+### 新版本提醒
+
+每次启动时，窗口查询一次 GitHub 的公开版本列表。有新版本时，底部多出一行提示和打开发布页的按钮。Exodrive 不会自动下载或替换自己的应用包。设置 `EXODRIVE_NO_UPDATE_CHECK=1` 可关闭该检查。检查失败时不显示任何内容。
+
+### 退出窗口
+
+macOS 关闭窗口前不会询问，Exodrive 无法拦住这个动作。迁移开始前写入 `~/.exodrive/inflight.json`，结束时删除该文件。下次启动时，窗口指出当时正在处理的缓存。
+
+长时间迁移可点 **Stop after this cache**，当前这一项做完后停止。
+
+拷贝中途关闭窗口，会留下磁盘上的部分副本和本机的完整缓存。重新检查：卡片仍显示 **On this Mac** 就再迁移一次。
 
 ## 账本
 
