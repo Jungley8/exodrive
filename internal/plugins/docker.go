@@ -208,7 +208,8 @@ func (p *DockerProvider) migrateOrbStack(ctx context.Context, item core.CacheIte
 	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("copy %s: %w", item.Title, err)
 	}
-	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
+	summary, err := fsutil.VerifyTreeSummary(item.CurrentPath, dest, progress.Verify)
+	if err != nil {
 		return fmt.Errorf("%s: %w", item.Title, err)
 	}
 
@@ -231,6 +232,9 @@ func (p *DockerProvider) migrateOrbStack(ctx context.Context, item core.CacheIte
 		OriginalConfig: originalDir,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
+		TreeDigest:     string(summary.Digest),
+		FileCount:      summary.Files,
+		TotalBytes:     summary.Bytes,
 	}); err != nil {
 		return err
 	}
@@ -261,20 +265,25 @@ func (p *DockerProvider) migrateLinked(ctx context.Context, item core.CacheItem,
 		destination = filepath.Join(dest, filepath.Base(item.CurrentPath))
 	}
 
+	var summary fsutil.CopySummary
 	if info.IsDir() {
 		if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 			return fmt.Errorf("copy %s: %w", item.Title, err)
 		}
-		if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
+		verified, err := fsutil.VerifyTreeSummary(item.CurrentPath, dest, progress.Verify)
+		if err != nil {
 			return fmt.Errorf("%s: %w", item.Title, err)
 		}
+		summary = verified
 	} else {
 		if err := fsutil.CopyFile(item.CurrentPath, destination, item.SizeBytes, progress.Copy); err != nil {
 			return fmt.Errorf("copy %s: %w", item.Title, err)
 		}
-		if err := fsutil.VerifyFile(item.CurrentPath, destination); err != nil {
+		verified, err := fsutil.VerifyFileSummary(item.CurrentPath, destination)
+		if err != nil {
 			return fmt.Errorf("%s: %w", item.Title, err)
 		}
+		summary = verified
 	}
 
 	if err := core.RecordMigration(core.MigrationRecord{
@@ -285,6 +294,9 @@ func (p *DockerProvider) migrateLinked(ctx context.Context, item core.CacheItem,
 		RedirectMethod: core.RedirectSymlink,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
+		TreeDigest:     string(summary.Digest),
+		FileCount:      summary.Files,
+		TotalBytes:     summary.Bytes,
 	}); err != nil {
 		return err
 	}

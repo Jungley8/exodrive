@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -151,5 +152,74 @@ func TestRecordMigrationRefusesDuplicate(t *testing.T) {
 	}
 	if got := loaded.Records["npm.cache"].DestinationDir; got != first.DestinationDir {
 		t.Fatalf("duplicate record overwrote the ledger: destination is %q, want %q", got, first.DestinationDir)
+	}
+}
+
+// TestManifestRefusesANewerVersion stops an old build from rewriting a ledger
+// that a newer build wrote, because the rewrite would drop fields it cannot read.
+func TestManifestRefusesANewerVersion(t *testing.T) {
+	ledger := filepath.Join(t.TempDir(), "newer.json")
+	t.Setenv(ManifestEnvVar, ledger)
+
+	data := fmt.Sprintf(`{"version": %d, "records": {}}`, ManifestVersion+1)
+	if err := os.WriteFile(ledger, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadManifest(); err == nil {
+		t.Fatal("LoadManifest accepted a ledger from a newer version")
+	}
+}
+
+// TestManifestUpgradesAVersionOneLedger covers a record that predates the
+// digest. The load accepts it, and the next save writes version 2.
+func TestManifestUpgradesAVersionOneLedger(t *testing.T) {
+	ledger := filepath.Join(t.TempDir(), "old.json")
+	t.Setenv(ManifestEnvVar, ledger)
+
+	old := `{"version": 1, "records": {"npm.cache": {
+		"id": "npm.cache",
+		"tool_name": "npm",
+		"original_path": "/home/user/.npm",
+		"destination_dir": "/Volumes/External/npm-cache",
+		"redirect_method": "native_config",
+		"migrated_at": "2026-01-01T00:00:00Z",
+		"size_bytes": 4096
+	}}}`
+	if err := os.WriteFile(ledger, []byte(old), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest failed on a version 1 ledger: %v", err)
+	}
+	if loaded.Records["npm.cache"].TreeDigest != "" {
+		t.Fatal("a version 1 record gained a digest it never measured")
+	}
+
+	if err := RecordMigration(MigrationRecord{
+		ID:             "cargo.registry",
+		ToolName:       "cargo",
+		OriginalPath:   "/home/user/.cargo/registry",
+		DestinationDir: "/Volumes/External/cargo-registry",
+		RedirectMethod: RedirectSymlink,
+		MigratedAt:     time.Now(),
+	}); err != nil {
+		t.Fatalf("RecordMigration failed: %v", err)
+	}
+
+	data, err := os.ReadFile(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written Manifest
+	if err := json.Unmarshal(data, &written); err != nil {
+		t.Fatal(err)
+	}
+	if written.Version != ManifestVersion {
+		t.Fatalf("the ledger version is %d, want %d", written.Version, ManifestVersion)
+	}
+	if len(written.Records) != 2 {
+		t.Fatalf("the ledger holds %d records, want 2", len(written.Records))
 	}
 }

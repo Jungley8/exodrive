@@ -937,3 +937,96 @@ func TestWindowKeepsItsMarkWhileAnActionRuns(t *testing.T) {
 		t.Fatalf("the mark carries no gradient:\n%s", app.Dump())
 	}
 }
+
+// recordMovedCopy writes the ledger record of a moved copy, and returns the
+// folder that holds it. The digest is real, so a check can prove the copy.
+func recordMovedCopy(t *testing.T, withDigest bool) string {
+	t.Helper()
+	copyDir := filepath.Join(t.TempDir(), "fake-cache")
+	if err := os.MkdirAll(copyDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(copyDir, "blob"), []byte("cache-bytes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := fsutil.DigestPath(copyDir)
+	if err != nil {
+		t.Fatalf("DigestPath failed: %v", err)
+	}
+	rec := exoCore.MigrationRecord{
+		ID:             "fake.cache",
+		ToolName:       "fake",
+		OriginalPath:   "/tmp/fake-cache",
+		DestinationDir: copyDir,
+		RedirectMethod: exoCore.RedirectSymlink,
+		MigratedAt:     time.Now(),
+		SizeBytes:      4096,
+	}
+	if withDigest {
+		rec.TreeDigest = string(summary.Digest)
+		rec.FileCount = summary.Files
+		rec.TotalBytes = summary.Bytes
+	}
+	if err := exoCore.RecordMigration(rec); err != nil {
+		t.Fatalf("RecordMigration failed: %v", err)
+	}
+	return copyDir
+}
+
+// mountedMovedCopy mounts the window over a moved cache and waits for its card.
+func mountedMovedCopy(t *testing.T) *nsgotest.App {
+	t.Helper()
+	app := nsgotest.Start(t, NewMain(newFakeEngine(fakeCache())), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
+	app.Settle()
+	return app
+}
+
+// TestWindowChecksAMovedCopy gives the person the one fact the ledger can
+// prove: the copy still holds the bytes that the move wrote.
+func TestWindowChecksAMovedCopy(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	recordMovedCopy(t, true)
+
+	app := mountedMovedCopy(t)
+	if !app.Exists("id:check-fake.cache") {
+		t.Fatalf("a moved cache offers no check:\n%s", app.Dump())
+	}
+
+	app.Press("id:check-fake.cache")
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:The copy matches the move.") })
+	if !app.Exists("id:rollback-fake.cache") {
+		t.Fatalf("the check replaced the way back:\n%s", app.Dump())
+	}
+}
+
+func TestWindowReportsADamagedCopy(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	copyDir := recordMovedCopy(t, true)
+	if err := os.WriteFile(filepath.Join(copyDir, "blob"), []byte("cache-bytez"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	app := mountedMovedCopy(t)
+	app.Press("id:check-fake.cache")
+	app.WaitUntil(2*time.Second, func() bool {
+		return app.Exists("text:The copy differs from the move. Move the cache back, then move it again.")
+	})
+}
+
+// TestWindowNeverCallsAnOldMoveChecked keeps the window honest about a record
+// that holds no digest: it asks for a new move instead of a verdict.
+func TestWindowNeverCallsAnOldMoveChecked(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	recordMovedCopy(t, false)
+
+	app := mountedMovedCopy(t)
+	app.Press("id:check-fake.cache")
+	app.WaitUntil(2*time.Second, func() bool {
+		return app.Exists("text:This move has no check. Move the cache back, then move it again.")
+	})
+	if app.Exists("text:The copy matches the move.") {
+		t.Fatalf("the window called an unchecked copy good:\n%s", app.Dump())
+	}
+}

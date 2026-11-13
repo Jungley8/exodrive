@@ -34,6 +34,7 @@
           <a href="#window">使用窗口</a>
           <a href="#cli">使用命令行</a>
           <a href="#ledger">账本</a>
+          <a href="#verify">检查已迁移的副本</a>
           <a href="#undo">把缓存搬回来</a>
           <a href="#stopping">停止窗口</a>
           <a href="#trouble">故障处理</a>
@@ -125,13 +126,29 @@ exodrive orphans --clean</code></pre>
           <h2 id="ledger">账本</h2>
           <p>
             Exodrive 写 <code>~/.exodrive/manifest.json</code>。每次迁移加一条记录：
-            条目、原路径、新目录、让工具指向副本的改动、大小和时间。
+            条目、原路径、新目录、让工具指向副本的改动、大小、时间和副本摘要。
           </p>
           <p>写文件时加锁，两个进程不会互相覆盖。同一条目只出现一次。</p>
           <p>设置 <code>EXODRIVE_MANIFEST_PATH</code> 可以把文件放到别处。</p>
           <div class="callout">
             <p>账本要和外接磁盘一起保留。搬回需要两者都在。</p>
           </div>
+
+          <h2 id="verify">检查已迁移的副本</h2>
+          <p>迁移时会记录副本摘要。点卡片上的<strong>检查副本</strong>，或者运行：</p>
+          <pre><code>exodrive verify npm.cache
+exodrive verify --all
+exodrive verify --all --json</code></pre>
+          <p>
+            检查会重新读取副本，与记录的摘要比对。它不向磁盘写入任何内容。命令行每个副本输出一行；只要有一项不通过，退出码就是 1。
+          </p>
+          <ul>
+            <li><strong>ok</strong>：副本与迁移时写入的字节一致。</li>
+            <li><strong>changed</strong>：副本里有文件与迁移时不同。请搬回后重新迁移。</li>
+            <li><strong>missing</strong>：副本不在记录的路径上。请连接外接磁盘。</li>
+            <li><strong>unverified</strong>：记录里没有摘要。旧版 Exodrive 写下的记录没有摘要。</li>
+          </ul>
+          <p>无法证明的副本，检查不会报告 <strong>ok</strong>。</p>
 
           <h2 id="undo">把缓存搬回来</h2>
           <p>点卡片上的<strong>搬回</strong>，然后确认。</p>

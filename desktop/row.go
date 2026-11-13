@@ -24,6 +24,9 @@ func renderRow(cx *core.Scope, state *AppState, item func() exoCore.CacheItem) c
 	}
 	if it.DestinationPath != "" {
 		children = append(children, pathLine(cx, state.Text.Copy, it.DestinationPath, "destination-"+id))
+		if line := checkCardLine(cx, state, it); line != nil {
+			children = append(children, line)
+		}
 	}
 	if line := rowProblem(cx, it, place, failed, state.Text); line != nil {
 		children = append(children, line)
@@ -191,13 +194,13 @@ func moveOne(state *AppState, it exoCore.CacheItem) {
 	state.ConfirmOpen.Set(true)
 }
 
-// rowFoot names the change Exodrive makes, beside the one action a cache
-// offers by its state.
+// rowFoot names the change Exodrive makes, beside the actions a cache offers
+// by its state.
 func rowFoot(cx *core.Scope, state *AppState, it exoCore.CacheItem, place cacheState) core.Node {
 	colors := ui.ColorsOf(cx)
-	action := rowAction(state, it, place)
+	actions := rowActions(state, it, place)
 	note := switchNote(it.RedirectMethod, state.Text)
-	if action == nil && note == "" {
+	if len(actions) == 0 && note == "" {
 		return nil
 	}
 	children := []core.Node{}
@@ -208,28 +211,31 @@ func rowFoot(cx *core.Scope, state *AppState, it exoCore.CacheItem, place cacheS
 	} else {
 		children = append(children, fill())
 	}
-	if action != nil {
-		children = append(children, action)
-	}
+	children = append(children, actions...)
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 10}, Children: children}
 }
 
-// rowAction is the one action a cache offers by its state: move it, move it
-// back, or delete it. A blocked cache offers none, because the reason on the
-// card says what to fix first.
-func rowAction(state *AppState, it exoCore.CacheItem, place cacheState) core.Node {
+// rowActions lists the actions a cache offers by its state: move it, check it,
+// move it back, or delete it. A blocked cache offers none, because the reason
+// on the card says what to fix first.
+func rowActions(state *AppState, it exoCore.CacheItem, place cacheState) []core.Node {
 	disabled := func() bool { return busy(state) }
 	t := state.Text
 	switch place {
 	case stateLocal:
-		return ui.Button{Text: t.Move, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.ArrowRight,
-			Disabled: disabled, OnPress: func() { moveOne(state, it) }, TestID: "move-" + it.ID}
+		return []core.Node{ui.Button{Text: t.Move, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.ArrowRight,
+			Disabled: disabled, OnPress: func() { moveOne(state, it) }, TestID: "move-" + it.ID}}
 	case stateMoved:
-		return ui.Button{Text: t.MoveBack, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.Undo2,
-			Disabled: disabled, OnPress: func() { state.RollbackTarget.Set(it.ID) }, TestID: "rollback-" + it.ID}
+		actions := make([]core.Node, 0, 2)
+		if it.DestinationPath != "" {
+			actions = append(actions, ui.Button{Text: t.CheckCopy, Variant: ui.ButtonGhost, Size: ui.SizeSmall, Icon: lucide.BadgeCheck,
+				Disabled: disabled, OnPress: func() { triggerCheck(state, it) }, TestID: "check-" + it.ID})
+		}
+		return append(actions, ui.Button{Text: t.MoveBack, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.Undo2,
+			Disabled: disabled, OnPress: func() { state.RollbackTarget.Set(it.ID) }, TestID: "rollback-" + it.ID})
 	case stateUnused:
-		return ui.Button{Text: t.DeleteCache, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.Trash,
-			Disabled: disabled, OnPress: func() { state.CleanTarget.Set(it.ID) }, TestID: "clean-" + it.ID}
+		return []core.Node{ui.Button{Text: t.DeleteCache, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.Trash,
+			Disabled: disabled, OnPress: func() { state.CleanTarget.Set(it.ID) }, TestID: "clean-" + it.ID}}
 	}
 	return nil
 }

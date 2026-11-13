@@ -328,9 +328,9 @@ refuses the migration; none of them falls back to a weaker mode.
   that can move read.
 - A card offers the action that fits its place. A local cache offers `Move`,
   which asks for a confirmation that holds that cache alone; without a checked
-  folder it opens the folder picker first. A moved cache offers `Move back`. An
-  unused cache offers `Delete cache`. Each one asks for confirmation. The
-  delete names the path and says the data is gone.
+  folder it opens the folder picker first. A moved cache offers `Check the copy`
+  and `Move back`. An unused cache offers `Delete cache`. Each one asks for
+  confirmation. The delete names the path and says the data is gone.
 - The rail lists what the check found, by group: Node, Python, Rust, Go,
   Docker, and Other. Each group shows its count and a bar split by place, so a
   press on a group reads before it filters. A group with no cache is absent.
@@ -447,6 +447,11 @@ refuses the migration; none of them falls back to a weaker mode.
 - A move prints the copy progress bar, then `Checking the copy...` with a
   second bar. Both bars read the same source size.
 - `rollback <item>` restores one cache and removes its record.
+- `verify <item>` and `verify --all` check moved copies against their recorded
+  digests. Each record prints as `[state] <id>: <copy>`, and a check that read
+  the copy adds `(<files>, <size>)`. A state other than `ok` adds its next step
+  on the line below. The command exits 1 when any record is not `ok`. `--json`
+  writes the results to stdout and nothing else; a message goes to stderr.
 - `orphans [--clean]` lists or deletes abandoned caches.
 - `version` prints the build version. A release build shows its number with a
   `v` prefix; a development build shows its commit or `dev`.
@@ -537,7 +542,7 @@ machine unless a person opens an issue.
 - A record holds `time` (RFC 3339, UTC), `version`, `os`, `arch`, `action`,
   `kind`, `item`, and `message`.
 - `action` names the step that stopped: `scan`, `choose`, `move`, `move back`,
-  `delete`, `preflight`, `migrate`, `rollback`, or `orphans`.
+  `delete`, `check`, `preflight`, `migrate`, `rollback`, or `orphans`.
 - `kind` is one stable token from `FailureKind` in
   `internal/core/failure_kind.go`: `target`, `unsupported`, `space`,
   `running`, `symlink`, `verification`, `env`, `no record`, `ledger`,
@@ -576,3 +581,28 @@ machine unless a person opens an issue.
   report.
 - `exodrive doctor` prints the version, both paths, and the newest ten
   records, with the home folder redacted. It exits 0 and sends nothing.
+
+## 10. Ledger integrity
+
+- `Manifest.Version` is 2. A version 1 ledger loads, and each of its records
+  reports as `unverified`; the next save writes version 2. A ledger with a
+  version above 2 stops the load with a message that names the newer build,
+  because an older build cannot write fields it does not know.
+- A record holds `tree_digest`, `file_count`, and `total_bytes`. The digest
+  covers the copy only. Each file enters as
+  `file\0<rel>\0<size>\0<sha256>\n`, in sorted relative-path order, then each
+  link as `link\0<rel>\0<target>\n`. One SHA-256 covers the stream. Two copies of
+  one tree under different paths give the same digest.
+- A migration computes the digest in the pass that already reads both trees
+  (`VerifyTreeSummary`, `VerifyFileSummary`), so a move pays no second read.
+  `DigestPath` reads one path the same way for a later check.
+- `Engine.Verify` returns `ok`, `changed`, `missing`, or `unverified`. A record
+  with no digest is `unverified` and never `ok`. A path that does not exist is
+  `missing`. Any other read error returns an error, so no caller can call the
+  copy good.
+- `Verify` writes nothing: no record, no file on the drive, no in-flight mark.
+- `Engine.VerifyAll` reads one snapshot of the ledger and checks each record in
+  ID order.
+- The window shows **Check the copy** on a card whose record names a copy. The
+  answer stays on the card. A check that stops shows a banner and no failure
+  block: the block's **Try again** moves data, and a check moves none.

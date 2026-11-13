@@ -41,6 +41,8 @@ func main() {
 		runOrphans(os.Args[2:])
 	case "rollback":
 		runRollback(os.Args[2:])
+	case "verify":
+		runVerify(os.Args[2:])
 	case "version", "--version", "-v":
 		printVersion()
 	case "doctor":
@@ -76,6 +78,8 @@ Usage:
   exodrive migrate --target=<dir>     Move caches to external storage
   exodrive orphans [--clean]          Detect or delete abandoned caches
   exodrive rollback <item_id>         Move a migrated cache back
+  exodrive verify <item_id>           Check one moved copy against its recorded digest
+  exodrive verify --all               Check every moved copy
   exodrive doctor                     Print the version, the paths, and the last failures
   exodrive version                    Display version information
   exodrive help                       Display this help message
@@ -90,7 +94,11 @@ Options for migrate:
   --target   Destination directory on external storage (Required)
   --tools    Comma-separated list of tools to migrate (e.g. npm,pnpm,go)
   --all      Migrate all eligible local caches
-  --dry-run  Run every check and print the plan without moving data`)
+  --dry-run  Run every check and print the plan without moving data
+
+Options for verify:
+  --all      Check every moved copy in the ledger
+  --json     Output results as formatted JSON`)
 }
 
 func buildEngine() *core.Engine {
@@ -438,4 +446,121 @@ func runRollback(args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("Restored %s. The ledger record is removed.\n", itemID)
+}
+
+// runVerify checks moved copies against the digests that the ledger recorded.
+// It reads the drive and changes nothing.
+func runVerify(args []string) {
+	fs := flag.NewFlagSet("verify", flag.ContinueOnError)
+	all := fs.Bool("all", false, "Check every moved copy")
+	jsonOutput := fs.Bool("json", false, "Output results in JSON format")
+
+	var itemID string
+	var flagArgs []string
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			flagArgs = append(flagArgs, arg)
+		} else if itemID == "" {
+			itemID = arg
+		}
+	}
+	if err := fs.Parse(flagArgs); err != nil {
+		os.Exit(1)
+	}
+
+	if !*all && itemID == "" {
+		fmt.Println("Usage: exodrive verify <item_id> [--json], or exodrive verify --all [--json]")
+		os.Exit(1)
+	}
+
+	engine := buildEngine()
+
+	var results []core.VerifyResult
+	if *all {
+		checked, err := engine.VerifyAll()
+		if err != nil {
+			recordFailure("verify", "", err)
+			fmt.Fprintf(os.Stderr, "Check failed: %v\n", err)
+			os.Exit(1)
+		}
+		results = checked
+	} else {
+		manifest, err := core.LoadManifest()
+		if err != nil {
+			recordFailure("verify", itemID, err)
+			fmt.Fprintf(os.Stderr, "Read the ledger: %v\n", err)
+			os.Exit(1)
+		}
+		rec, ok := manifest.Records[itemID]
+		if !ok {
+			fmt.Fprintf(os.Stderr, "The ledger holds no move for '%s'. Run 'exodrive check' to list the moved copies.\n", itemID)
+			os.Exit(1)
+		}
+		result, err := engine.Verify(rec)
+		if err != nil {
+			recordFailure("verify", itemID, err)
+			fmt.Fprintf(os.Stderr, "Check %s: %v\n", itemID, err)
+			os.Exit(1)
+		}
+		results = []core.VerifyResult{result}
+	}
+
+	bad := 0
+	for _, r := range results {
+		if r.State != core.VerifyOK {
+			bad++
+		}
+	}
+
+	if *jsonOutput {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(results); err != nil {
+			fmt.Fprintf(os.Stderr, "JSON encode failed: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		for _, r := range results {
+			fmt.Println(verifyLine(r))
+			if r.Detail != "" {
+				fmt.Printf("  %s\n", r.Detail)
+			}
+		}
+		switch {
+		case len(results) == 0:
+			fmt.Println("The ledger holds no moved copy. Nothing to check.")
+		case bad == 0:
+			fmt.Printf("Checked %s. Every copy matches its move.\n", countedCopies(len(results)))
+		case bad == 1:
+			fmt.Printf("Checked %s. 1 copy needs attention.\n", countedCopies(len(results)))
+		default:
+			fmt.Printf("Checked %s. %d copies need attention.\n", countedCopies(len(results)), bad)
+		}
+	}
+
+	if bad > 0 {
+		os.Exit(1)
+	}
+}
+
+// countedCopies writes a count of copies as a person reads it.
+func countedCopies(n int) string {
+	if n == 1 {
+		return "1 copy"
+	}
+	return fmt.Sprintf("%d copies", n)
+}
+
+// verifyLine writes one result. A copy that the check read adds its file count
+// and size, so the numbers belong to the copy on the drive.
+func verifyLine(r core.VerifyResult) string {
+	line := fmt.Sprintf("[%s] %s: %s", r.State, r.ID, r.Copy)
+	if r.Files > 0 && (r.State == core.VerifyOK || r.State == core.VerifyChanged) {
+		files := fmt.Sprintf("%d files", r.Files)
+		if r.Files == 1 {
+			files = "1 file"
+		}
+		line += fmt.Sprintf(" (%s, %s)", files, ui.FormatBytes(r.Bytes))
+	}
+	return line
 }

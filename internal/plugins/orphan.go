@@ -101,7 +101,8 @@ func (p *OrphanProvider) Migrate(ctx context.Context, item core.CacheItem, targe
 	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("archive orphan: %w", err)
 	}
-	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
+	summary, err := fsutil.VerifyTreeSummary(item.CurrentPath, dest, progress.Verify)
+	if err != nil {
 		return fmt.Errorf("archive orphan: %w", err)
 	}
 
@@ -113,6 +114,9 @@ func (p *OrphanProvider) Migrate(ctx context.Context, item core.CacheItem, targe
 		RedirectMethod: core.RedirectManual,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
+		TreeDigest:     string(summary.Digest),
+		FileCount:      summary.Files,
+		TotalBytes:     summary.Bytes,
 	}); err != nil {
 		return err
 	}

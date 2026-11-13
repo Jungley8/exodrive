@@ -3,10 +3,13 @@ package fsutil
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -284,41 +287,56 @@ func copyFile(src, dst string, info os.FileInfo) (err error) {
 // targets. A provider calls it before it replaces the source with a link. It
 // reads every file in both trees, so a damaged byte stops the migration.
 func VerifyTree(src, dst string) error {
-	return VerifyTreeProgress(src, dst, nil)
+	_, err := VerifyTreeSummary(src, dst, nil)
+	return err
 }
 
-// VerifyTreeProgress runs the VerifyTree check and reports the bytes verified.
-func VerifyTreeProgress(src, dst string, progress CopyProgressCallback) error {
+// CopySummary describes a copy that passed the check, with a digest that the
+// ledger keeps. `exodrive verify` reads the copy again and compares the digest,
+// which works after the local data is gone.
+type CopySummary struct {
+	Digest TreeDigest
+	Files  int64
+	Bytes  int64
+}
+
+// TreeDigest identifies the content of a copy: every regular file with its size
+// and bytes, and every symbolic link with its target. Two copies of the same
+// tree produce the same digest on any system.
+type TreeDigest string
+
+// VerifyTreeSummary runs the VerifyTree check and returns the digest of the
+// copy. The digest costs no extra read: it uses the bytes the check already
+// reads.
+func VerifyTreeSummary(src, dst string, progress CopyProgressCallback) (CopySummary, error) {
 	srcTree, err := scanTree(src)
 	if err != nil {
-		return err
+		return CopySummary{}, err
 	}
 	dstTree, err := scanTree(dst)
 	if err != nil {
-		return err
+		return CopySummary{}, err
 	}
 	if srcTree.files != dstTree.files {
-		return fmt.Errorf("verification failed: %s has %d files, %s has %d", dst, dstTree.files, src, srcTree.files)
+		return CopySummary{}, fmt.Errorf("verification failed: %s has %d files, %s has %d", dst, dstTree.files, src, srcTree.files)
 	}
 	if srcTree.bytes != dstTree.bytes {
-		return fmt.Errorf("verification failed: %s has %d bytes, %s has %d", dst, dstTree.bytes, src, srcTree.bytes)
+		return CopySummary{}, fmt.Errorf("verification failed: %s has %d bytes, %s has %d", dst, dstTree.bytes, src, srcTree.bytes)
 	}
-	if err := compareContent(src, dst, srcTree, dstTree, progress); err != nil {
-		return err
+
+	outer := sha256.New()
+	if err := compareContent(src, dst, srcTree, dstTree, progress, outer); err != nil {
+		return CopySummary{}, err
 	}
-	if len(srcTree.links) != len(dstTree.links) {
-		return fmt.Errorf("verification failed: %s has %d symbolic links, %s has %d", dst, len(dstTree.links), src, len(srcTree.links))
+	if err := compareLinks(src, dst, srcTree, dstTree, outer); err != nil {
+		return CopySummary{}, err
 	}
-	for rel, target := range srcTree.links {
-		copied, ok := dstTree.links[rel]
-		if !ok {
-			return fmt.Errorf("verification failed: %s is missing the symbolic link %s", dst, rel)
-		}
-		if copied != target {
-			return fmt.Errorf("verification failed: %s points to %s, the source points to %s", filepath.Join(dst, rel), copied, target)
-		}
-	}
-	return nil
+
+	return CopySummary{
+		Digest: TreeDigest(hex.EncodeToString(outer.Sum(nil))),
+		Files:  srcTree.files,
+		Bytes:  srcTree.bytes,
+	}, nil
 }
 
 // treeSummary holds what VerifyTree compares.
@@ -371,10 +389,12 @@ func scanTree(root string) (treeSummary, error) {
 
 // compareContent reads every regular file in both trees and compares the
 // bytes. File count and total size alone pass a copy that swapped one file for
-// another of the same length.
-func compareContent(src, dst string, srcTree, dstTree treeSummary, progress CopyProgressCallback) error {
+// another of the same length. Each file enters outer, so the caller gets a
+// digest of the whole tree.
+func compareContent(src, dst string, srcTree, dstTree treeSummary, progress CopyProgressCallback, outer io.Writer) error {
 	var verified int64
-	for rel, size := range srcTree.sizes {
+	for _, rel := range sortedKeys(srcTree.sizes) {
+		size := srcTree.sizes[rel]
 		copiedSize, ok := dstTree.sizes[rel]
 		if !ok {
 			return fmt.Errorf("verification failed: %s is missing the file %s", dst, rel)
@@ -382,13 +402,18 @@ func compareContent(src, dst string, srcTree, dstTree treeSummary, progress Copy
 		if copiedSize != size {
 			return fmt.Errorf("verification failed: %s has %d bytes, the source file has %d", filepath.Join(dst, rel), copiedSize, size)
 		}
-		same, err := sameContent(filepath.Join(src, rel), filepath.Join(dst, rel))
+		srcSum, err := fileDigest(filepath.Join(src, rel))
 		if err != nil {
 			return fmt.Errorf("verification failed: %w", err)
 		}
-		if !same {
+		dstSum, err := fileDigest(filepath.Join(dst, rel))
+		if err != nil {
+			return fmt.Errorf("verification failed: %w", err)
+		}
+		if !bytes.Equal(srcSum, dstSum) {
 			return fmt.Errorf("verification failed: %s differs from the source file", filepath.Join(dst, rel))
 		}
+		writeFileEntry(outer, rel, size, dstSum)
 		verified += size
 		if progress != nil {
 			progress(verified, srcTree.bytes)
@@ -397,40 +422,138 @@ func compareContent(src, dst string, srcTree, dstTree treeSummary, progress Copy
 	return nil
 }
 
-// VerifyFile checks that a copied file holds the same bytes as its source.
-func VerifyFile(src, dst string) error {
-	srcInfo, err := os.Stat(src)
-	if err != nil {
-		return fmt.Errorf("verification failed: %w", err)
+// compareLinks checks that both trees hold the same symbolic links with the
+// same targets, and adds them to the digest.
+func compareLinks(src, dst string, srcTree, dstTree treeSummary, outer io.Writer) error {
+	if len(srcTree.links) != len(dstTree.links) {
+		return fmt.Errorf("verification failed: %s has %d symbolic links, %s has %d", dst, len(dstTree.links), src, len(srcTree.links))
 	}
-	dstInfo, err := os.Stat(dst)
-	if err != nil {
-		return fmt.Errorf("verification failed: %w", err)
-	}
-	if dstInfo.Size() != srcInfo.Size() {
-		return fmt.Errorf("verification failed: %s has %d bytes, the source file has %d", dst, dstInfo.Size(), srcInfo.Size())
-	}
-	same, err := sameContent(src, dst)
-	if err != nil {
-		return fmt.Errorf("verification failed: %w", err)
-	}
-	if !same {
-		return fmt.Errorf("verification failed: %s differs from the source file", dst)
+	for _, rel := range sortedKeys(srcTree.links) {
+		target := srcTree.links[rel]
+		copied, ok := dstTree.links[rel]
+		if !ok {
+			return fmt.Errorf("verification failed: %s is missing the symbolic link %s", dst, rel)
+		}
+		if copied != target {
+			return fmt.Errorf("verification failed: %s points to %s, the source points to %s", filepath.Join(dst, rel), copied, target)
+		}
+		writeLinkEntry(outer, rel, copied)
 	}
 	return nil
 }
 
-// sameContent reports whether two files hold the same bytes.
-func sameContent(a, b string) (bool, error) {
-	aSum, err := fileDigest(a)
-	if err != nil {
-		return false, err
+// writeFileEntry adds one regular file to a tree digest. The path, the size,
+// and a separator keep two different trees from writing the same bytes.
+func writeFileEntry(w io.Writer, rel string, size int64, sum []byte) {
+	_, _ = io.WriteString(w, "file\x00")
+	_, _ = io.WriteString(w, rel)
+	_, _ = w.Write([]byte{0})
+	_, _ = io.WriteString(w, strconv.FormatInt(size, 10))
+	_, _ = w.Write([]byte{0})
+	_, _ = w.Write(sum)
+	_, _ = w.Write([]byte{'\n'})
+}
+
+// writeLinkEntry adds one symbolic link and its target to a tree digest.
+func writeLinkEntry(w io.Writer, rel, target string) {
+	_, _ = io.WriteString(w, "link\x00")
+	_, _ = io.WriteString(w, rel)
+	_, _ = w.Write([]byte{0})
+	_, _ = io.WriteString(w, target)
+	_, _ = w.Write([]byte{'\n'})
+}
+
+// sortedKeys returns the keys of a map in a stable order, so a digest does not
+// depend on map iteration.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
 	}
-	bSum, err := fileDigest(b)
+	sort.Strings(keys)
+	return keys
+}
+
+// VerifyFile checks that a copied file holds the same bytes as its source.
+func VerifyFile(src, dst string) error {
+	_, err := VerifyFileSummary(src, dst)
+	return err
+}
+
+// VerifyFileSummary checks that a copied file holds the same bytes as its
+// source, and returns the digest of the copy.
+func VerifyFileSummary(src, dst string) (CopySummary, error) {
+	srcInfo, err := os.Stat(src)
 	if err != nil {
-		return false, err
+		return CopySummary{}, fmt.Errorf("verification failed: %w", err)
 	}
-	return bytes.Equal(aSum, bSum), nil
+	dstInfo, err := os.Stat(dst)
+	if err != nil {
+		return CopySummary{}, fmt.Errorf("verification failed: %w", err)
+	}
+	if dstInfo.Size() != srcInfo.Size() {
+		return CopySummary{}, fmt.Errorf("verification failed: %s has %d bytes, the source file has %d", dst, dstInfo.Size(), srcInfo.Size())
+	}
+	srcSum, err := fileDigest(src)
+	if err != nil {
+		return CopySummary{}, fmt.Errorf("verification failed: %w", err)
+	}
+	dstSum, err := fileDigest(dst)
+	if err != nil {
+		return CopySummary{}, fmt.Errorf("verification failed: %w", err)
+	}
+	if !bytes.Equal(srcSum, dstSum) {
+		return CopySummary{}, fmt.Errorf("verification failed: %s differs from the source file", dst)
+	}
+	return fileSummary(dstSum, dstInfo.Size()), nil
+}
+
+// fileSummary builds the digest of a single copied file.
+func fileSummary(sum []byte, size int64) CopySummary {
+	outer := sha256.New()
+	writeFileEntry(outer, "", size, sum)
+	return CopySummary{Digest: TreeDigest(hex.EncodeToString(outer.Sum(nil))), Files: 1, Bytes: size}
+}
+
+// DigestPath reads a stored copy and returns its digest: the digest of the file
+// when path is a regular file, or of the whole tree when path is a folder.
+// `exodrive verify` compares the result with the digest in the ledger.
+func DigestPath(path string) (CopySummary, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return CopySummary{}, err
+	}
+	if info.Mode().IsRegular() {
+		sum, err := fileDigest(path)
+		if err != nil {
+			return CopySummary{}, err
+		}
+		return fileSummary(sum, info.Size()), nil
+	}
+	if !info.IsDir() {
+		return CopySummary{}, fmt.Errorf("check the copy: %s is neither a file nor a folder", path)
+	}
+
+	tree, err := scanTree(path)
+	if err != nil {
+		return CopySummary{}, err
+	}
+	outer := sha256.New()
+	for _, rel := range sortedKeys(tree.sizes) {
+		sum, err := fileDigest(filepath.Join(path, rel))
+		if err != nil {
+			return CopySummary{}, err
+		}
+		writeFileEntry(outer, rel, tree.sizes[rel], sum)
+	}
+	for _, rel := range sortedKeys(tree.links) {
+		writeLinkEntry(outer, rel, tree.links[rel])
+	}
+	return CopySummary{
+		Digest: TreeDigest(hex.EncodeToString(outer.Sum(nil))),
+		Files:  tree.files,
+		Bytes:  tree.bytes,
+	}, nil
 }
 
 func fileDigest(path string) ([]byte, error) {

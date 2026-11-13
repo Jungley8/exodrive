@@ -19,6 +19,7 @@ const (
 	actionMoveBack = "move back"
 	actionDelete   = "delete"
 	actionChoose   = "choose"
+	actionCheck    = "check"
 )
 
 // friendly is a failure in the window's voice: what stopped, what stays safe,
@@ -43,6 +44,8 @@ func explain(err error, action string, t text) friendly {
 		f.Title = t.MoveBackStopped
 	case actionDelete:
 		f.Title = t.DeleteStopped
+	case actionCheck:
+		f.Title = t.CheckStopped
 	case actionChoose:
 		f.Title = t.PickerFailedTitle
 		f.Hint = t.PickerFailedHint

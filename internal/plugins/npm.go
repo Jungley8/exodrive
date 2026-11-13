@@ -88,7 +88,8 @@ func (p *NPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetRo
 	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("failed copying npm cache: %w", err)
 	}
-	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
+	summary, err := fsutil.VerifyTreeSummary(item.CurrentPath, dest, progress.Verify)
+	if err != nil {
 		return fmt.Errorf("npm cache: %w", err)
 	}
 
@@ -103,6 +104,9 @@ func (p *NPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetRo
 		OriginalConfig: item.ConfiguredPath,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
+		TreeDigest:     string(summary.Digest),
+		FileCount:      summary.Files,
+		TotalBytes:     summary.Bytes,
 	}); err != nil {
 		return err
 	}

@@ -34,6 +34,7 @@
           <a href="#window">Use the window</a>
           <a href="#cli">Use the command line</a>
           <a href="#ledger">The ledger</a>
+          <a href="#verify">Check a moved copy</a>
           <a href="#undo">Move a cache back</a>
           <a href="#stopping">Stop the window</a>
           <a href="#trouble">Troubleshooting</a>
@@ -148,7 +149,8 @@ exodrive orphans --clean</code></pre>
           <p>
             Exodrive writes <code>~/.exodrive/manifest.json</code>. Each move
             adds one record: the item, its old path, its new folder, the change
-            that points the tool at the copy, the size, and the time.
+            that points the tool at the copy, the size, the time, and the digest
+            of the copy.
           </p>
           <p>
             Exodrive locks the file while it writes, so two runs cannot lose a
@@ -163,6 +165,41 @@ exodrive orphans --clean</code></pre>
               Keep the ledger and the drive together. A move back needs both.
             </p>
           </div>
+
+          <h2 id="verify">Check a moved copy</h2>
+          <p>
+            A move records a digest of the copy. Press
+            <strong>Check the copy</strong> on a card, or run:
+          </p>
+          <pre><code>exodrive verify npm.cache
+exodrive verify --all
+exodrive verify --all --json</code></pre>
+          <p>
+            The check reads the copy again and compares the two digests. It
+            writes nothing to the drive. The command prints one line for each
+            copy, and it exits with code 1 when a copy is not ok.
+          </p>
+          <ul>
+            <li>
+              <strong>ok</strong>: the copy holds the bytes that the move wrote.
+            </li>
+            <li>
+              <strong>changed</strong>: a file in the copy differs from the
+              move. Move the cache back, then move it again.
+            </li>
+            <li>
+              <strong>missing</strong>: the copy is not at the recorded path.
+              Connect the drive.
+            </li>
+            <li>
+              <strong>unverified</strong>: the record holds no digest. A record
+              from an older Exodrive holds none.
+            </li>
+          </ul>
+          <p>
+            A check never reports <strong>ok</strong> for a record it cannot
+            prove.
+          </p>
 
           <h2 id="undo">Move a cache back</h2>
           <p>Press <strong>Move back</strong> on the card, then confirm.</p>

@@ -94,21 +94,28 @@ type text struct {
 	EmptyThisViewHelp string
 
 	// Cards.
-	Folder         string
-	Copy           string
-	Move           string
-	MoveBack       string
-	DeleteCache    string
-	TryAgain       string
-	MoveFailed     string
-	MoveBackFailed string
-	CannotMove     string
-	Unused         string
-	MoveStopped    string
-	UnusedNote     string
-	SwitchNative   string
-	SwitchLink     string
-	SwitchManual   string
+	Folder          string
+	Copy            string
+	Move            string
+	MoveBack        string
+	DeleteCache     string
+	TryAgain        string
+	MoveFailed      string
+	MoveBackFailed  string
+	CannotMove      string
+	Unused          string
+	MoveStopped     string
+	UnusedNote      string
+	SwitchNative    string
+	SwitchLink      string
+	SwitchManual    string
+	CheckCopy       string
+	CheckRunning    string
+	CheckOK         string
+	CheckChanged    string
+	CheckMissing    string
+	CheckUnverified string
+	CheckStopped    string
 
 	// Footer.
 	UpdateAvailable string // %s is available.
@@ -313,6 +320,14 @@ var englishText = text{
 	SwitchLink:     "Exodrive links the old folder to the copy. The program sees no change.",
 	SwitchManual:   "This cache is not in use. Delete it to free the space.",
 
+	CheckCopy:       "Check the copy",
+	CheckRunning:    "Checking the copy...",
+	CheckOK:         "The copy matches the move.",
+	CheckChanged:    "The copy differs from the move. Move the cache back, then move it again.",
+	CheckMissing:    "The drive is not connected. Connect it, then check again.",
+	CheckUnverified: "This move has no check. Move the cache back, then move it again.",
+	CheckStopped:    "The check stopped",
+
 	UpdateAvailable: "Version %s is available.",
 	UpdateOpen:      "Open the release page",
 	Details:         "Details",
@@ -509,6 +524,14 @@ var chineseText = text{
 	SwitchNative:   "Exodrive 会修改这个程序的设置。程序下次启动时读取。",
 	SwitchLink:     "Exodrive 把原目录链接到副本。程序不需要改动。",
 	SwitchManual:   "这个缓存没被使用。删除它即可释放空间。",
+
+	CheckCopy:       "检查副本",
+	CheckRunning:    "正在检查副本…",
+	CheckOK:         "副本与迁移时一致。",
+	CheckChanged:    "副本与迁移时不一致。请搬回后重新迁移。",
+	CheckMissing:    "外接盘未连接。请连接后重新检查。",
+	CheckUnverified: "这次迁移没有校验记录。请搬回后重新迁移。",
+	CheckStopped:    "检查已停止",
 
 	UpdateAvailable: "有新版本 %s 可用。",
 	UpdateOpen:      "打开发布页",

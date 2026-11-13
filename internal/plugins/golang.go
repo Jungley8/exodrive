@@ -115,7 +115,8 @@ func (p *GoProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoo
 	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("copy %s: %w", item.Title, err)
 	}
-	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
+	summary, err := fsutil.VerifyTreeSummary(item.CurrentPath, dest, progress.Verify)
+	if err != nil {
 		return fmt.Errorf("%s: %w", item.Title, err)
 	}
 
@@ -133,6 +134,9 @@ func (p *GoProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoo
 		OriginalConfig: item.ConfiguredPath,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
+		TreeDigest:     string(summary.Digest),
+		FileCount:      summary.Files,
+		TotalBytes:     summary.Bytes,
 	}); err != nil {
 		return err
 	}

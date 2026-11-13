@@ -131,6 +131,13 @@ fi
 	if err != nil || len(m.Records) != 1 {
 		t.Fatalf("manifest record missing: %+v", m)
 	}
+	rec := m.Records["npm.cache"]
+	if rec.TreeDigest == "" {
+		t.Fatal("the move recorded no digest, so a later check cannot prove the copy")
+	}
+	if rec.FileCount != 1 || rec.TotalBytes != int64(len("npm-tarball")) {
+		t.Fatalf("the record holds %+v, want one file of %d bytes", rec, len("npm-tarball"))
+	}
 
 	if err := p.Rollback(ctx, item); err != nil {
 		t.Fatalf("Rollback failed: %v", err)

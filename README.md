@@ -30,8 +30,9 @@ Exodrive runs the same steps for every toolchain.
    permissions and modification times.
 2. **Verify.** Exodrive reads every file in both trees and compares the
    content. A single different byte stops the migration. The local data stays
-   in place.
-3. **Record.** Exodrive writes the move to the ledger.
+   in place. The same pass computes a digest of the copy.
+3. **Record.** Exodrive writes the move to the ledger, with the digest, the
+   file count, and the byte count.
 4. **Switch.** Exodrive points the tool at the copy. It uses the tool's own
    configuration, or an atomic symbolic link.
 5. **Reclaim.** Exodrive deletes the local copy. The space is free.
@@ -262,6 +263,14 @@ List the item IDs:
 exodrive check
 ```
 
+Check a moved copy against its recorded digest:
+
+```sh
+exodrive verify npm.cache
+exodrive verify --all
+exodrive verify --all --json
+```
+
 ## Use the window
 
 1. Open `bin/exodrive-gui`, or `Exodrive.app`. The first start shows three
@@ -276,7 +285,9 @@ exodrive check
    shows its progress, and **Stop after this cache** stops it at the end of the
    cache that copies now. To move one cache, press **Move** on its card.
 5. To move a cache back, press **Move back** on its card. Confirm the move.
-6. To delete an unused cache, press **Delete cache** on its card. Confirm the
+6. To check a moved copy, press **Check the copy** on its card. The card shows
+   the answer and the next step.
+7. To delete an unused cache, press **Delete cache** on its card. Confirm the
    delete. This action cannot be undone.
 
 The window shows two gauges. The left gauge holds the free space of this Mac and
@@ -351,7 +362,7 @@ Mac**, move the cache again.
 
 Exodrive writes `~/.exodrive/manifest.json`. The file holds one record for each
 move: the item, the original path, the destination, the redirect method, the
-size, and the time.
+size, the time, and the digest of the copy.
 
 Exodrive locks the ledger while it writes, so two runs cannot lose a record.
 A record ID appears once.
@@ -359,6 +370,31 @@ A record ID appears once.
 Set `EXODRIVE_MANIFEST_PATH` to use another file. The tests use this variable.
 
 Keep the ledger and the external volume together. A rollback needs both.
+
+## Check a moved copy
+
+A move records a digest of the copy. Press **Check the copy** on a card, or run:
+
+```sh
+exodrive verify --all
+exodrive verify npm.cache
+exodrive verify --all --json
+```
+
+The check reads the copy again and compares the two digests. It writes nothing
+to the drive. The command prints one line for each copy. It exits with code 1
+when a copy is not ok.
+
+A check reports one of four states:
+
+- **ok**: the copy holds the bytes that the move wrote.
+- **changed**: a file in the copy differs from the move. Move the cache back,
+  then move it again.
+- **missing**: the copy is not at the recorded path. Connect the drive.
+- **unverified**: the record holds no digest. A record from an older Exodrive
+  holds none. Move the cache back, then move it again.
+
+A check never reports **ok** for a record it cannot prove.
 
 ## When something fails
 
@@ -383,6 +419,7 @@ record.
 - Exodrive copies data. A large VM disk takes time and temporary space.
 - Verification reads every file in both trees. A large cache takes about the
   time of a second copy before the switch runs.
+- A check reads the copy again, so a large copy takes time.
 - A migration needs the target volume to hold one complete copy.
 - A rollback needs the migrated copy on the external volume.
 - The process lock reads the process table. A tool that starts under an unusual

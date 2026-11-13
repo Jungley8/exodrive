@@ -65,6 +65,12 @@ type MigrationRecord struct {
 	OriginalConfig string         `json:"original_config,omitempty"`
 	MigratedAt     time.Time      `json:"migrated_at"`
 	SizeBytes      int64          `json:"size_bytes"`
+	// TreeDigest identifies the content of the copy at the time of the move,
+	// so `exodrive verify` can prove the copy later. A record written before
+	// version 2 holds no digest, and a check reports it as unverified.
+	TreeDigest string `json:"tree_digest,omitempty"`
+	FileCount  int64  `json:"file_count,omitempty"`
+	TotalBytes int64  `json:"total_bytes,omitempty"`
 }
 
 // Manifest tracks all migrations made by exodrive for safe rollback.
@@ -73,3 +79,7 @@ type Manifest struct {
 	UpdatedAt time.Time                  `json:"updated_at"`
 	Records   map[string]MigrationRecord `json:"records"`
 }
+
+// ManifestVersion is the version of the ledger that this build writes.
+// Version 2 adds the content digest of each copy.
+const ManifestVersion = 2

@@ -42,7 +42,7 @@ func loadManifestLocked() (*Manifest, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &Manifest{
-				Version: 1,
+				Version: ManifestVersion,
 				Records: make(map[string]MigrationRecord),
 			}, nil
 		}
@@ -52,6 +52,9 @@ func loadManifestLocked() (*Manifest, error) {
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, err
+	}
+	if m.Version > ManifestVersion {
+		return nil, fmt.Errorf("the ledger at %s comes from a newer Exodrive (version %d): update this build", p, m.Version)
 	}
 	if m.Records == nil {
 		m.Records = make(map[string]MigrationRecord)
@@ -69,6 +72,7 @@ func saveManifestLocked(m *Manifest) error {
 		return err
 	}
 
+	m.Version = ManifestVersion
 	m.UpdatedAt = time.Now()
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {

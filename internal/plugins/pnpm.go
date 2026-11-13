@@ -159,7 +159,8 @@ func (p *PNPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetR
 	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
 		return fmt.Errorf("copy pnpm store: %w", err)
 	}
-	if err := fsutil.VerifyTreeProgress(item.CurrentPath, dest, progress.Verify); err != nil {
+	summary, err := fsutil.VerifyTreeSummary(item.CurrentPath, dest, progress.Verify)
+	if err != nil {
 		return fmt.Errorf("pnpm store: %w", err)
 	}
 
@@ -172,6 +173,9 @@ func (p *PNPMProvider) Migrate(ctx context.Context, item core.CacheItem, targetR
 		OriginalConfig: item.ConfiguredPath,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
+		TreeDigest:     string(summary.Digest),
+		FileCount:      summary.Files,
+		TotalBytes:     summary.Bytes,
 	}); err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,6 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"exodrive/internal/core"
+	"exodrive/internal/fsutil"
 )
 
 var testBinary string
@@ -226,12 +231,9 @@ func TestVersionLabel(t *testing.T) {
 	}
 }
 
-// runCLIEnv runs the CLI with the given variables replacing any inherited
-// value, so a test never reads the developer's caches.
-func runCLIEnv(t *testing.T, overrides map[string]string, args ...string) (string, int) {
-	t.Helper()
-	cmd := exec.Command(testBinary, args...)
-
+// testEnv merges the test overrides into the environment of this process, so a
+// test never reads the developer's caches.
+func testEnv(overrides map[string]string) []string {
 	env := make([]string, 0, len(os.Environ())+len(overrides))
 	for _, entry := range os.Environ() {
 		key := strings.SplitN(entry, "=", 2)[0]
@@ -243,7 +245,13 @@ func runCLIEnv(t *testing.T, overrides map[string]string, args ...string) (strin
 	for key, value := range overrides {
 		env = append(env, key+"="+value)
 	}
-	cmd.Env = env
+	return env
+}
+
+func runCLIEnv(t *testing.T, overrides map[string]string, args ...string) (string, int) {
+	t.Helper()
+	cmd := exec.Command(testBinary, args...)
+	cmd.Env = testEnv(overrides)
 
 	out, err := cmd.CombinedOutput()
 	exitCode := 0
@@ -255,6 +263,28 @@ func runCLIEnv(t *testing.T, overrides map[string]string, args ...string) (strin
 		exitCode = exitErr.ExitCode()
 	}
 	return string(out), exitCode
+}
+
+// runCLIStdout keeps stdout apart from stderr, so a test can prove that --json
+// writes JSON and nothing else to stdout.
+func runCLIStdout(t *testing.T, overrides map[string]string, args ...string) (string, string, int) {
+	t.Helper()
+	cmd := exec.Command(testBinary, args...)
+	cmd.Env = testEnv(overrides)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	exitCode := 0
+	if err := cmd.Run(); err != nil {
+		exitErr, ok := err.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("command failed with non-exit error: %v", err)
+		}
+		exitCode = exitErr.ExitCode()
+	}
+	return stdout.String(), stderr.String(), exitCode
 }
 
 // TestCLI_MigrateDryRunMovesNothing pins the rule that --dry-run reports the
@@ -415,5 +445,164 @@ func TestCLI_RemindsAboutAFolderOnThisMac(t *testing.T) {
 	}
 	if !strings.Contains(out, "Dry run.") {
 		t.Fatalf("the warning replaced the plan:\n%s", out)
+	}
+}
+
+// verifyFixture writes a ledger that records one moved copy, and returns the
+// environment that points the command at it.
+type verifyFixture struct {
+	env  map[string]string
+	copy string
+}
+
+func newVerifyFixture(t *testing.T, withDigest bool) verifyFixture {
+	t.Helper()
+	tmp := t.TempDir()
+	home := filepath.Join(tmp, "home")
+	copyDir := filepath.Join(tmp, "external", "npm-cache")
+	for _, dir := range []string{home, copyDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(copyDir, "sample.tgz"), []byte("npm-tarball"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := fsutil.DigestPath(copyDir)
+	if err != nil {
+		t.Fatalf("DigestPath failed: %v", err)
+	}
+
+	rec := core.MigrationRecord{
+		ID:             "npm.cache",
+		ToolName:       "npm",
+		OriginalPath:   filepath.Join(home, ".npm"),
+		DestinationDir: copyDir,
+		RedirectMethod: core.RedirectNativeConfig,
+		MigratedAt:     time.Now(),
+		SizeBytes:      summary.Bytes,
+	}
+	if withDigest {
+		rec.TreeDigest = string(summary.Digest)
+		rec.FileCount = summary.Files
+		rec.TotalBytes = summary.Bytes
+	}
+
+	ledger := filepath.Join(home, "manifest.json")
+	data, err := json.MarshalIndent(core.Manifest{
+		Version: core.ManifestVersion,
+		Records: map[string]core.MigrationRecord{rec.ID: rec},
+	}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ledger, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	return verifyFixture{
+		env: map[string]string{
+			"HOME":                    home,
+			"EXODRIVE_MANIFEST_PATH":  ledger,
+			"EXODRIVE_NO_FAILURE_LOG": "",
+		},
+		copy: copyDir,
+	}
+}
+
+func TestCLI_VerifyAcceptsAGoodCopy(t *testing.T) {
+	f := newVerifyFixture(t, true)
+
+	out, code := runCLIEnv(t, f.env, "verify", "npm.cache")
+	if code != 0 {
+		t.Fatalf("verify of a good copy exits %d, want 0:\n%s", code, out)
+	}
+	if !strings.Contains(out, "[ok] npm.cache") {
+		t.Fatalf("verify does not report the state:\n%s", out)
+	}
+	if !strings.Contains(out, "Every copy matches its move.") {
+		t.Fatalf("verify does not report the summary:\n%s", out)
+	}
+}
+
+func TestCLI_VerifyReportsADamagedCopy(t *testing.T) {
+	f := newVerifyFixture(t, true)
+	if err := os.WriteFile(filepath.Join(f.copy, "sample.tgz"), []byte("npm-tarbal"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, code := runCLIEnv(t, f.env, "verify", "npm.cache")
+	if code != 1 {
+		t.Fatalf("verify of a damaged copy exits %d, want 1:\n%s", code, out)
+	}
+	if !strings.Contains(out, "[changed] npm.cache") {
+		t.Fatalf("verify does not report changed:\n%s", out)
+	}
+	if !strings.Contains(out, "1 copy needs attention") {
+		t.Fatalf("verify does not report the summary:\n%s", out)
+	}
+}
+
+func TestCLI_VerifyReportsAMissingCopy(t *testing.T) {
+	f := newVerifyFixture(t, true)
+	if err := os.RemoveAll(f.copy); err != nil {
+		t.Fatal(err)
+	}
+
+	out, code := runCLIEnv(t, f.env, "verify", "npm.cache")
+	if code != 1 {
+		t.Fatalf("verify of a missing copy exits %d, want 1:\n%s", code, out)
+	}
+	if !strings.Contains(out, "[missing] npm.cache") || !strings.Contains(out, "Connect the drive") {
+		t.Fatalf("verify does not report the missing copy with a next step:\n%s", out)
+	}
+}
+
+// TestCLI_VerifyNeverCallsAnOldRecordOK keeps the answer honest for a record
+// that predates the digest: the tool cannot prove a copy it never measured.
+func TestCLI_VerifyNeverCallsAnOldRecordOK(t *testing.T) {
+	f := newVerifyFixture(t, false)
+
+	out, code := runCLIEnv(t, f.env, "verify", "npm.cache")
+	if code != 1 {
+		t.Fatalf("verify of a record without a digest exits %d, want 1:\n%s", code, out)
+	}
+	if !strings.Contains(out, "[unverified] npm.cache") {
+		t.Fatalf("verify does not report unverified:\n%s", out)
+	}
+}
+
+func TestCLI_VerifyAllJSONWritesJSONToStdout(t *testing.T) {
+	f := newVerifyFixture(t, true)
+
+	stdout, stderr, code := runCLIStdout(t, f.env, "verify", "--all", "--json")
+	if code != 0 {
+		t.Fatalf("verify --all exits %d, want 0; stderr: %s", code, stderr)
+	}
+	if stderr != "" {
+		t.Fatalf("verify --all wrote to stderr: %s", stderr)
+	}
+
+	var results []core.VerifyResult
+	if err := json.Unmarshal([]byte(stdout), &results); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if len(results) != 1 || results[0].ID != "npm.cache" || results[0].State != core.VerifyOK {
+		t.Fatalf("results are %+v, want one ok npm copy", results)
+	}
+}
+
+func TestCLI_VerifyUsage(t *testing.T) {
+	f := newVerifyFixture(t, true)
+
+	out, code := runCLIEnv(t, f.env, "verify")
+	if code != 1 || !strings.Contains(out, "Usage: exodrive verify") {
+		t.Fatalf("verify without an item exits %d:\n%s", code, out)
+	}
+
+	out, code = runCLIEnv(t, f.env, "verify", "unknown.item")
+	if code != 1 || !strings.Contains(out, "holds no move for 'unknown.item'") {
+		t.Fatalf("verify of an unknown item exits %d:\n%s", code, out)
 	}
 }

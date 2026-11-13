@@ -64,6 +64,8 @@ type AppState struct {
 	Selected *core.Signal[map[string]bool]
 	// Failures holds the reason a cache did not move, by cache ID.
 	Failures *core.Signal[map[string]shownFailure]
+	// Checks holds the answer of the last check of a moved copy, by cache ID.
+	Checks *core.Signal[map[string]checkState]
 	// FilterFamily holds the group the rail keeps, or "" for every group.
 	FilterFamily *core.Signal[cacheFamily]
 	// FilterPlace holds the place the list keeps: "" for every place, or
@@ -90,6 +92,11 @@ type AppState struct {
 	IsCleaning *core.Signal[bool]
 	// CleanTarget holds the unused cache ID that waits for confirmation, or "".
 	CleanTarget *core.Signal[string]
+
+	// IsChecking blocks a second check and the other long actions.
+	IsChecking *core.Signal[bool]
+	// CheckTarget holds the cache ID that the window checks now, or "".
+	CheckTarget *core.Signal[string]
 
 	// MoveCurrent is the title of the cache that the window moves now.
 	MoveCurrent *core.Signal[string]
@@ -197,6 +204,7 @@ func newState(cx *core.Scope, engine *exoCore.Engine) *AppState {
 		FilterFamily:    core.NewSignal[cacheFamily](cx, ""),
 		FilterPlace:     core.NewSignal(cx, ""),
 		Failures:        core.NewSignalFunc(cx, map[string]shownFailure{}, nil),
+		Checks:          core.NewSignalFunc(cx, map[string]checkState{}, nil),
 		TargetDir:       core.NewSignal(cx, ""),
 		Target:          core.NewSignal(cx, targetState{}),
 		Local:           core.NewSignal(cx, diskState{}),
@@ -209,6 +217,8 @@ func newState(cx *core.Scope, engine *exoCore.Engine) *AppState {
 		RollbackTarget:  core.NewSignal(cx, ""),
 		IsCleaning:      core.NewSignal(cx, false),
 		CleanTarget:     core.NewSignal(cx, ""),
+		IsChecking:      core.NewSignal(cx, false),
+		CheckTarget:     core.NewSignal(cx, ""),
 		MoveCurrent:     core.NewSignal(cx, ""),
 		MovePhase:       core.NewSignal(cx, exoCore.PhaseCopy),
 		MoveDone:        core.NewSignal(cx, 0),
@@ -230,7 +240,8 @@ func newState(cx *core.Scope, engine *exoCore.Engine) *AppState {
 
 // busy reports whether a long action runs. A second action waits for it.
 func busy(state *AppState) bool {
-	return state.IsScanning.Get() || state.IsMigrating.Get() || state.IsRollingBack.Get() || state.IsCleaning.Get()
+	return state.IsScanning.Get() || state.IsMigrating.Get() || state.IsRollingBack.Get() ||
+		state.IsCleaning.Get() || state.IsChecking.Get()
 }
 
 func toggleSelected(state *AppState, id string) {
