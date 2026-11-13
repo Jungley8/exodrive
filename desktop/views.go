@@ -688,6 +688,7 @@ func renderFooter(cx *core.Scope, state *AppState) core.Node {
 	return core.View{Style: core.Style{Direction: core.Row, AlignItems: core.AlignCenter, Gap: 8}, Children: []core.Node{
 		typeLinef(func() string { return state.Status.Get() }, typeSmall, colors.Muted),
 		fill(),
+		core.Dynamic(func(cx *core.Scope) core.Node { return updateLine(cx, state) }),
 		core.Show{
 			When: func() bool { return state.AdvancedOpen.Get() },
 			Then: func(cx *core.Scope) core.Node {

@@ -72,8 +72,9 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
+          VERSION: ${{ steps.version.outputs.number }}
         run: |
-          go build -trimpath -ldflags "-s -w" \
+          go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
             -o "dist/exodrive_${GOOS}_${GOARCH}/exodrive-gui" ./cmd/exodrive-gui
 
       - name: Package

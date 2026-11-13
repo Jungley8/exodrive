@@ -106,6 +106,8 @@ type AppState struct {
 	// WelcomeOpen shows the first-run card. It starts open until the person
 	// takes the first step, and stays closed after that.
 	WelcomeOpen *core.Signal[bool]
+	// Update holds the newer release that the check found, or an empty one.
+	Update *core.Signal[updateState]
 
 	// Root is the window scope. Background work posts through it, because the
 	// scope of a Dynamic branch is gone as soon as that branch re-renders.
@@ -153,6 +155,8 @@ func window(cx *core.Scope, state *AppState) core.Node {
 	if n, ok := interruptedNotice(state.Text); ok {
 		state.Notice.Set(n)
 	}
+	// The check runs on its own and never blocks the window.
+	checkForUpdate(cx, state)
 
 	return core.View{
 		Style: core.Style{Direction: core.Column, Width: core.Pct(100), Height: core.Pct(100), Padding: core.All(20), Gap: 14},
@@ -205,6 +209,7 @@ func newState(cx *core.Scope, engine *exoCore.Engine) *AppState {
 		ConfirmOpen:     core.NewSignal(cx, false),
 		AdvancedOpen:    core.NewSignal(cx, false),
 		WelcomeOpen:     core.NewSignal(cx, !welcomeSeen()),
+		Update:          core.NewSignal(cx, updateState{}),
 		Root:            cx,
 		Engine:          engine,
 		Text:            texts(languageOf(cx)),

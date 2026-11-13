@@ -111,6 +111,8 @@ type text struct {
 	SwitchManual   string
 
 	// Footer.
+	UpdateAvailable string // %s is available.
+	UpdateOpen      string
 	Details         string
 	HideDetails     string
 	MoveRecords     string
@@ -298,6 +300,8 @@ var englishText = text{
 	SwitchLink:     "Exodrive links the old folder to the copy. The program sees no change.",
 	SwitchManual:   "This cache is not in use. Delete it to free the space.",
 
+	UpdateAvailable: "Version %s is available.",
+	UpdateOpen:      "Open the release page",
 	Details:         "Details",
 	HideDetails:     "Hide details",
 	MoveRecords:     "Move records",
@@ -481,6 +485,8 @@ var chineseText = text{
 	SwitchLink:     "Exodrive 把原目录链接到副本。程序不需要改动。",
 	SwitchManual:   "这个缓存没被使用。删除它即可释放空间。",
 
+	UpdateAvailable: "有新版本 %s 可用。",
+	UpdateOpen:      "打开发布页",
 	Details:         "详细信息",
 	HideDetails:     "收起详细信息",
 	MoveRecords:     "迁移记录",

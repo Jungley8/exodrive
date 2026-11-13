@@ -28,7 +28,7 @@ APP="$OUT/Exodrive.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-(cd "$ROOT" && go build -trimpath -ldflags "-s -w" -o "$APP/Contents/MacOS/Exodrive" ./cmd/exodrive-gui)
+(cd "$ROOT" && go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "$APP/Contents/MacOS/Exodrive" ./cmd/exodrive-gui)
 
 cp "$ROOT/README.md" "$ROOT/README.zh.md" "$ROOT/LICENSE" "$ROOT/packaging/AppIcon.icns" "$APP/Contents/Resources/"
 sed "s/__VERSION__/$VERSION/g" "$ROOT/packaging/Info.plist.in" > "$APP/Contents/Info.plist"
