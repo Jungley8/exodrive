@@ -87,7 +87,7 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 
 ## 环境要求
 
-- 需要一块文件系统受支持的外置磁盘。
+- 需要一块文件系统受支持的外置磁盘：macOS 与 Linux 用 APFS、HFS+、ext2/3/4、btrfs、zfs、xfs、f2fs 或 bcachefs；Windows 用 NTFS。
 - 目标磁盘需要容纳每个缓存的完整副本。
 - 从源码构建需要 Go 1.27 或更高版本。
 
@@ -97,7 +97,7 @@ Exodrive 可为 macOS、Linux、Windows 构建。承诺只覆盖一个平台：
 |---|---|---|---|
 | macOS 13 或更高版本 | 发布 | 发布 | 全部测试在 macOS 上运行 |
 | Linux | 不发布 | 发布 | CI 在 Ubuntu 上运行测试 |
-| Windows | 可从源码构建 | 可从源码构建 | 没有测试覆盖 |
+| Windows | 发布 | 发布 | Windows 上没有测试 |
 
 没有承诺的平台上的 bug 仍然是 bug。请报告，修复走同样的检查。
 
@@ -109,9 +109,15 @@ Exodrive 可为 macOS、Linux、Windows 构建。承诺只覆盖一个平台：
 curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh
 ```
 
-脚本读取最新版本，下载对应本机的包，并用 `SHA256SUMS` 校验。校验不通过就停止，不写入任何文件。macOS 上把 `Exodrive.app` 装到 `~/Applications`，命令行工具装到 `~/.local/bin`；Linux 上只装命令行工具。
+Windows 上在 PowerShell 里运行：
 
-运行前可以先读脚本：<https://jungley8.github.io/exodrive/install.sh>
+```powershell
+irm https://jungley8.github.io/exodrive/install.ps1 | iex
+```
+
+脚本读取最新版本，下载对应本机的包，并用 `SHA256SUMS` 校验。校验不通过就停止，不写入任何文件。macOS 上把 `Exodrive.app` 装到 `~/Applications`，命令行工具装到 `~/.local/bin`；Linux 上只装命令行工具；Windows 上把两个程序装到 `%LOCALAPPDATA%\Programs\Exodrive`。
+
+运行前可以先读脚本：<https://jungley8.github.io/exodrive/install.sh> 或 <https://jungley8.github.io/exodrive/install.ps1>
 
 | 选项 | 作用 |
 |---|---|

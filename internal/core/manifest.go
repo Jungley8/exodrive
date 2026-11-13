@@ -111,7 +111,7 @@ func saveManifestLocked(m *Manifest) error {
 		return err
 	}
 	defer func() { _ = d.Close() }()
-	return d.Sync()
+	return syncDir(d)
 }
 
 // LoadManifest reads the manifest file from ~/.exodrive/manifest.json (or EXODRIVE_MANIFEST_PATH).

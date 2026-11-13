@@ -53,19 +53,26 @@
           <h2 id="install">Install</h2>
           <p>Install the newest release with one command:</p>
           <pre><code>curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh</code></pre>
+          <p>On Windows, run this command in PowerShell:</p>
+          <pre><code>irm https://jungley8.github.io/exodrive/install.ps1 | iex</code></pre>
           <p>
             The script downloads the archive for this machine and checks it
             against <code>SHA256SUMS</code>. A mismatch stops the install before
             it writes anything. On macOS it installs <code>Exodrive.app</code>
             to <code>~/Applications</code> and the command line tool to
             <code>~/.local/bin</code>. On Linux it installs the command line
-            tool only.
+            tool only. On Windows it installs both programs to
+            <code>%LOCALAPPDATA%\Programs\Exodrive</code>.
           </p>
-          <p>Read the script before you run it: <a href="https://jungley8.github.io/exodrive/install.sh">install.sh</a></p>
+          <p>Read the script before you run it: <a href="https://jungley8.github.io/exodrive/install.sh">install.sh</a> or <a href="https://jungley8.github.io/exodrive/install.ps1">install.ps1</a></p>
           <p>Install one part, or another version:</p>
           <pre><code>curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh -s -- --cli
 curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh -s -- --app
-curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh -s -- --version v0.7.0</code></pre>
+curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh -s -- --version v0.8.0</code></pre>
+          <p>
+            <code>install.ps1</code> takes <code>-Version</code> and
+            <code>-Dir</code>.
+          </p>
           <p>
             A download from a browser adds the quarantine flag, and macOS asks
             for your confirmation on the first start. Right-click the app, then
@@ -83,7 +90,7 @@ make app          # bin/Exodrive.app, signed with an ad-hoc identity</code></pre
           <p>Go 1.27 or later builds the source.</p>
 
           <h2 id="window">Use the window</h2>
-          <p>The window opens on a check of this Mac. It lists every cache it can move.</p>
+          <p>The window opens on a check of this computer. It lists every cache it can move.</p>
           <ol>
             <li>
               <strong>Choose a folder.</strong> Press <strong>Choose</strong> to
@@ -101,7 +108,7 @@ make app          # bin/Exodrive.app, signed with an ad-hoc identity</code></pre
           </ol>
           <p>
             The window shows two gauges. The left gauge holds the free space of
-            this Mac and the bytes in caches. The right gauge holds the free
+            this computer and the bytes in caches. The right gauge holds the free
             space of the chosen drive and the bytes that moved there.
           </p>
           <p>
@@ -188,8 +195,8 @@ exodrive rollback npm.cache</code></pre>
           </p>
           <p>
             A window that closes in the middle of a copy leaves a partial copy on
-            the drive and the full cache on this Mac. Run a check. If the card
-            still says <strong>On this Mac</strong>, move the cache again.
+            the drive and the full cache here. Run a check. If the card
+            still shows the local state, move the cache again.
           </p>
 
           <h2 id="trouble">Troubleshooting</h2>
@@ -212,7 +219,7 @@ exodrive rollback npm.cache</code></pre>
               </tr>
               <tr>
                 <td>This drive cannot hold caches</td>
-                <td>Choose a folder on APFS, HFS+, ext4, btrfs, zfs, xfs, f2fs, or bcachefs.</td>
+                <td>Choose a folder on APFS, HFS+, ext4, btrfs, zfs, xfs, f2fs, bcachefs, or NTFS.</td>
               </tr>
               <tr>
                 <td>Your shell sets the cache path</td>
@@ -230,8 +237,8 @@ exodrive rollback npm.cache</code></pre>
           </table>
           <p>
             A toolchain that Exodrive cannot find does not appear in the list.
-            The window reads the PATH of your login shell. Add the tool to that
-            PATH, then press <strong>Rescan</strong>.
+            The window reads the PATH of your shell. Add the tool to that PATH,
+            then press <strong>Rescan</strong>.
           </p>
 
           <h2 id="report">Report a failure</h2>
@@ -264,8 +271,8 @@ exodrive rollback npm.cache</code></pre>
               tests it on Ubuntu.
             </li>
             <li>
-              <strong>Windows:</strong> the window builds from source. No build
-              ships and no test covers it.
+              <strong>Windows:</strong> the command line tool and the window
+              ship. No test runs on Windows.
             </li>
           </ul>
           <p>
@@ -275,7 +282,7 @@ exodrive rollback npm.cache</code></pre>
 
           <h2 id="security">Security</h2>
           <p>
-            Exodrive runs as you. It reads the tool settings on this Mac and
+            Exodrive runs as you. It reads the tool settings on this computer and
             writes the files the tools use. It opens no network service.
           </p>
           <p>

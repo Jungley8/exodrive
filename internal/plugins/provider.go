@@ -106,3 +106,10 @@ func toolQuery(ctx context.Context, name string, args ...string) (string, bool) 
 func toolMissingReason(tool, command string) string {
 	return fmt.Sprintf("%s did not answer '%s'. Put %s on PATH, then scan again.", tool, command, tool)
 }
+
+// movedOffVolume reports whether a cache path already points away from the
+// volume that holds the home folder. The ledger holds every move Exodrive made,
+// so this covers a path that the user or another tool moved by hand.
+func movedOffVolume(path string) bool {
+	return fsutil.IsSymlink(path) || fsutil.IsOnExternalVolume(path)
+}

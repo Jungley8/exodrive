@@ -20,6 +20,7 @@ var pathOnce sync.Once
 // holds only /usr/bin, /bin, /usr/sbin, and /sbin. Homebrew, nvm, and custom
 // folders are missing, so every tool query fails and each cache shows Blocked.
 // The user's terminal finds the same tools, because the shell sets PATH.
+// A Windows window inherits the PATH of the user, so it runs no query.
 //
 // The command line already inherits the shell PATH, so a run that finds its
 // tools never pays for the query.
@@ -55,7 +56,10 @@ func MergePath(currentPath, extraPath string) string {
 func loginShellPath(ctx context.Context) string {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
-		shell = "/bin/zsh"
+		shell = defaultShell()
+	}
+	if shell == "" {
+		return ""
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)

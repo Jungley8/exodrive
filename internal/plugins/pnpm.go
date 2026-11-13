@@ -65,7 +65,7 @@ func (p *PNPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
 			size, _ := fsutil.DirSize(ctx, path)
 			isSymlink := fsutil.IsSymlink(path)
-			isMigrated := strings.HasPrefix(path, "/Volumes/") || isSymlink
+			isMigrated := movedOffVolume(path)
 			isActive := (path == storeRoot)
 
 			// The store folder name carries the store layout version.

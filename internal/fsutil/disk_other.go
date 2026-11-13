@@ -1,23 +1,24 @@
-//go:build !darwin && !linux
+//go:build !darwin && !linux && !windows
 
 package fsutil
 
-import (
-	"fmt"
-	"syscall"
-)
+import "errors"
 
-// GetDiskUsage returns free bytes, total bytes, and the filesystem name.
-// Exodrive supports macOS and Linux. Other platforms report an unknown
-// filesystem, which the allowlist refuses, so no migration runs there.
-func GetDiskUsage(path string) (freeBytes, totalBytes int64, fstype string, err error) {
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(path, &stat); err != nil {
-		return 0, 0, "", err
-	}
-
-	freeBytes = int64(stat.Bavail) * int64(stat.Bsize)
-	totalBytes = int64(stat.Blocks) * int64(stat.Bsize)
-
-	return freeBytes, totalBytes, fmt.Sprintf("unknown-0x%x", stat.Type), nil
+// GetDiskUsage reports that this system has no implementation. Exodrive refuses
+// the migration instead of guessing a number the user cannot check.
+func GetDiskUsage(string) (freeBytes, totalBytes int64, fstype string, err error) {
+	return 0, 0, "", errors.New("read disk usage: this system has no implementation")
 }
+
+// filesystemHint names the filesystems the allowlist accepts on this system.
+const filesystemHint = "a filesystem Exodrive supports"
+
+// sameDevice reports that this system gives no device identity, so Exodrive
+// cannot tell whether the target sits on the same disk.
+func sameDevice(string, string) (bool, error) {
+	return false, errors.New("compare devices: this system reports no device")
+}
+
+// IsOnExternalVolume always reports false: this system mounts no second volume
+// under a known root.
+func IsOnExternalVolume(string) bool { return false }

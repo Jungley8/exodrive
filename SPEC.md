@@ -25,12 +25,15 @@ The promise is deliberately narrow. Only macOS carries a support promise.
 |---|---|---|---|
 | macOS 13+ | Ships as an app bundle | Ships | Every test runs on `macos-latest` |
 | Linux | Not shipped | Ships | CI runs the suite on `ubuntu-latest` |
-| Windows | Builds from source | Builds from source | No test covers it |
+| Windows 10+ | Ships as a zip archive | Ships | CI builds it; no test runs on Windows |
 
 - A bug on a platform without a promise is still a bug. A fix follows the
   same checks as a fix on macOS.
-- The window uses nsgo, which chooses its native toolkit at build time. A
-  Windows window is unverified; no part of this specification claims it works.
+- The window uses nsgo, which chooses its native toolkit at build time. nsgo
+  pins a cgo-free Win32 backend with a folder picker, so the window compiles
+  for `windows/amd64` and `windows/arm64`.
+- Windows ships unverified. No one has run the binary on Windows hardware,
+  and this specification claims nothing about how it behaves there.
 
 ## 2. Architecture & Contracts
 
@@ -50,6 +53,8 @@ desktop/                  # nsgo reactive window
 packaging/Info.plist.in   # app bundle template
 scripts/make-app.sh       # bundle and sign Exodrive.app
 scripts/check-site.sh     # guard for the pages under site/
+scripts/install.sh        # one-line install for macOS and Linux
+scripts/install.ps1       # one-line install for Windows
 site/                     # landing page and documentation, served by GitHub Pages
 .github/workflows/        # CI, release, and pages
 ```
@@ -115,23 +120,52 @@ Exodrive compares it with the destination. Identical trees come from an earlier
 rollback, so Exodrive removes the destination. Different trees keep both copies
 and return an error with the record intact.
 
+### Platform notes
+
+Each system provides the same four primitives. A system that cannot provide one
+refuses the migration; none of them falls back to a weaker mode.
+
+| Primitive | macOS and Linux | Windows |
+|---|---|---|
+| Disk usage | `Statfs` | `GetDiskFreeSpaceExW` |
+| Filesystem name | `Statfs_t.Fstypename`, or the `Type` magic number | `GetVolumeInformationW` |
+| Device identity | `Stat_t.Dev` | the volume serial number |
+| Mount points | `/Volumes/<name>` | ready drive roots from `GetLogicalDrives` |
+| Process table | `ps -axo pid=,args=` | `Get-CimInstance Win32_Process` through PowerShell |
+| Link | symbolic link | directory junction (`mklink /J`) |
+| Ledger lock | `flock(LOCK_EX)` | `LockFileEx` |
+| Directory flush | `Sync` | nothing to flush |
+
+- A junction needs no administrator rights, where a symbolic link needs
+  Developer Mode. A junction holds directories on NTFS only, so NTFS is the one
+  Windows entry in the allowlist and exFAT stays refused.
+- A file link has no Windows implementation. A provider that must link a single
+  file refuses the migration there and says why.
+- An unreadable process table, or a missing PowerShell, fails the process check
+  closed. The migration does not run without the check.
+
 ## 3. Invariants & Fail-Closed Guards
 
 1. **Filesystem allowlist**:
    - The target must report `apfs`, `hfs`, `hfs+`, `ext4`, `ext3`, `ext2`,
-     `btrfs`, `zfs`, `xfs`, `f2fs`, or `bcachefs`.
+     `btrfs`, `zfs`, `xfs`, `f2fs`, `bcachefs`, or `ntfs`.
    - macOS reads the name from `Statfs_t.Fstypename`. Linux maps the
      `Statfs_t.Type` magic number, and reports any other value as a hex number.
-     A platform without a mapping reports an unknown name.
+     Windows reads the name from `GetVolumeInformationW`.
    - An unknown filesystem is refused. The list is an allowlist, not a denylist.
+   - exFAT and FAT32 are refused on every system: they hold neither junctions
+     nor POSIX modes.
 2. **Process lock**:
    - `docker` refuses to run while Docker Desktop, OrbStack, or Colima runs.
    - Each package manager refuses to run while its own process runs.
-   - The check reads `ps -axo pid=,args=` and matches the executable and the
+   - The check reads the process table and matches the executable and the
      arguments. A tool that starts through an interpreter is still found:
      `node .../npm-cli.js` matches `npm`. A flag token is skipped, so
      `--tools=cargo` does not match `cargo`. A shell assignment is skipped, so
      `CARGO_HOME=/tmp/cargo exodrive migrate` does not match `cargo`.
+   - macOS and Linux read `ps -axo pid=,args=`. Windows reads
+     `Get-CimInstance Win32_Process` through PowerShell, because the command
+     line decides whether `node.exe` runs npm.
    - An unreadable process table is an error. The migration does not run blind.
 3. **Environment overrides**:
    - npm, pnpm, yarn, Go, and pip accept a cache path from the environment. A
@@ -149,7 +183,8 @@ and return an error with the record intact.
    - The ledger is `~/.exodrive/manifest.json`, overridden by
      `EXODRIVE_MANIFEST_PATH`.
    - Writes are atomic and durable: a unique temporary file, a flush, a rename,
-     then a flush of the directory.
+     then a flush of the directory on macOS and Linux. Windows cannot flush a
+     directory handle, so it flushes the file only.
    - Writers take an exclusive lock on `manifest.json.lock`, so two Exodrive
      processes cannot lose an update.
    - A record ID is unique. A second record for the same ID is refused.
@@ -159,7 +194,8 @@ and return an error with the record intact.
 7. **Orphan deletion guard**:
    - `CleanOrphan` accepts an absolute path only.
    - It refuses `/`, the user home directory, a top-level folder inside the home
-     directory, and any path with fewer than three segments below `/`.
+     directory, and any path with fewer than three segments below the volume
+     root.
 8. **pnpm store layout**:
    - `pnpm store path` reports `<store-dir>/v<N>`. pnpm adds that folder to
      store-dir on every run.
@@ -412,8 +448,16 @@ and return an error with the record intact.
 
 ## 7. Release contract
 
-- `release.yml` runs the test suite, builds four CLI targets, builds two app
-  bundles on macOS, writes `SHA256SUMS`, and publishes the release.
+- `release.yml` runs the test suite, builds six CLI targets, builds four
+  Windows programs and two app bundles, writes `SHA256SUMS`, and publishes the
+  release.
+- The matrix builds `darwin` and `linux` for `arm64` and `amd64`, and `windows`
+  for `amd64` and `arm64`. Every target builds on `ubuntu-latest` with
+  `CGO_ENABLED=0`.
+- A Windows program carries `.exe`. A Windows archive is
+  `exodrive_<tag>_windows_<arch>.zip`, holding `exodrive.exe`,
+  `exodrive-gui.exe`, the READMEs, and the license. Windows users open a zip
+  with one click, so the archive is a zip and not a tarball.
 - The CI bundle is ad-hoc signed, because the workflow holds no signing
   identity. `make app` with `SIGN_IDENTITY` produces a Developer ID build.
 - A Developer ID build carries `--options runtime` and `--timestamp`.
@@ -447,7 +491,7 @@ and return an error with the record intact.
 - `scripts/install.sh` is the one-line install:
   `curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh`.
 - `pages.yml` copies it to `site/install.sh` before it uploads, so `site/` holds
-  no second copy in Git.
+  no second copy in Git. It copies `scripts/install.ps1` the same way.
 - The script reads the newest tag from the redirect of
   `/releases/latest`, picks `exodrive_<tag>_<os>_<arch>.tar.gz` or
   `Exodrive_<tag>_darwin_<arch>.app.zip`, and fetches with `curl` or `wget`.
@@ -461,6 +505,22 @@ and return an error with the record intact.
   prompt, and `curl` adds no flag, so the two paths differ and the script says
   which one applies.
 - CI runs `sh -n scripts/install.sh`, so a syntax error fails the build.
+
+### The Windows install script
+
+- `scripts/install.ps1` is the one-line install:
+  `irm https://jungley8.github.io/exodrive/install.ps1 | iex`.
+- It reads the newest tag from the redirect of `/releases/latest`, picks
+  `exodrive_<tag>_windows_<arch>.zip`, and reads `PROCESSOR_ARCHITECTURE` to
+  choose `amd64` or `arm64`.
+- It checks the archive with `Get-FileHash` against the one line of
+  `SHA256SUMS` that names the asset. A missing line or a different hash stops
+  the script before it writes a file.
+- It installs both programs to `%LOCALAPPDATA%\Programs\Exodrive`.
+  `-Version <tag>` and `-Dir <folder>` change that. It prints the command that
+  adds the folder to PATH; it does not change PATH itself.
+- CI parses the file with the PowerShell parser, so a syntax error fails the
+  build.
 
 ## 9. Failure log contract
 

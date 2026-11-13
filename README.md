@@ -100,7 +100,8 @@ holds. Run `exodrive rollback <item>` first.
 
 ## Requirements
 
-- An external volume with a supported filesystem.
+- An external volume with a supported filesystem: APFS, HFS+, ext2/3/4, btrfs,
+  zfs, xfs, f2fs, or bcachefs on macOS and Linux, and NTFS on Windows.
 - Free space on the target volume for one complete copy of each cache.
 - Go 1.27 or later to build from source.
 
@@ -111,7 +112,7 @@ platform only:
 |---|---|---|---|
 | macOS 13 or later | Ships | Ships | Every test runs on macOS |
 | Linux | Not shipped | Ships | CI runs the suite on Ubuntu |
-| Windows | Builds from source | Builds from source | No test covers it |
+| Windows | Ships | Ships | No test runs on Windows |
 
 A bug on a platform without a promise is still a bug. Report it, and the fix
 follows the same checks.
@@ -124,14 +125,22 @@ Install the newest release with one command:
 curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh
 ```
 
+On Windows, run this command in PowerShell:
+
+```powershell
+irm https://jungley8.github.io/exodrive/install.ps1 | iex
+```
+
 The script reads the newest release, downloads the archive for this machine,
 and checks it against `SHA256SUMS`. A mismatch stops it before it writes
 anything. On macOS it installs `Exodrive.app` to `~/Applications` and the
 command line tool to `~/.local/bin`. On Linux it installs the command line tool
-only.
+only. On Windows it installs both programs to
+`%LOCALAPPDATA%\Programs\Exodrive`.
 
 Read the script before you run it:
-<https://jungley8.github.io/exodrive/install.sh>
+<https://jungley8.github.io/exodrive/install.sh> or
+<https://jungley8.github.io/exodrive/install.ps1>
 
 | Option | Effect |
 |---|---|

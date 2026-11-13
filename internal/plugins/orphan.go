@@ -67,7 +67,7 @@ func (p *OrphanProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	localPnpmCache := filepath.Join(home, "Library", "Caches", "pnpm")
 	if fi, err := os.Stat(localPnpmCache); err == nil && fi.IsDir() {
 		size, _ := fsutil.DirSize(ctx, localPnpmCache)
-		if size > 1024*1024 && !fsutil.IsSymlink(localPnpmCache) && !strings.HasPrefix(localPnpmCache, "/Volumes/") {
+		if size > 1024*1024 && !movedOffVolume(localPnpmCache) {
 			items = append(items, core.CacheItem{
 				ID:             "orphan.pnpm-cache",
 				ToolName:       "orphan",

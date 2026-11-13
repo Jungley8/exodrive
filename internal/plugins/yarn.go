@@ -60,7 +60,7 @@ func (p *YarnProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
 			size, _ := fsutil.DirSize(ctx, path)
 			isSymlink := fsutil.IsSymlink(path)
-			isMigrated := strings.HasPrefix(path, "/Volumes/") || isSymlink
+			isMigrated := movedOffVolume(path)
 
 			blocked := ""
 			if major >= 2 {

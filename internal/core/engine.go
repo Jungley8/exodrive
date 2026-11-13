@@ -95,15 +95,16 @@ type TargetInfo struct {
 	FreeBytes  int64  `json:"free_bytes"`
 	TotalBytes int64  `json:"total_bytes"`
 	// SameVolume is true when the folder sits on the volume that holds this
-	// Mac. A move into that volume frees no space, so the window and the
-	// command line warn. Neither one stops the move.
+	// computer's home folder. A move into that volume frees no space, so the
+	// window and the command line warn. Neither one stops the move.
 	SameVolume bool `json:"same_volume"`
 }
 
-// TargetOnThisMac reports whether target sits on the volume that holds the home
-// folder. The caches live there, so a move into that volume frees no space.
-// An unreadable path reports false: the window only warns on a known answer.
-func TargetOnThisMac(target string) bool {
+// TargetOnSystemVolume reports whether target sits on the volume that holds the
+// home folder. The caches live there, so a move into that volume frees no
+// space. An unreadable path reports false: the window only warns on a known
+// answer.
+func TargetOnSystemVolume(target string) bool {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return false
@@ -124,10 +125,10 @@ func (e *Engine) CheckTarget(targetRoot string) (TargetInfo, error) {
 		return TargetInfo{}, fmt.Errorf("target folder is not available: %w", err)
 	}
 	if !fsutil.IsSafeFilesystem(fstype) {
-		return TargetInfo{}, fmt.Errorf("filesystem '%s' is not supported: choose APFS, HFS+, ext2/3/4, btrfs, zfs, xfs, f2fs, or bcachefs", fstype)
+		return TargetInfo{}, fmt.Errorf("filesystem '%s' is not supported: choose %s", fstype, fsutil.FilesystemHint())
 	}
 	return TargetInfo{Path: targetRoot, Filesystem: fstype, FreeBytes: freeBytes, TotalBytes: totalBytes,
-		SameVolume: TargetOnThisMac(targetRoot)}, nil
+		SameVolume: TargetOnSystemVolume(targetRoot)}, nil
 }
 
 func (e *Engine) Preflight(ctx context.Context, item CacheItem, targetRoot string) error {
@@ -150,7 +151,7 @@ func (e *Engine) Preflight(ctx context.Context, item CacheItem, targetRoot strin
 	}
 
 	if !fsutil.IsSafeFilesystem(fstype) {
-		return fmt.Errorf("incompatible filesystem '%s': target storage requires APFS, HFS+, ext2/3/4, btrfs, zfs, xfs, f2fs, or bcachefs", fstype)
+		return fmt.Errorf("incompatible filesystem '%s': target storage requires %s", fstype, fsutil.FilesystemHint())
 	}
 
 	required := int64(float64(item.SizeBytes) * 1.1) // 10% headroom
@@ -242,7 +243,9 @@ func (e *Engine) CleanOrphan(path string) error {
 	}
 
 	// Guard against shallow/top-level directories (e.g. /Users, /var, /etc, /tmp, /Volumes/disk).
-	rel, err := filepath.Rel("/", cleanPath)
+	// The depth counts from the volume root, so it holds on Windows too.
+	root := filepath.VolumeName(cleanPath) + string(filepath.Separator)
+	rel, err := filepath.Rel(root, cleanPath)
 	if err != nil || rel == "." {
 		return fmt.Errorf("clean orphan: invalid path hierarchy: %q", path)
 	}

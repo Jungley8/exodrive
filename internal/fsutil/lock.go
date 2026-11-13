@@ -3,7 +3,6 @@ package fsutil
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -13,6 +12,12 @@ import (
 type ActiveProcess struct {
 	Name string
 	PID  string
+}
+
+// processEntry is one row of the process table: its ID and its full command.
+type processEntry struct {
+	pid     string
+	command string
 }
 
 // CheckRunningProcesses reads the process table and reports the processes that
@@ -25,37 +30,22 @@ func CheckRunningProcesses(processNames ...string) ([]ActiveProcess, error) {
 		return nil, nil
 	}
 
-	cmd := exec.Command("ps", "-axo", "pid=,args=")
-	out, err := cmd.Output()
+	entries, err := listProcesses()
 	if err != nil {
 		return nil, fmt.Errorf("read the process table: %w", err)
 	}
 
 	self := strconv.Itoa(os.Getpid())
 	var running []ActiveProcess
-	for _, line := range strings.Split(string(out), "\n") {
-		pid, command, ok := splitProcessLine(line)
-		if !ok || pid == self {
+	for _, entry := range entries {
+		if entry.pid == self {
 			continue
 		}
-		if name, matched := matchProcess(command, processNames); matched {
-			running = append(running, ActiveProcess{PID: pid, Name: name})
+		if name, matched := matchProcess(entry.command, processNames); matched {
+			running = append(running, ActiveProcess{PID: entry.pid, Name: name})
 		}
 	}
 	return running, nil
-}
-
-// splitProcessLine splits one `ps` line into the process ID and its command.
-func splitProcessLine(line string) (pid, command string, ok bool) {
-	trimmed := strings.TrimSpace(line)
-	if trimmed == "" {
-		return "", "", false
-	}
-	idx := strings.IndexAny(trimmed, " \t")
-	if idx < 0 {
-		return trimmed, "", true
-	}
-	return trimmed[:idx], strings.TrimSpace(trimmed[idx+1:]), true
 }
 
 // matchProcess returns the tool name that command runs, if any. It looks at

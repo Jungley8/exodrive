@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"exodrive/internal/core"
@@ -47,7 +46,7 @@ func (p *UVProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
 			size, _ := fsutil.DirSize(ctx, path)
 			isSymlink := fsutil.IsSymlink(path)
-			isMigrated := strings.HasPrefix(path, "/Volumes/") || isSymlink
+			isMigrated := movedOffVolume(path)
 
 			items = append(items, core.CacheItem{
 				ID:             "uv.cache",
@@ -74,7 +73,7 @@ func (p *UVProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	if fi, err := os.Stat(pythonInstallDir); err == nil && fi.IsDir() {
 		size, _ := fsutil.DirSize(ctx, pythonInstallDir)
 		isSymlink := fsutil.IsSymlink(pythonInstallDir)
-		isMigrated := strings.HasPrefix(pythonInstallDir, "/Volumes/") || isSymlink
+		isMigrated := movedOffVolume(pythonInstallDir)
 
 		items = append(items, core.CacheItem{
 			ID:             "uv.python",

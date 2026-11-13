@@ -51,11 +51,43 @@ jobs:
       - name: Check the install script
         run: sh -n scripts/install.sh
 
+      - name: Check the Windows install script
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/scripts/install.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+
       - name: Bundle the window
         if: runner.os == 'macOS'
         run: |
           make app
           codesign --verify --strict bin/Exodrive.app
+
+  windows:
+    name: build for windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache: true
+
+      # No test runs on Windows hardware. This job keeps the port from rotting.
+      - name: Build every package and both programs
+        run: |
+          for arch in amd64 arm64; do
+            GOOS=windows GOARCH=$arch go build ./...
+          done
+          GOOS=windows GOARCH=amd64 go build -o /tmp/exodrive.exe ./cmd/exodrive
+          GOOS=windows GOARCH=amd64 go build -o /tmp/exodrive-gui.exe ./cmd/exodrive-gui
 
   lint:
     name: lint

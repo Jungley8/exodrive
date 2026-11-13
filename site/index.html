@@ -38,12 +38,12 @@
             </p>
             <div class="actions">
               <a class="button" href="https://github.com/Jungley8/exodrive/releases">
-                Download for macOS
+                Download
               </a>
               <a class="button quiet" href="docs/">Read the documentation</a>
             </div>
             <p class="note">
-              Apache 2.0. Free to use. macOS 13 or later for the window.
+              Apache 2.0. Free to use. The macOS window needs macOS 13 or later.
             </p>
           </div>
 
@@ -113,7 +113,7 @@
             <tbody>
               <tr>
                 <td>Filesystem</td>
-                <td>Exodrive uses APFS, HFS+, ext2, ext3, ext4, btrfs, zfs, xfs, f2fs, or bcachefs. It refuses exFAT, FAT32, and NTFS.</td>
+                <td>Exodrive uses APFS, HFS+, ext2, ext3, ext4, btrfs, zfs, xfs, f2fs, bcachefs, or NTFS. It refuses exFAT and FAT32.</td>
               </tr>
               <tr>
                 <td>Running tool</td>
@@ -165,10 +165,13 @@
           <h2>Install</h2>
           <p>Install the newest release with one command:</p>
           <pre><code>curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh</code></pre>
+          <p>On Windows, run this command in PowerShell:</p>
+          <pre><code>irm https://jungley8.github.io/exodrive/install.ps1 | iex</code></pre>
           <p class="note">
-            The script downloads the archive for this Mac and checks it against
-            SHA256SUMS. A mismatch stops the install. Read it first:
-            <a href="https://jungley8.github.io/exodrive/install.sh">install.sh</a>. The bundle is ad-hoc signed, so a
+            The script downloads the archive for this machine and checks it
+            against SHA256SUMS. A mismatch stops the install. Read it first:
+            <a href="https://jungley8.github.io/exodrive/install.sh">install.sh</a> or
+            <a href="https://jungley8.github.io/exodrive/install.ps1">install.ps1</a>. The macOS bundle is ad-hoc signed, so a
             download from a browser asks for your confirmation on the first start:
             right-click the app, then choose Open.
           </p>
@@ -195,7 +198,7 @@
             </div>
             <div>
               <h3>Windows</h3>
-              <p>The window builds from source. No build ships and no test covers it.</p>
+              <p>The window and the command line tool ship. No test runs on Windows.</p>
             </div>
           </div>
         </section>

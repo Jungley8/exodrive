@@ -70,7 +70,7 @@ func (p *GoProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 		if fi, err := os.Stat(t.curr); err == nil && fi.IsDir() {
 			size, _ := fsutil.DirSize(ctx, t.curr)
 			isSymlink := fsutil.IsSymlink(t.curr)
-			isMigrated := strings.HasPrefix(t.curr, "/Volumes/") || isSymlink
+			isMigrated := movedOffVolume(t.curr)
 
 			items = append(items, core.CacheItem{
 				ID:             t.id,

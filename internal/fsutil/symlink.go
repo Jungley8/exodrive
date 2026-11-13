@@ -42,7 +42,7 @@ func AtomicSymlink(target, linkPath string) error {
 		_ = os.Remove(tmpLink)
 	}()
 
-	if err := os.Symlink(target, tmpLink); err != nil {
+	if err := makeLink(target, tmpLink); err != nil {
 		return err
 	}
 

@@ -5,40 +5,35 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 // IsSafeFilesystem returns true if the filesystem supports POSIX permissions,
 // locking, and symlinks reliably. The list is an allowlist: an unknown
 // filesystem is refused, so a migration can never silently lose metadata.
+// NTFS holds junctions and file identity, so it is the one Windows entry.
+// exFAT and FAT32 do neither, and stay refused on every system.
 func IsSafeFilesystem(fstype string) bool {
 	norm := strings.ToLower(strings.TrimSpace(fstype))
 	switch norm {
-	case "apfs", "hfs", "hfs+", "ext4", "ext3", "ext2", "btrfs", "zfs", "xfs", "f2fs", "bcachefs":
+	case "apfs", "hfs", "hfs+", "ext4", "ext3", "ext2", "btrfs", "zfs", "xfs", "f2fs", "bcachefs", "ntfs":
 		return true
 	default:
 		return false
 	}
 }
 
+// FilesystemHint names the filesystems the allowlist accepts on this system.
+func FilesystemHint() string { return filesystemHint }
+
 // IsSameDevice checks if two paths reside on the same filesystem/device.
 func IsSameDevice(path1, path2 string) (bool, error) {
-	fi1, err := os.Stat(path1)
-	if err != nil {
+	if _, err := os.Stat(path1); err != nil {
 		return false, err
 	}
-	fi2, err := os.Stat(path2)
-	if err != nil {
+	if _, err := os.Stat(path2); err != nil {
 		return false, err
 	}
-
-	stat1, ok1 := fi1.Sys().(*syscall.Stat_t)
-	stat2, ok2 := fi2.Sys().(*syscall.Stat_t)
-	if !ok1 || !ok2 {
-		return false, nil
-	}
-
-	return stat1.Dev == stat2.Dev, nil
+	return sameDevice(path1, path2)
 }
 
 // DirSize calculates the total size of files under root.

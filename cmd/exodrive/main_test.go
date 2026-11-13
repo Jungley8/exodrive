@@ -410,7 +410,7 @@ func TestCLI_RemindsAboutAFolderOnThisMac(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("the reminder stopped the dry run (exit %d):\n%s", code, out)
 	}
-	if !strings.Contains(out, "Warning: the target folder is on this Mac. A move here frees no space.") {
+	if !strings.Contains(out, "Warning: the target folder is on this computer. A move here frees no space.") {
 		t.Fatalf("the run does not warn about a folder on this Mac:\n%s", out)
 	}
 	if !strings.Contains(out, "Dry run.") {

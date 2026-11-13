@@ -6,6 +6,9 @@ import (
 	"syscall"
 )
 
+// filesystemHint names the filesystems the allowlist accepts on this system.
+const filesystemHint = "APFS, HFS+, ext2/3/4, btrfs, zfs, xfs, f2fs, or bcachefs"
+
 // GetDiskUsage returns free bytes, total bytes, and the filesystem name.
 func GetDiskUsage(path string) (freeBytes, totalBytes int64, fstype string, err error) {
 	var stat syscall.Statfs_t

@@ -158,10 +158,10 @@ func TestCheckTargetWarnsOnThisMac(t *testing.T) {
 		t.Fatalf("a folder on this Mac is reported as another volume")
 	}
 
-	if !TargetOnThisMac(dir) {
-		t.Fatalf("TargetOnThisMac is false for a folder on this Mac")
+	if !TargetOnSystemVolume(dir) {
+		t.Fatalf("TargetOnSystemVolume is false for a folder on this Mac")
 	}
-	if TargetOnThisMac(filepath.Join(dir, "gone")) {
-		t.Fatalf("TargetOnThisMac claims a known answer for a missing folder")
+	if TargetOnSystemVolume(filepath.Join(dir, "gone")) {
+		t.Fatalf("TargetOnSystemVolume claims a known answer for a missing folder")
 	}
 }

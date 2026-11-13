@@ -37,11 +37,11 @@
             </p>
             <div class="actions">
               <a class="button" href="https://github.com/Jungley8/exodrive/releases">
-                下载 macOS 版
+                下载
               </a>
               <a class="button quiet" href="docs/">阅读文档</a>
             </div>
-            <p class="note">Apache 2.0，免费使用。窗口需要 macOS 13 或更高版本。</p>
+            <p class="note">Apache 2.0，免费使用。macOS 版需要 macOS 13 或更高版本。</p>
           </div>
 
           <div class="gauges" aria-label="两条容量条的示例">
@@ -97,7 +97,7 @@
             <tbody>
               <tr>
                 <td>文件系统</td>
-                <td>只接受 APFS、HFS+、ext2、ext3、ext4、btrfs、zfs、xfs、f2fs、bcachefs。拒绝 exFAT、FAT32、NTFS。</td>
+                <td>只接受 APFS、HFS+、ext2、ext3、ext4、btrfs、zfs、xfs、f2fs、bcachefs、NTFS。拒绝 exFAT、FAT32。</td>
               </tr>
               <tr>
                 <td>程序在运行</td>
@@ -146,10 +146,13 @@
           <h2>安装</h2>
           <p>一条命令安装最新版本：</p>
           <pre><code>curl -fsSL https://jungley8.github.io/exodrive/install.sh | sh</code></pre>
+          <p>Windows 上在 PowerShell 里运行：</p>
+          <pre><code>irm https://jungley8.github.io/exodrive/install.ps1 | iex</code></pre>
           <p class="note">
             脚本下载对应本机的包，并用 SHA256SUMS 校验；校验不通过就停止。运行前可以先读脚本：
-            <a href="https://jungley8.github.io/exodrive/install.sh">install.sh</a>。
-            应用为 ad-hoc 签名，从浏览器下载的文件首次打开会要求确认：右键点按应用，选择「打开」。
+            <a href="https://jungley8.github.io/exodrive/install.sh">install.sh</a> 或
+            <a href="https://jungley8.github.io/exodrive/install.ps1">install.ps1</a>。
+            macOS 应用为 ad-hoc 签名，从浏览器下载的文件首次打开会要求确认：右键点按应用，选择「打开」。
           </p>
           <p class="note">
             也可以从<a href="https://github.com/Jungley8/exodrive/releases">发布页</a>直接下载压缩包。
@@ -170,7 +173,7 @@
             </div>
             <div>
               <h3>Windows</h3>
-              <p>窗口可从源码构建。没有发布包，也没有测试覆盖。</p>
+              <p>窗口与命令行工具都发布。Windows 上没有测试。</p>
             </div>
           </div>
         </section>

@@ -42,7 +42,9 @@ func TestIsSafeFilesystemFailClosed(t *testing.T) {
 		{"exfat", false},
 		{"FAT32", false},
 		{"msdos", false},
-		{"ntfs", false},
+		// NTFS holds junctions and file identity, so it carries a promise.
+		{"ntfs", true},
+		{"NTFS", true},
 		{"cifs", false},
 		{"smbfs", false},
 		{"nfs", false},

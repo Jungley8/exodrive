@@ -30,15 +30,18 @@ jobs:
   build:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }})
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { goos: darwin, goarch: arm64, gui: true }
-          - { goos: darwin, goarch: amd64, gui: true }
-          - { goos: linux, goarch: amd64, gui: false }
-          - { goos: linux, goarch: arm64, gui: false }
+          - { goos: darwin, goarch: arm64, gui: true, runs: ubuntu-latest }
+          - { goos: darwin, goarch: amd64, gui: true, runs: ubuntu-latest }
+          - { goos: linux, goarch: amd64, gui: false, runs: ubuntu-latest }
+          - { goos: linux, goarch: arm64, gui: false, runs: ubuntu-latest }
+          # Windows ships without a test run on real hardware. See SPEC.md.
+          - { goos: windows, goarch: amd64, gui: true, runs: ubuntu-latest }
+          - { goos: windows, goarch: arm64, gui: true, runs: ubuntu-latest }
     steps:
       - uses: actions/checkout@v4
 
@@ -61,10 +64,11 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
           VERSION: ${{ steps.version.outputs.number }}
+          EXT: ${{ matrix.goos == 'windows' && '.exe' || '' }}
         run: |
           mkdir -p dist
           go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
-            -o "dist/exodrive_${GOOS}_${GOARCH}/exodrive" ./cmd/exodrive
+            -o "dist/exodrive_${GOOS}_${GOARCH}/exodrive${EXT}" ./cmd/exodrive
 
       - name: Build GUI
         if: matrix.gui
@@ -73,9 +77,10 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
           VERSION: ${{ steps.version.outputs.number }}
+          EXT: ${{ matrix.goos == 'windows' && '.exe' || '' }}
         run: |
           go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
-            -o "dist/exodrive_${GOOS}_${GOARCH}/exodrive-gui" ./cmd/exodrive-gui
+            -o "dist/exodrive_${GOOS}_${GOARCH}/exodrive-gui${EXT}" ./cmd/exodrive-gui
 
       - name: Package
         env:
@@ -83,13 +88,21 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
-          cp README.md README.zh.md LICENSE "dist/exodrive_${GOOS}_${GOARCH}/"
-          tar -C dist -czf "dist/exodrive_${TAG}_${GOOS}_${GOARCH}.tar.gz" "exodrive_${GOOS}_${GOARCH}"
+          dir="dist/exodrive_${GOOS}_${GOARCH}"
+          cp README.md README.zh.md LICENSE "$dir/"
+          if [ "${GOOS}" = windows ]; then
+            # Windows expects a zip: the archive opens with one click.
+            (cd dist && zip -qr "exodrive_${TAG}_${GOOS}_${GOARCH}.zip" "exodrive_${GOOS}_${GOARCH}")
+          else
+            tar -C dist -czf "dist/exodrive_${TAG}_${GOOS}_${GOARCH}.tar.gz" "exodrive_${GOOS}_${GOARCH}"
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: exodrive-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*.tar.gz
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
           if-no-files-found: error
 
   bundle:

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"exodrive/internal/core"
@@ -59,7 +58,7 @@ func (p *CargoProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 		if fi, err := os.Stat(path); err == nil && fi.IsDir() {
 			size, _ := fsutil.DirSize(ctx, path)
 			isSymlink := fsutil.IsSymlink(path)
-			isMigrated := strings.HasPrefix(path, "/Volumes/") || isSymlink
+			isMigrated := movedOffVolume(path)
 
 			items = append(items, core.CacheItem{
 				ID:             s.id,

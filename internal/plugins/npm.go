@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"exodrive/internal/core"
@@ -45,7 +44,7 @@ func (p *NPMProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	if fi, err := os.Stat(activePath); err == nil && fi.IsDir() {
 		size, _ := fsutil.DirSize(ctx, activePath)
 		isSymlink := fsutil.IsSymlink(activePath)
-		isMigrated := strings.HasPrefix(activePath, "/Volumes/") || isSymlink
+		isMigrated := movedOffVolume(activePath)
 
 		items = append(items, core.CacheItem{
 			ID:             "npm.cache",

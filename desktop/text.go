@@ -647,9 +647,9 @@ func langFor(tag string) lang {
 // texts returns the words for l.
 func texts(l lang) text {
 	if l == langChinese {
-		return chineseText
+		return fitMachine(chineseText, platformName())
 	}
-	return englishText
+	return fitMachine(englishText, platformName())
 }
 
 // counted names a number of caches in the window's language.
