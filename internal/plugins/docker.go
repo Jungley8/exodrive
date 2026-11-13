@@ -188,14 +188,13 @@ func (p *DockerProvider) PreflightCheck(ctx context.Context, item core.CacheItem
 
 func (p *DockerProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
 	dest := filepath.Join(targetRoot, item.TargetSubdir)
-	if err := os.MkdirAll(dest, 0755); err != nil {
-		return err
-	}
-
 	if item.ID == "docker.orbstack" {
+		if err := os.MkdirAll(dest, 0755); err != nil {
+			return err
+		}
 		return p.migrateOrbStack(ctx, item, dest, progress)
 	}
-	return p.migrateLinked(ctx, item, dest, progress)
+	return moveAndLink(p.Name(), item, dest, progress)
 }
 
 // migrateOrbStack copies the data first and points OrbStack at the copy only
@@ -245,67 +244,6 @@ func (p *DockerProvider) migrateOrbStack(ctx context.Context, item core.CacheIte
 	}
 
 	return removeLocalSource(item.CurrentPath, dest)
-}
-
-// migrateLinked moves a directory or file to dest and replaces it with a
-// symlink. Docker Desktop and Colima read their data through the path.
-func (p *DockerProvider) migrateLinked(ctx context.Context, item core.CacheItem, dest string, progress fsutil.MigrateProgress) error {
-	if item.IsSymlink {
-		return fmt.Errorf("%s is already a symlink: nothing to migrate", item.CurrentPath)
-	}
-
-	info, err := os.Stat(item.CurrentPath)
-	if err != nil {
-		return err
-	}
-
-	// destination is the migrated copy: the directory, or the single file.
-	destination := dest
-	if !info.IsDir() {
-		destination = filepath.Join(dest, filepath.Base(item.CurrentPath))
-	}
-
-	var summary fsutil.CopySummary
-	if info.IsDir() {
-		if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
-			return fmt.Errorf("copy %s: %w", item.Title, err)
-		}
-		verified, err := fsutil.VerifyTreeSummary(item.CurrentPath, dest, progress.Verify)
-		if err != nil {
-			return fmt.Errorf("%s: %w", item.Title, err)
-		}
-		summary = verified
-	} else {
-		if err := fsutil.CopyFile(item.CurrentPath, destination, item.SizeBytes, progress.Copy); err != nil {
-			return fmt.Errorf("copy %s: %w", item.Title, err)
-		}
-		verified, err := fsutil.VerifyFileSummary(item.CurrentPath, destination)
-		if err != nil {
-			return fmt.Errorf("%s: %w", item.Title, err)
-		}
-		summary = verified
-	}
-
-	if err := core.RecordMigration(core.MigrationRecord{
-		ID:             item.ID,
-		ToolName:       p.Name(),
-		OriginalPath:   item.CurrentPath,
-		DestinationDir: destination,
-		RedirectMethod: core.RedirectSymlink,
-		MigratedAt:     time.Now(),
-		SizeBytes:      item.SizeBytes,
-		TreeDigest:     string(summary.Digest),
-		FileCount:      summary.Files,
-		TotalBytes:     summary.Bytes,
-	}); err != nil {
-		return err
-	}
-
-	if err := fsutil.ReplaceDirWithSymlink(item.CurrentPath, destination, item.CurrentPath+".bak"); err != nil {
-		return switchFailed(item.ID, err)
-	}
-
-	return discardLocalBackup(item.CurrentPath)
 }
 
 func (p *DockerProvider) Rollback(ctx context.Context, item core.CacheItem) error {

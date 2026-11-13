@@ -90,9 +90,18 @@ func isAssignment(token string) bool {
 
 // processBaseMatches reports whether base is the tool's executable or a script
 // that belongs to it, such as npm-cli.js, pnpm.cjs, or yarn.js.
+//
+// A Java main class names its tool too: the Gradle daemon runs as
+// org.gradle.launcher.daemon.bootstrap.GradleDaemon. The rule wants a capital
+// letter in the last segment, so a path such as notes.go is not the go tool.
 func processBaseMatches(base, name string) bool {
 	if base == name {
 		return true
+	}
+	if i := strings.LastIndex(base, "."); i >= 0 && i+1 < len(base) {
+		if c := base[i+1]; c >= 'A' && c <= 'Z' && base[i+1:] == name {
+			return true
+		}
 	}
 	if !strings.HasPrefix(base, name) {
 		return false

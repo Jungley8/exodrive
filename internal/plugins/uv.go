@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"exodrive/internal/core"
 	"exodrive/internal/fsutil"
@@ -108,56 +107,9 @@ func (p *UVProvider) PreflightCheck(ctx context.Context, item core.CacheItem, ta
 }
 
 func (p *UVProvider) Migrate(ctx context.Context, item core.CacheItem, targetRoot string, progress fsutil.MigrateProgress) error {
-	dest := filepath.Join(targetRoot, item.TargetSubdir)
-	if err := os.MkdirAll(dest, 0755); err != nil {
-		return err
-	}
-
-	if item.IsSymlink {
-		return fmt.Errorf("%s is already a symlink: nothing to migrate", item.CurrentPath)
-	}
-
-	if err := fsutil.CopyDir(item.CurrentPath, dest, item.SizeBytes, progress.Copy); err != nil {
-		return fmt.Errorf("copy uv %s: %w", item.Title, err)
-	}
-	summary, err := fsutil.VerifyTreeSummary(item.CurrentPath, dest, progress.Verify)
-	if err != nil {
-		return fmt.Errorf("uv %s: %w", item.Title, err)
-	}
-
-	if err := core.RecordMigration(core.MigrationRecord{
-		ID:             item.ID,
-		ToolName:       p.Name(),
-		OriginalPath:   item.CurrentPath,
-		DestinationDir: dest,
-		RedirectMethod: core.RedirectSymlink,
-		OriginalConfig: item.ConfiguredPath,
-		MigratedAt:     time.Now(),
-		SizeBytes:      item.SizeBytes,
-		TreeDigest:     string(summary.Digest),
-		FileCount:      summary.Files,
-		TotalBytes:     summary.Bytes,
-	}); err != nil {
-		return err
-	}
-
-	backupDir := item.CurrentPath + ".bak"
-	if err := fsutil.ReplaceDirWithSymlink(item.CurrentPath, dest, backupDir); err != nil {
-		return switchFailed(item.ID, err)
-	}
-
-	return discardLocalBackup(item.CurrentPath)
+	return moveAndLink(p.Name(), item, filepath.Join(targetRoot, item.TargetSubdir), progress)
 }
 
 func (p *UVProvider) Rollback(ctx context.Context, item core.CacheItem) error {
-	rec, err := loadRecord(item.ID)
-	if err != nil {
-		return err
-	}
-
-	if err := restoreSymlink(rec.OriginalPath, rec.DestinationDir); err != nil {
-		return err
-	}
-
-	return core.RemoveRecord(item.ID)
+	return rollbackLinked(item.ID)
 }

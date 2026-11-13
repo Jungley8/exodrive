@@ -18,6 +18,12 @@ func TestProcessBaseMatches(t *testing.T) {
 		{"npm-extra.js", "npm", false},
 		{"my-npm", "npm", false},
 		{"node", "npm", false},
+		// A Java main class names its tool in the last segment.
+		{"org.gradle.launcher.daemon.bootstrap.GradleDaemon", "GradleDaemon", true},
+		{"org.gradle.wrapper.GradleWrapperMain", "GradleWrapperMain", true},
+		// A data file is not a program. Only a capital segment counts.
+		{"notes.go", "go", false},
+		{"x.mvn", "mvn", false},
 	}
 	for _, tc := range cases {
 		if got := processBaseMatches(tc.base, tc.name); got != tc.want {
