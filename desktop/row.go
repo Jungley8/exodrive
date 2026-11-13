@@ -153,12 +153,19 @@ func failureBlock(cx *core.Scope, state *AppState, it exoCore.CacheItem, failure
 	if failure.Hint != "" {
 		lines = append(lines, typeLine(failure.Hint, typeSmall, colors.Muted))
 	}
-	lines = append(lines, core.View{Style: core.Style{Direction: core.Row, Gap: 8, Padding: core.Edges{Top: 4}}, Children: []core.Node{
+	actions := []core.Node{
 		ui.Button{Text: state.Text.TryAgain, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.RotateCcw,
 			Disabled: func() bool { return busy(state) }, OnPress: func() { retry(state, it) }, TestID: "retry-" + it.ID},
-		ui.Button{Text: state.Text.ReportCopy, Variant: ui.ButtonGhost, Size: ui.SizeSmall, Icon: lucide.ClipboardCopy,
-			OnPress: func() { copyFailure(cx, state, failure) }, TestID: "copy-" + it.ID},
-	}})
+	}
+	// A cache with a record can keep its local folder. This is the way out when
+	// a tool wrote the folder again after a move.
+	if it.IsMigrated {
+		actions = append(actions, ui.Button{Text: state.Text.KeepLocalAction, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.FolderInput,
+			Disabled: func() bool { return busy(state) }, OnPress: func() { state.KeepLocalTarget.Set(it.ID) }, TestID: "keep-local-" + it.ID})
+	}
+	actions = append(actions, ui.Button{Text: state.Text.ReportCopy, Variant: ui.ButtonGhost, Size: ui.SizeSmall, Icon: lucide.ClipboardCopy,
+		OnPress: func() { copyFailure(cx, state, failure) }, TestID: "copy-" + it.ID})
+	lines = append(lines, core.View{Style: core.Style{Direction: core.Row, Gap: 8, Padding: core.Edges{Top: 4}}, Children: actions})
 	return core.View{
 		Style:     core.Style{Direction: core.Column, Gap: 2, Padding: core.Symmetric(8, 10), CornerRadius: 8, Margin: core.Edges{Top: 4, Bottom: 4}},
 		StyleFunc: ui.Filled(tints.Danger),

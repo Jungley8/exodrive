@@ -160,6 +160,11 @@ exodrive rollback npm.cache</code></pre>
             最后删除账本记录。
           </p>
           <p>两份副本内容不同时，Exodrive 停止。它保留两份数据和记录，因为无法替你选择。</p>
+          <p>
+            要保留本机目录，执行 <code>exodrive rollback --keep-local &lt;item&gt;</code>。
+            该命令删除磁盘上的副本，并移除记录。窗口在失败卡片上提供同样的操作：
+            <strong>保留本机目录</strong>。
+          </p>
 
           <h2 id="stopping">停止窗口</h2>
           <p>macOS 关闭窗口时不询问。Exodrive 无法在迁移过程中挂住窗口。</p>
@@ -208,7 +213,7 @@ exodrive rollback npm.cache</code></pre>
               </tr>
               <tr>
                 <td>Xcode 在原位置重建了真实目录</td>
-                <td>回滚会先比对两个目录。不一致时两个目录都保留。</td>
+                <td>回滚会先比对两个目录。不一致时两个目录都保留。点<strong>保留本机目录</strong>删除副本。</td>
               </tr>
               <tr>
                 <td>没有这次迁移的记录</td>

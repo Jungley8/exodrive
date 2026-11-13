@@ -87,6 +87,9 @@ type AppState struct {
 	IsRollingBack *core.Signal[bool]
 	// RollbackTarget holds the cache ID that waits for confirmation, or "".
 	RollbackTarget *core.Signal[string]
+	// KeepLocalTarget holds the cache ID that waits for a keep-local
+	// confirmation, or "".
+	KeepLocalTarget *core.Signal[string]
 
 	// IsCleaning blocks a second delete and the other long actions.
 	IsCleaning *core.Signal[bool]
@@ -215,6 +218,7 @@ func newState(cx *core.Scope, engine *exoCore.Engine) *AppState {
 		ProgressPct:     core.NewSignal[float32](cx, 0),
 		IsRollingBack:   core.NewSignal(cx, false),
 		RollbackTarget:  core.NewSignal(cx, ""),
+		KeepLocalTarget: core.NewSignal(cx, ""),
 		IsCleaning:      core.NewSignal(cx, false),
 		CleanTarget:     core.NewSignal(cx, ""),
 		IsChecking:      core.NewSignal(cx, false),
@@ -669,6 +673,47 @@ func triggerRollback(state *AppState, id string) {
 			}
 			state.Failures.Set(map[string]shownFailure{})
 			state.Status.Set(t.RolledBackStatus)
+		})
+	}()
+}
+
+// triggerKeepLocal answers a tool that wrote its cache again after a move. The
+// folder on this Mac stays, and the copy on the drive goes.
+func triggerKeepLocal(state *AppState, id string) {
+	if busy(state) {
+		return
+	}
+	state.IsRollingBack.Set(true)
+	state.Status.Set(state.Text.KeepingLocalStatus)
+	state.Notice.Set(notice{})
+
+	t := state.Text
+	item, _ := itemByID(state, id)
+	go func() {
+		ctx := context.Background()
+		_ = exoCore.WriteInFlight(exoCore.InFlight{ID: id, Title: item.Title, Action: actionKeepLocal, Target: item.DestinationPath})
+		err := state.Engine.KeepLocal(id)
+		_ = exoCore.ClearInFlight()
+		items, scanErr := state.Engine.ScanAll(ctx)
+		local := readDisk()
+
+		state.Root.Post(func() {
+			state.IsRollingBack.Set(false)
+			if scanErr == nil {
+				state.Items.Set(items)
+			}
+			state.Local.Set(local)
+			if err != nil {
+				f := shownFailure{friendly: explain(err, actionKeepLocal, t), Action: actionKeepLocal, Item: id, Cause: err}
+				recordFailure(actionKeepLocal, id, err)
+				next := state.Failures.GetUntracked()
+				next[id] = f
+				state.Failures.Set(next)
+				state.Notice.Set(notice{Kind: noticeDanger, Title: f.Title, Body: f.Body, Hint: f.Hint})
+				return
+			}
+			state.Failures.Set(map[string]shownFailure{})
+			state.Status.Set(t.KeepLocalDone)
 		})
 	}()
 }

@@ -17,6 +17,7 @@ func renderDialogs(cx *core.Scope, state *AppState) core.Node {
 	return core.Group{
 		confirmMove(cx, state),
 		confirmMoveBack(cx, state),
+		confirmKeepLocal(cx, state),
 		confirmDelete(cx, state),
 		reportDialog(cx, state),
 	}
@@ -108,6 +109,37 @@ func confirmMoveBack(cx *core.Scope, state *AppState) core.Node {
 					OnPress: func() { triggerRollback(state, id) }},
 			},
 			TestID: "rollback-dialog",
+		}
+	})
+}
+
+// confirmKeepLocal asks before the copy on the drive goes. The folder on this
+// Mac stays, so the dialog names the path that leaves.
+func confirmKeepLocal(cx *core.Scope, state *AppState) core.Node {
+	return core.Dynamic(func(cx *core.Scope) core.Node {
+		t := state.Text
+		id := state.KeepLocalTarget.Get()
+		it, _ := itemByID(state, id)
+		return ui.AlertDialog{
+			Open: func() bool { return state.KeepLocalTarget.Get() != "" },
+			OnOpenChange: func(open bool, reason base.Reason) {
+				if open {
+					return
+				}
+				state.KeepLocalTarget.Set("")
+				if reason != base.ReasonSelect {
+					state.Status.Set(t.NothingMoved)
+				}
+			},
+			Title:       t.KeepLocalQuestion,
+			Description: fmt.Sprintf(t.KeepLocalDescription, shortPath(it.DestinationPath)),
+			Actions: []ui.AlertAction{
+				{Text: t.Cancel, Variant: ui.ButtonSecondary, TestID: "keep-local-cancel",
+					OnPress: func() { state.KeepLocalTarget.Set("") }},
+				{Text: t.KeepLocalAction, Variant: ui.ButtonPrimary, Color: func() core.Color { return ui.ColorsOf(cx).Danger() }, TestID: "keep-local-confirm",
+					OnPress: func() { triggerKeepLocal(state, id) }},
+			},
+			TestID: "keep-local-dialog",
 		}
 	})
 }

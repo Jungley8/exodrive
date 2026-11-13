@@ -73,6 +73,12 @@ folder in place of the link. Exodrive keeps the ledger record, so a rollback
 compares the two folders first. A rollback that would drop newer files stops,
 and Exodrive keeps both folders.
 
+Run `exodrive rollback --keep-local <item>` to keep the folder on this Mac. The
+command deletes the copy on the drive and removes the record. The window offers
+the same action as **Keep the local folder** on the failure card. The command
+refuses while the original path is still a link, because the rollback can finish
+that case.
+
 ## Safety rules
 
 Exodrive stops before it damages data. It never continues in a weaker mode.

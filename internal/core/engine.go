@@ -210,6 +210,47 @@ func (e *Engine) Rollback(ctx context.Context, itemID string) error {
 	return fmt.Errorf("no provider found for %s", rec.ToolName)
 }
 
+// KeepLocal finishes a move whose tool replaced the link with a real folder.
+// The folder on this Mac stays, the copy on the drive goes, and the record goes
+// with it. A tool that writes its cache again after a move causes this case.
+// Every check runs before the first delete.
+func (e *Engine) KeepLocal(id string) error {
+	m, err := LoadManifest()
+	if err != nil {
+		return err
+	}
+	rec, ok := m.Records[id]
+	if !ok {
+		return fmt.Errorf("no record found for %s in manifest", id)
+	}
+	if err := ValidateRecord(rec); err != nil {
+		return err
+	}
+	original := filepath.Clean(rec.OriginalPath)
+	destination := filepath.Clean(rec.DestinationDir)
+
+	info, err := os.Lstat(original)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("keep local: %s is gone; run the rollback to restore it from the drive", original)
+		}
+		return fmt.Errorf("keep local: inspect %s: %w", original, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("keep local: %s still links to the copy; run the rollback instead", original)
+	}
+
+	// The parent tells a detached drive from a copy that someone deleted. A
+	// record must never go while the copy is out of reach.
+	if _, err := os.Stat(filepath.Dir(destination)); err != nil {
+		return fmt.Errorf("keep local: the drive that holds %s is not reachable: %w", destination, err)
+	}
+	if err := os.RemoveAll(destination); err != nil {
+		return fmt.Errorf("keep local: remove %s: %w", destination, err)
+	}
+	return RemoveRecord(id)
+}
+
 // CleanOrphan deletes an abandoned cache directory after strict path validation.
 func (e *Engine) CleanOrphan(path string) error {
 	trimmed := strings.TrimSpace(path)

@@ -14,17 +14,21 @@ type ActiveProcess struct {
 	PID  string
 }
 
-// processEntry is one row of the process table: its ID and its full command.
+// processEntry is one row of the process table: its ID, its parent, and its
+// full command.
 type processEntry struct {
 	pid     string
+	ppid    string
 	command string
 }
 
 // CheckRunningProcesses reads the process table and reports the processes that
-// run one of processNames. It matches the executable and the arguments, so a
-// tool that starts through an interpreter is still found: npm runs as
-// `node .../npm-cli.js`. An unreadable process table is an error, because a
-// migration must never run without the check.
+// run one of processNames. It matches the executable and a path or module that
+// names the tool, so a tool that starts through an interpreter is still found:
+// npm runs as `node .../npm-cli.js`, and pip runs as `python -m pip`. A process
+// above Exodrive is skipped, because a shell that mentions a tool starts no
+// tool. An unreadable process table is an error, because a migration must never
+// run without the check.
 func CheckRunningProcesses(processNames ...string) ([]ActiveProcess, error) {
 	if len(processNames) == 0 {
 		return nil, nil
@@ -36,9 +40,10 @@ func CheckRunningProcesses(processNames ...string) ([]ActiveProcess, error) {
 	}
 
 	self := strconv.Itoa(os.Getpid())
+	above := ancestors(entries, self)
 	var running []ActiveProcess
 	for _, entry := range entries {
-		if entry.pid == self {
+		if entry.pid == self || above[entry.pid] {
 			continue
 		}
 		if name, matched := matchProcess(entry.command, processNames); matched {
@@ -48,14 +53,44 @@ func CheckRunningProcesses(processNames ...string) ([]ActiveProcess, error) {
 	return running, nil
 }
 
-// matchProcess returns the tool name that command runs, if any. It looks at
-// every token: the executable, an argument, or a path inside a shell command.
-// A flag and a shell assignment are skipped, so `--tools=cargo` and
-// `CARGO_HOME=/tmp/cargo exodrive migrate` do not look like the cargo tool.
+// ancestors returns the process IDs above start. Exodrive runs under a shell or
+// a make target whose command line can hold the tool name as text, and that
+// process is not the tool.
+func ancestors(entries []processEntry, start string) map[string]bool {
+	parent := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		parent[entry.pid] = entry.ppid
+	}
+	above := make(map[string]bool, 8)
+	pid := start
+	for i := 0; i < 64; i++ {
+		up, ok := parent[pid]
+		if !ok || up == "" || up == "0" || up == pid || above[up] {
+			return above
+		}
+		above[up] = true
+		pid = up
+	}
+	return above
+}
+
+// matchProcess returns the tool name that command runs, if any. The first token
+// that is neither a flag nor a shell assignment is the program. A later token
+// names a program only when it is a path, a Java class, or a module after -m:
+// `grep dart` starts no dart, `node .../npm-cli.js` does, and so does
+// `java -cp ... org.gradle.launcher.daemon.bootstrap.GradleDaemon`.
 func matchProcess(command string, names []string) (string, bool) {
-	for _, field := range strings.Fields(command) {
+	fields := strings.Fields(command)
+	programSeen := false
+	for i, field := range fields {
 		token := strings.Trim(field, "\"'")
-		if strings.HasPrefix(token, "-") || isAssignment(token) {
+		if token == "" || strings.HasPrefix(token, "-") || isAssignment(token) {
+			continue
+		}
+		switch {
+		case !programSeen:
+			programSeen = true
+		case !namesProgram(strings.Trim(fields[i-1], "\"'"), token):
 			continue
 		}
 		base := filepath.Base(token)
@@ -66,6 +101,22 @@ func matchProcess(command string, names []string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// namesProgram reports whether a token after the program names another program
+// rather than an argument: a path, a Java main class, or a module after -m.
+func namesProgram(previous, token string) bool {
+	if strings.ContainsRune(token, filepath.Separator) {
+		return true
+	}
+	if previous == "-m" || previous == "--module" {
+		return true
+	}
+	if i := strings.LastIndex(token, "."); i >= 0 && i+1 < len(token) {
+		c := token[i+1]
+		return c >= 'A' && c <= 'Z'
+	}
+	return false
 }
 
 // isAssignment reports whether token is a shell assignment such as

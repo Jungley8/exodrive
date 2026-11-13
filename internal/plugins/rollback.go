@@ -23,42 +23,10 @@ func loadRecord(id string) (core.MigrationRecord, error) {
 	if !ok {
 		return core.MigrationRecord{}, fmt.Errorf("no migration record for %s", id)
 	}
-	if err := validateRecord(rec); err != nil {
+	if err := core.ValidateRecord(rec); err != nil {
 		return core.MigrationRecord{}, err
 	}
 	return rec, nil
-}
-
-// validateRecord refuses a ledger record whose paths could delete the wrong
-// data. The ledger is a file on disk, so a rollback checks the record before it
-// removes anything.
-func validateRecord(rec core.MigrationRecord) error {
-	original := filepath.Clean(rec.OriginalPath)
-	destination := filepath.Clean(rec.DestinationDir)
-
-	if original == destination {
-		return fmt.Errorf("ledger record %s: the original path equals the destination", rec.ID)
-	}
-	for name, path := range map[string]string{"original path": original, "destination": destination} {
-		if !filepath.IsAbs(path) || path == string(filepath.Separator) {
-			return fmt.Errorf("ledger record %s: unsafe %s %q", rec.ID, name, path)
-		}
-	}
-	if isWithin(original, destination) || isWithin(destination, original) {
-		return fmt.Errorf("ledger record %s: %s and %s hold each other", rec.ID, original, destination)
-	}
-	if home, err := os.UserHomeDir(); err == nil && destination == filepath.Clean(home) {
-		return fmt.Errorf("ledger record %s: the destination is the home directory", rec.ID)
-	}
-	if strings.Count(strings.Trim(destination, string(filepath.Separator)), string(filepath.Separator)) < 2 {
-		return fmt.Errorf("ledger record %s: destination %s is too close to the root", rec.ID, destination)
-	}
-	return nil
-}
-
-// isWithin reports whether child sits below parent.
-func isWithin(child, parent string) bool {
-	return strings.HasPrefix(child, parent+string(filepath.Separator))
 }
 
 // runCommand runs a tool's native configuration command and returns its output

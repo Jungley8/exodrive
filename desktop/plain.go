@@ -14,12 +14,13 @@ import (
 // Actions that can stop. The window names each one in its own words, so a
 // message never mixes two of them up.
 const (
-	actionScan     = "scan"
-	actionMove     = "move"
-	actionMoveBack = "move back"
-	actionDelete   = "delete"
-	actionChoose   = "choose"
-	actionCheck    = "check"
+	actionScan      = "scan"
+	actionMove      = "move"
+	actionMoveBack  = "move back"
+	actionKeepLocal = "keep local"
+	actionDelete    = "delete"
+	actionChoose    = "choose"
+	actionCheck     = "check"
 )
 
 // friendly is a failure in the window's voice: what stopped, what stays safe,
@@ -42,6 +43,8 @@ func explain(err error, action string, t text) friendly {
 	switch action {
 	case actionMoveBack:
 		f.Title = t.MoveBackStopped
+	case actionKeepLocal:
+		f.Title = t.KeepLocalStopped
 	case actionDelete:
 		f.Title = t.DeleteStopped
 	case actionCheck:

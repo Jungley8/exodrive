@@ -169,14 +169,22 @@ type text struct {
 	DeletedStatus      string // Deleted %s. %s is now free.
 	RollingBackStatus  string
 	RolledBackStatus   string
+	KeepingLocalStatus string
+	KeepLocalDone      string
 	RetryHint          string // Exodrive deleted nothing. Try again.
 	PickerFailedTitle  string
 	PickerFailedHint   string
+
+	// Keep local.
+	KeepLocalAction      string
+	KeepLocalQuestion    string
+	KeepLocalDescription string // Exodrive deletes the copy at %s. The folder on this Mac stays.
 
 	// Failures.
 	MoveStoppedTitle    string
 	MoveBackStopped     string
 	DeleteStopped       string
+	KeepLocalStopped    string
 	DriveUnsupported    string
 	DriveUnsupportedWhy string
 	DriveUnsupportedFix string
@@ -377,13 +385,20 @@ var englishText = text{
 	DeletedStatus:      "Deleted %s. %s is now free.",
 	RollingBackStatus:  "Moving the cache back to this Mac...",
 	RolledBackStatus:   "The cache is back on this Mac. Exodrive removed the record of the move.",
+	KeepingLocalStatus: "Deleting the copy on the drive...",
+	KeepLocalDone:      "The copy is gone. The folder on this Mac stays.",
 	RetryHint:          "Exodrive deleted nothing. Try again.",
 	PickerFailedTitle:  "The folder picker did not open",
 	PickerFailedHint:   "Type the folder path in the field, then press Choose again.",
 
+	KeepLocalAction:      "Keep the local folder",
+	KeepLocalQuestion:    "Keep the local folder?",
+	KeepLocalDescription: "Exodrive deletes the copy at %s. The folder on this Mac stays.",
+
 	MoveStoppedTitle:    "The move stopped",
 	MoveBackStopped:     "The move back stopped",
 	DeleteStopped:       "The delete stopped",
+	KeepLocalStopped:    "The copy is still there",
 	DriveUnsupported:    "Exodrive cannot use this drive",
 	DriveUnsupportedWhy: "The drive uses a format that Exodrive cannot use for caches.",
 	DriveUnsupportedFix: "Choose a folder on another drive. Exodrive supports APFS, HFS+, ext2, ext3, ext4, btrfs, zfs, xfs, f2fs, and bcachefs.",
@@ -582,13 +597,20 @@ var chineseText = text{
 	DeletedStatus:      "已删除 %s，释放 %s。",
 	RollingBackStatus:  "正在把这个缓存搬回本机……",
 	RolledBackStatus:   "缓存已回到本机。Exodrive 删除了这条迁移记录。",
+	KeepingLocalStatus: "正在删除磁盘上的副本……",
+	KeepLocalDone:      "副本已删除。本机目录保留。",
 	RetryHint:          "Exodrive 没有删除任何数据。请重试。",
 	PickerFailedTitle:  "目录选择器没有打开",
 	PickerFailedHint:   "在输入框里填写目录路径，然后再次点「选择」。",
 
+	KeepLocalAction:      "保留本机目录",
+	KeepLocalQuestion:    "保留本机目录？",
+	KeepLocalDescription: "Exodrive 删除 %s 的副本。本机目录保留。",
+
 	MoveStoppedTitle:    "迁移已停止",
 	MoveBackStopped:     "搬回已停止",
 	DeleteStopped:       "删除已停止",
+	KeepLocalStopped:    "副本仍然保留",
 	DriveUnsupported:    "Exodrive 无法使用这块磁盘",
 	DriveUnsupportedWhy: "这块磁盘的格式不能用来存放缓存。",
 	DriveUnsupportedFix: "请选另一块磁盘上的目录。Exodrive 支持 APFS、HFS+、ext2、ext3、ext4、btrfs、zfs、xfs、f2fs 和 bcachefs。",

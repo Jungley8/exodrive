@@ -78,6 +78,7 @@ Usage:
   exodrive migrate --target=<dir>     Move caches to external storage
   exodrive orphans [--clean]          Detect or delete abandoned caches
   exodrive rollback <item_id>         Move a migrated cache back
+  exodrive rollback --keep-local <id> Keep the local folder and delete the copy
   exodrive verify <item_id>           Check one moved copy against its recorded digest
   exodrive verify --all               Check every moved copy
   exodrive doctor                     Print the version, the paths, and the last failures
@@ -86,6 +87,8 @@ Usage:
 
 A migration copies the cache, checks the copy, then removes the local copy.
 A rollback copies the cache back and removes the external copy.
+A keep-local deletes the external copy and keeps the folder on this Mac. Use it
+when the tool wrote its cache again at the original path after a move.
 
 Options for check:
   --json     Output scan results as formatted JSON
@@ -431,14 +434,35 @@ func runOrphans(args []string) {
 }
 
 func runRollback(args []string) {
-	if len(args) < 1 {
-		fmt.Println("Usage: exodrive rollback <item_id> (e.g. npm.cache, go.build)")
+	const usage = "Usage: exodrive rollback [--keep-local] <item_id> (e.g. npm.cache, go.build)"
+	var itemID string
+	keepLocal := false
+	for _, arg := range args {
+		switch {
+		case arg == "--keep-local" || arg == "-keep-local":
+			keepLocal = true
+		case strings.HasPrefix(arg, "-"):
+			fmt.Printf("Unknown flag: %s\n%s\n", arg, usage)
+			os.Exit(1)
+		case itemID == "":
+			itemID = arg
+		default:
+			fmt.Printf("%s\n", usage)
+			os.Exit(1)
+		}
+	}
+	if itemID == "" {
+		fmt.Println(usage)
 		os.Exit(1)
 	}
-	itemID := args[0]
 	engine := buildEngine()
-	ctx := context.Background()
 
+	if keepLocal {
+		keepLocalCopy(engine, itemID)
+		return
+	}
+
+	ctx := context.Background()
 	fmt.Printf("Moving %s back to its original location...\n", itemID)
 	if err := engine.Rollback(ctx, itemID); err != nil {
 		recordFailure("rollback", itemID, err)
@@ -446,6 +470,25 @@ func runRollback(args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("Restored %s. The ledger record is removed.\n", itemID)
+}
+
+// keepLocalCopy answers a tool that wrote its cache again after a move: the
+// folder on this Mac stays, the copy on the drive goes, and the record goes
+// with it.
+func keepLocalCopy(engine *core.Engine, itemID string) {
+	copyPath := ""
+	if m, err := core.LoadManifest(); err == nil {
+		copyPath = m.Records[itemID].DestinationDir
+	}
+	if err := engine.KeepLocal(itemID); err != nil {
+		recordFailure("rollback", itemID, err)
+		fmt.Printf("Keep local failed: %v\n", err)
+		os.Exit(1)
+	}
+	if copyPath != "" {
+		fmt.Printf("Deleted the copy at %s.\n", copyPath)
+	}
+	fmt.Printf("%s keeps its folder on this Mac. The ledger record is removed.\n", itemID)
 }
 
 // runVerify checks moved copies against the digests that the ledger recorded.

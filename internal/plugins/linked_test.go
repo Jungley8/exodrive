@@ -450,7 +450,7 @@ func TestNewStoresRefuseWhileTheToolRuns(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			writeMockCLI(t, env.bin, "ps", "echo \"99999 "+tc.line+"\"")
+			writeMockCLI(t, env.bin, "ps", "echo \"99999 1 "+tc.line+"\"")
 			t.Cleanup(func() { writeMockCLI(t, env.bin, "ps", "exit 0") })
 
 			path := filepath.Join(env.home, ".probe")

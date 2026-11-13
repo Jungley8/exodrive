@@ -875,7 +875,7 @@ func TestPreflightCheck_ProcessRunning(t *testing.T) {
 
 	// Configure the mock process table to report an active npm process.
 	writeMockCLI(t, env.bin, "ps", `
-echo "99999 node /usr/local/lib/node_modules/npm/bin/npm-cli.js install"
+echo "99999 1 node /usr/local/lib/node_modules/npm/bin/npm-cli.js install"
 exit 0
 `)
 

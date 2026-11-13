@@ -52,6 +52,7 @@ cmd/
   exodrive-gui/           # nsgo desktop window
 internal/
   core/                   # Engine, scan, preflight, ledger, orphan cleaning
+    record.go             # the ledger record check that every delete runs first
   fsutil/                 # copy, verify, symlink, disk check, process lock
   plugins/                # Providers for each toolchain
     provider.go           # Provider interface and registry
@@ -133,6 +134,26 @@ Exodrive compares it with the destination. Identical trees come from an earlier
 rollback, so Exodrive removes the destination. Different trees keep both copies
 and return an error with the record intact.
 
+### Keep-local sequence
+
+A tool that deletes the link and writes its cache again leaves an item that a
+rollback cannot finish. `rollback --keep-local` takes the local folder as the
+truth. The window offers it as **Keep the local folder** on a failure card.
+
+1. Load the ledger record. A missing record is an error.
+2. Run the record check. The check refuses a record whose paths could delete the
+   wrong data.
+3. The original path must hold a real folder or file. A symlink means the copy
+   is still in use, so the command names the rollback instead. A missing
+   original means the rollback can still restore it, so the command refuses.
+4. The parent of the destination must exist. This tells a detached drive from a
+   copy that someone deleted. While the drive is away, the record stays.
+5. Remove the destination copy.
+6. Remove the ledger record.
+
+The local folder is never read for a digest, because the person chose it over
+the copy. Nothing else in the run deletes a local path.
+
 ### Platform notes
 
 Each system provides the same four primitives. A system that cannot provide one
@@ -180,11 +201,19 @@ refuses the migration; none of them falls back to a weaker mode.
      while `gradle` or the daemon runs. `conda` refuses while `conda`, `mamba`,
      or `micromamba` runs. `homebrew` refuses while `brew` runs.
    - Each package manager refuses to run while its own process runs.
-   - The check reads the process table and matches the executable and the
-     arguments. A tool that starts through an interpreter is still found:
-     `node .../npm-cli.js` matches `npm`. A flag token is skipped, so
-     `--tools=cargo` does not match `cargo`. A shell assignment is skipped, so
-     `CARGO_HOME=/tmp/cargo exodrive migrate` does not match `cargo`.
+   - The check reads the process table and matches the program and the paths
+     that name a tool. The first token that is neither a flag nor a shell
+     assignment is the program. A later token counts only when it is a path, a
+     Java main class, or a module after `-m`:
+     - `node .../npm-cli.js` matches `npm`, and `python3 -m pip` matches `pip`.
+     - `grep -i dart log.txt` matches nothing, because a bare word is an
+       argument. The dart process itself carries the name.
+     - A flag token is skipped, so `--tools=cargo` does not match `cargo`. A
+       shell assignment is skipped, so `CARGO_HOME=/tmp/cargo exodrive migrate`
+       does not match `cargo`.
+     - A process above Exodrive is skipped. A shell or a make target that
+       launched Exodrive can hold a tool path in its own command line, and it
+       is not the tool.
    - A Java main class names its tool through the last segment of a dotted
      token: `org.gradle.launcher.daemon.bootstrap.GradleDaemon` matches
      `GradleDaemon`. The rule needs a capital letter, so `notes.go` does not
@@ -335,6 +364,11 @@ refuses the migration; none of them falls back to a weaker mode.
 | Rollback without a ledger record | Error, nothing changed |
 | Rollback with the destination missing | Error, record kept |
 | Rollback with a local tree that differs from the copy | Error, both copies kept, record kept |
+| Keep-local without a record | Error, nothing changed |
+| Keep-local while the original path is a symlink | Error, nothing changed, record kept |
+| Keep-local while the original path is missing | Error, nothing changed, record kept |
+| Keep-local while the drive is away | Error, nothing changed, record kept |
+| Keep-local with a deleted copy and a reachable drive | Copy stays absent, record removed |
 | Second migration of a recorded item | Error until rollback runs |
 | Provider detection fails | Warning with the items the other providers found |
 

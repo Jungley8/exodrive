@@ -32,6 +32,9 @@ type fakeProvider struct {
 	hold chan struct{}
 	// migrateErr makes every move stop with this error.
 	migrateErr error
+	// rollbackErr makes every move back stop with this error, so a test can
+	// reach the failure card.
+	rollbackErr error
 	// writes counts the calls that change the ledger. The ledger path is one
 	// process-wide setting, so a call that still runs when a test ends writes
 	// into the ledger of the next test.
@@ -86,11 +89,15 @@ func (f *fakeProvider) Migrate(ctx context.Context, item exoCore.CacheItem, targ
 	if f.migrateErr != nil {
 		return f.migrateErr
 	}
+	destination := targetRoot
+	if item.TargetSubdir != "" {
+		destination = filepath.Join(targetRoot, item.TargetSubdir)
+	}
 	return exoCore.RecordMigration(exoCore.MigrationRecord{
 		ID:             item.ID,
 		ToolName:       f.name,
 		OriginalPath:   item.CurrentPath,
-		DestinationDir: targetRoot,
+		DestinationDir: destination,
 		RedirectMethod: exoCore.RedirectSymlink,
 		MigratedAt:     time.Now(),
 		SizeBytes:      item.SizeBytes,
@@ -100,6 +107,9 @@ func (f *fakeProvider) Migrate(ctx context.Context, item exoCore.CacheItem, targ
 func (f *fakeProvider) Rollback(ctx context.Context, item exoCore.CacheItem) error {
 	f.writes.Add(1)
 	defer f.writes.Add(-1)
+	if f.rollbackErr != nil {
+		return f.rollbackErr
+	}
 	return exoCore.RemoveRecord(item.ID)
 }
 
@@ -1077,5 +1087,86 @@ func TestWindowRailNamesTheNewGroups(t *testing.T) {
 		if !app.Exists(`text:"` + group + `"`) {
 			t.Fatalf("the rail does not name the %s group:\n%s", group, app.Dump())
 		}
+	}
+}
+
+// TestWindowKeepsTheLocalFolderAfterTheToolWritesAgain drives the way out of a
+// stuck card: the tool wrote a real folder again, the move back refuses, and
+// Keep the local folder deletes the copy and the record.
+func TestWindowKeepsTheLocalFolderAfterTheToolWritesAgain(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+	target := t.TempDir()
+
+	original := filepath.Join(t.TempDir(), "home", "Library", "Caches", "fake")
+	if err := os.MkdirAll(original, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(original, "old.dat"), []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	item := fakeCache()
+	item.CurrentPath = original
+	item.TargetSubdir = "fake-cache"
+	provider := &fakeProvider{name: "fake", items: []exoCore.CacheItem{item}}
+	app := nsgotest.Start(t, NewMain(exoCore.NewEngine(provider)), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
+
+	chooseTarget(t, app, target)
+	checkAll(t, app)
+	app.Press("id:migrate")
+	app.Settle()
+	app.Press("id:confirm-move")
+	app.WaitUntil(2*time.Second, func() bool { return badgeText(app, item.ID) == "On the drive" })
+
+	// The copy sits on the drive, and the tool deleted the link and wrote the
+	// folder again, with new data.
+	dest := filepath.Join(target, item.TargetSubdir)
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, "old.dat"), []byte("old"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(original); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(original, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(original, "new.dat"), []byte("new"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	provider.rollbackErr = errors.New("rollback: the two folders differ")
+
+	app.Press("id:rollback-" + item.ID)
+	app.Settle()
+	app.Press("id:rollback-confirm")
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:retry-" + item.ID) })
+
+	if !app.Exists("id:keep-local-" + item.ID) {
+		t.Fatalf("a cache with a record offers no keep-local action:\n%s", app.Dump())
+	}
+	app.Press("id:keep-local-" + item.ID)
+	app.Settle()
+	if !app.Exists("id:keep-local-dialog") {
+		t.Fatalf("Keep the local folder did not ask for confirmation:\n%s", app.Dump())
+	}
+
+	app.Press("id:keep-local-confirm")
+	app.WaitUntil(2*time.Second, func() bool { return badgeText(app, item.ID) == "On this Mac" })
+
+	m, err := exoCore.LoadManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m.Records[item.ID]; ok {
+		t.Fatal("the ledger still holds the record")
+	}
+	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+		t.Fatalf("the copy on the drive is still there: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(original, "new.dat")); err != nil {
+		t.Fatalf("the local folder changed: %v", err)
 	}
 }
