@@ -17,6 +17,7 @@ const (
 	actionMove     = "move"
 	actionMoveBack = "move back"
 	actionDelete   = "delete"
+	actionChoose   = "choose"
 )
 
 // friendly is a failure in the window's voice: what stopped, what stays safe,
@@ -41,6 +42,9 @@ func explain(err error, action string) friendly {
 		f.Title = "The move back stopped"
 	case actionDelete:
 		f.Title = "The delete stopped"
+	case actionChoose:
+		f.Title = "The folder picker did not open"
+		f.Hint = "Type the folder path in the field, then press Choose again."
 	}
 
 	var target *exoCore.TargetError
@@ -207,6 +211,23 @@ func tally(items []exoCore.CacheItem) (local, moved, unused int64, canMove int) 
 		}
 	}
 	return local, moved, unused, canMove
+}
+
+// movedUnder is the bytes of the caches that sit under root. A window that
+// holds one folder at a time counts only what that folder holds, so caches on
+// another drive never add to it.
+func movedUnder(items []exoCore.CacheItem, root string) int64 {
+	if root == "" {
+		return 0
+	}
+	prefix := strings.TrimSuffix(root, string(filepath.Separator)) + string(filepath.Separator)
+	var sum int64
+	for _, it := range items {
+		if stateOf(it) == stateMoved && strings.HasPrefix(it.DestinationPath, prefix) {
+			sum += it.SizeBytes
+		}
+	}
+	return sum
 }
 
 // count names a number of caches, with the right plural.

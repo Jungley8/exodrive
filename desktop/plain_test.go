@@ -351,3 +351,24 @@ func TestInPlaceKeepsTheTwoPlaces(t *testing.T) {
 		}
 	}
 }
+
+// TestMovedUnderCountsOneFolder keeps the drive gauge to the folder it shows: a
+// second drive holds its own caches, and a folder whose name only starts the
+// same way holds none of them.
+func TestMovedUnderCountsOneFolder(t *testing.T) {
+	here := exoCore.CacheItem{ID: "a", IsMigrated: true, SizeBytes: 100, DestinationPath: "/Volumes/SSD/exodrive/npm-cache"}
+	other := exoCore.CacheItem{ID: "b", IsMigrated: true, SizeBytes: 200, DestinationPath: "/Volumes/Backup/exodrive/pip-cache"}
+	sibling := exoCore.CacheItem{ID: "c", IsMigrated: true, SizeBytes: 400, DestinationPath: "/Volumes/SSD/exodrive-old/go-cache"}
+	local := exoCore.CacheItem{ID: "d", IsActive: true, SizeBytes: 800}
+	items := []exoCore.CacheItem{here, other, sibling, local}
+
+	if got := movedUnder(items, "/Volumes/SSD/exodrive"); got != 100 {
+		t.Fatalf("movedUnder counts %d bytes, want the 100 under the folder", got)
+	}
+	if got := movedUnder(items, "/Volumes/Backup/exodrive/"); got != 200 {
+		t.Fatalf("movedUnder drops the drive a trailing separator names: %d", got)
+	}
+	if got := movedUnder(items, ""); got != 0 {
+		t.Fatalf("movedUnder counts %d bytes for no folder", got)
+	}
+}

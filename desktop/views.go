@@ -7,7 +7,6 @@ import (
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/icons/lucide"
 	"github.com/oneo-me/nsgo/ui"
-	"github.com/oneo-me/nsgo/ui/filepicker"
 
 	exoCore "exodrive/internal/core"
 )
@@ -206,7 +205,7 @@ func driveLane(cx *core.Scope) core.Node {
 func externalGaugeHead(cx *core.Scope, state *AppState) core.Node {
 	colors := ui.ColorsOf(cx)
 	target := state.Target.Get()
-	_, moved, _, _ := tally(state.Items.Get())
+	moved := movedUnder(state.Items.Get(), target.Path)
 
 	head, note := "No folder chosen", volumeHint()
 	noteColor := colors.Muted
@@ -663,30 +662,4 @@ func renderFooter(cx *core.Scope, state *AppState) core.Node {
 			},
 		},
 	}}
-}
-
-func renderPicker(state *AppState) core.Node {
-	return filepicker.Dialog{
-		State:  state.Picker,
-		Open:   func() bool { return state.PickerOpen.Get() },
-		OnOpen: func(open bool) { state.PickerOpen.Set(open) },
-		Labels: filepicker.Labels{
-			Title:   "Choose a folder",
-			Address: "Folder",
-			Icons:   "Icons",
-			List:    "List",
-			Name:    "Name",
-			Close:   "Close",
-			Empty:   "This folder is empty",
-			Cancel:  "Cancel",
-			Choose:  "Choose",
-		},
-		Device: state.PickerDevice,
-		Hint:   "Exodrive copies each selected cache into this folder.",
-		Choose: func(path string) {
-			state.TargetDir.Set(path)
-			triggerTargetCheck(state)
-		},
-		TestID: "target-picker",
-	}
 }

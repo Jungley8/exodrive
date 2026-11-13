@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/nsgotest"
 
 	exoCore "exodrive/internal/core"
@@ -703,25 +704,34 @@ func TestWindowRemindsWhenTheFolderIsOnThisMac(t *testing.T) {
 	}
 }
 
-// TestWindowOpensThePickerOnAFolder keeps the picker from opening empty: a
-// picker lists nothing until it is told a folder, so the window loads one as
-// the dialog opens.
-func TestWindowOpensThePickerOnAFolder(t *testing.T) {
+// TestWindowAsksTheSystemForAFolder leaves the folder picker to the system:
+// the window asks for one folder, opens no picker of its own, and checks the
+// folder the system answers with exactly as it checks a typed path.
+func TestWindowAsksTheSystemForAFolder(t *testing.T) {
 	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
 	target := t.TempDir()
-	if err := os.Mkdir(filepath.Join(target, "cache-folder"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
-	app := nsgotest.Start(t, NewMain(newFakeEngine(fakeCache())), nsgotest.Size(1100, 800))
+	engine := newFakeEngine(fakeCache())
+	var state *AppState
+	app := nsgotest.Start(t, func(cx *core.Scope) core.Node {
+		state = newState(cx, engine)
+		return window(cx, state)
+	}, nsgotest.Size(1100, 800))
 	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
 
-	chooseTarget(t, app, target)
 	app.Press("id:browse")
-	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:target-picker") })
-	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:filepicker-entry-cache-folder") })
-	if strings.Contains(app.Dump(), "This folder is empty") {
-		t.Fatalf("the picker opened on an empty folder:\n%s", app.Dump())
+	app.Settle()
+	if got := len(app.DirectoryPicks); got != 1 {
+		t.Fatalf("the window asked the system for %d folders, not one", got)
+	}
+	if app.Exists("id:target-picker") {
+		t.Fatalf("the window opened a folder picker of its own")
+	}
+
+	chooseFolder(state, target)
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("id:select-all") || app.Exists("id:migrate") })
+	if got := state.Target.GetUntracked().Path; got != target {
+		t.Fatalf("the picked folder is %q, not %q", got, target)
 	}
 }
 

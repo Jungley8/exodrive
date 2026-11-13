@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/ui"
-	"github.com/oneo-me/nsgo/ui/filepicker"
 
 	exoCore "exodrive/internal/core"
 	"exodrive/internal/fsutil"
@@ -102,12 +100,8 @@ type AppState struct {
 	// CancelRequested asks the running move to stop after the current cache.
 	CancelRequested *core.Signal[bool]
 
-	PickerOpen   *core.Signal[bool]
 	ConfirmOpen  *core.Signal[bool]
 	AdvancedOpen *core.Signal[bool]
-
-	Picker       *filepicker.State
-	PickerDevice string
 
 	// Root is the window scope. Background work posts through it, because the
 	// scope of a Dynamic branch is gone as soon as that branch re-renders.
@@ -136,8 +130,13 @@ func NewMain(engine *exoCore.Engine) func(*core.Scope) core.Node {
 func Root(cx *core.Scope) core.Node { return root(cx, NewEngine()) }
 
 func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
+	return window(cx, newState(cx, engine))
+}
+
+// window builds the shell over state. A test mounts it with its own state, so
+// it can answer for the system picker the way the system does.
+func window(cx *core.Scope, state *AppState) core.Node {
 	cx.SetTheme(Theme())
-	state := newState(cx, engine)
 	triggerScan(state)
 
 	return core.View{
@@ -150,7 +149,6 @@ func root(cx *core.Scope, engine *exoCore.Engine) core.Node {
 			renderListArea(cx, state),
 			core.Show{When: func() bool { return state.AdvancedOpen.Get() }, Then: func(cx *core.Scope) core.Node { return renderAdvanced(cx, state) }},
 			renderFooter(cx, state),
-			renderPicker(state),
 			renderDialogs(cx, state),
 		},
 	}
@@ -180,51 +178,12 @@ func newState(cx *core.Scope, engine *exoCore.Engine) *AppState {
 		MoveDone:        core.NewSignal(cx, 0),
 		MoveTotal:       core.NewSignal(cx, 0),
 		CancelRequested: core.NewSignal(cx, false),
-		PickerOpen:      core.NewSignal(cx, false),
 		ConfirmOpen:     core.NewSignal(cx, false),
 		AdvancedOpen:    core.NewSignal(cx, false),
-		Picker:          filepicker.NewState(cx, filepicker.List, false, 0),
 		Root:            cx,
 		Engine:          engine,
 	}
-	state.Picker.Load = loadFolder
-	state.PickerDevice, _ = os.Hostname()
 	return state
-}
-
-// loadFolder lists a directory for the folder picker.
-func loadFolder(path string, done func(filepicker.Folder, error)) {
-	if strings.TrimSpace(path) == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			done(filepicker.Folder{}, err)
-			return
-		}
-		path = home
-	}
-
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		done(filepicker.Folder{}, err)
-		return
-	}
-
-	folder := filepicker.Folder{Path: path}
-	for _, entry := range entries {
-		info, infoErr := entry.Info()
-		if infoErr != nil {
-			continue
-		}
-		folder.Entries = append(folder.Entries, filepicker.Entry{
-			Name:     entry.Name(),
-			Path:     filepath.Join(path, entry.Name()),
-			Dir:      entry.IsDir(),
-			Size:     info.Size(),
-			Modified: info.ModTime(),
-			Hidden:   strings.HasPrefix(entry.Name(), "."),
-		})
-	}
-	done(folder, nil)
 }
 
 // busy reports whether a long action runs. A second action waits for it.
@@ -270,12 +229,35 @@ func setPlace(state *AppState, place string) {
 	state.Selected.Set(map[string]bool{})
 }
 
-// openPicker opens the folder picker at the chosen folder, or at the home
-// folder on the first run. The picker lists nothing until it is told a folder,
-// so the window loads one as the picker opens.
+// openPicker asks the system for a folder, as Finder does. The system panel
+// lists every connected drive and scrolls its own way, so no folder of this
+// window's own has to.
 func openPicker(state *AppState) {
-	state.Picker.Open(strings.TrimSpace(state.TargetDir.Get()))
-	state.PickerOpen.Set(true)
+	state.Root.PickDirectories(core.PickDirectoriesOptions{Limit: 1}, func(dirs []core.Directory, err error) {
+		if err != nil {
+			f := explain(err, actionChoose)
+			state.Notice.Set(notice{Kind: noticeDanger, Title: f.Title, Body: f.Body, Hint: f.Hint})
+			return
+		}
+		if len(dirs) == 0 {
+			return
+		}
+		if dirs[0].Path == "" {
+			// A system that names no path cannot fill the field. Say so
+			// rather than check a folder the window cannot name.
+			state.Notice.Set(notice{Kind: noticeWarn, Title: "This system names no folder path",
+				Body: "Exodrive needs the path of the folder.", Hint: "Type the folder path in the field."})
+			return
+		}
+		chooseFolder(state, dirs[0].Path)
+	})
+}
+
+// chooseFolder takes a folder from the picker and checks it, exactly as a
+// typed path is checked.
+func chooseFolder(state *AppState, path string) {
+	state.TargetDir.Set(path)
+	triggerTargetCheck(state)
 }
 
 // selectAll selects every cache on screen that can move, or clears the

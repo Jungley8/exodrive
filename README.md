@@ -221,7 +221,8 @@ exodrive check
 ## Use the window
 
 1. Open `bin/exodrive-gui`, or `Exodrive.app`.
-2. Choose a folder on the external drive. Press **Choose**, or type the path.
+2. Choose a folder on the external drive. Press **Choose** to open the folder
+   panel of macOS, or type the path. The panel lists every connected drive.
    The window checks the folder and shows the free space of the drive. A folder
    on this Mac frees no space, and the window says so.
 3. Select the caches to move. Press **Select all N**, or press the box on one
@@ -236,6 +237,11 @@ exodrive check
 The window shows two gauges. The left gauge holds the free space of this Mac and
 the bytes in caches. The right gauge holds the free space of the drive and the
 bytes that moved.
+
+A move sends caches to the folder you chose. Each move keeps its own folder in
+the record, so caches can sit on more than one drive. To use another drive,
+press **Choose** again. The right gauge counts the caches under the folder it
+shows.
 
 Every cache is a card. A card shows the name, the size, and one state word:
 **On this Mac**, **On the drive**, **Cannot move**, or **Unused**. A card also

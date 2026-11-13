@@ -202,9 +202,9 @@ and return an error with the record intact.
     - A folder under the volumes root whose volume is missing reports a
       disconnected volume, not a missing folder. The user connects the volume,
       then checks again.
-    - The window names the mounted external volumes on the first run. With none
-      connected, it says so, because the folder picker shows only the internal
-      disk.
+    - The window names the mounted external volumes on the first run, and says
+      so when none is connected. The folder picker is the system panel, which
+      lists every mounted drive beside the internal one.
 
 ## 4. Failure modes
 
@@ -253,6 +253,9 @@ and return an error with the record intact.
   the free space and moved bytes of the drive. Each bar part keeps a minimum
   width, so a small share stays visible. Without a chosen folder, the right
   gauge names the connected volume, or says that none is connected.
+- The right gauge counts the caches whose copy sits under the chosen folder.
+  The ledger keeps each cache's own destination, so caches can sit on several
+  drives, and another drive never adds to the folder on screen.
 - A cache is a card, and the card keeps every fact visible: checkbox, title,
   size, state chip, folder, copy, the note that names the change Exodrive makes,
   the failure with its next step, and the one action that fits the state. No
@@ -300,9 +303,13 @@ and return an error with the record intact.
 - Every long action rescans before it reports, so the list matches the ledger.
 - The footer shows the status line and a `Details` toggle that names the record
   file a move back needs.
-- The folder picker lists nothing until it is told a folder. The window calls
-  `filepicker.State.Open` as the picker opens, at the chosen folder or at the
-  home folder, so the dialog never opens empty.
+- The folder picker is the system's: `Scope.PickDirectories` opens the
+  platform panel (Finder's `NSOpenPanel` on macOS), which lists every mounted
+  drive, keeps its own sidebar and scrolling, and needs no folder of the
+  window's own. The window asks for one folder. A cancelled pick changes
+  nothing, and a pick that fails shows its reason in the notice banner.
+- A picked folder is checked exactly as a typed path is. The field shows the
+  path either way, so the person can edit it afterwards.
 - The window reads the login shell PATH before the first scan. A window opened
   from Finder or the Dock inherits the launchd PATH, which holds no Homebrew,
   nvm, or custom folder. Without that step, every tool query fails and each
