@@ -7,15 +7,18 @@ import (
 	"github.com/oneo-me/nsgo/core"
 	"github.com/oneo-me/nsgo/icons/lucide"
 	"github.com/oneo-me/nsgo/ui"
+
+	exoCore "exodrive/internal/core"
 )
 
-// renderDialogs stacks the three confirmations. Each one asks before data
-// moves or leaves, and each one says what happens after.
+// renderDialogs stacks the confirmations and the report. Each one asks before
+// data moves or leaves, and each one says what happens after.
 func renderDialogs(cx *core.Scope, state *AppState) core.Node {
 	return core.Group{
 		confirmMove(cx, state),
 		confirmMoveBack(cx, state),
 		confirmDelete(cx, state),
+		reportDialog(cx, state),
 	}
 }
 
@@ -139,6 +142,52 @@ func confirmDelete(cx *core.Scope, state *AppState) core.Node {
 					OnPress: func() { triggerClean(state, id) }},
 			},
 			TestID: "clean-dialog",
+		}
+	})
+}
+
+// reportDialog shows the exact text that a report carries. Nothing leaves this
+// Mac until a person presses the issue button, and the browser opens the link.
+func reportDialog(cx *core.Scope, state *AppState) core.Node {
+	return core.Dynamic(func(cx *core.Scope) core.Node {
+		colors := ui.ColorsOf(cx)
+		t := state.Text
+		return ui.Dialog{
+			Open: func() bool { return state.ReportOpen.Get() },
+			OnOpenChange: func(open bool, _ base.Reason) {
+				if !open {
+					closeReport(state)
+				}
+			},
+			Title:       t.ReportTitle,
+			Description: t.ReportDescription,
+			Children: []core.Node{
+				core.View{
+					Style:     core.Style{Direction: core.Column, Padding: core.Symmetric(8, 10), CornerRadius: 8},
+					StyleFunc: ui.Filled(colors.Inset),
+					Children: []core.Node{
+						core.Text{
+							Content:   state.ReportText.Get(),
+							Style:     core.Style{FontSize: 11.5, LineHeight: 16, FontFamily: ui.Mono},
+							StyleFunc: func() core.Style { return core.Style{Color: colors.Text()} },
+							TestID:    "report-text",
+						},
+					},
+				},
+			},
+			Footer: []core.Node{
+				ui.Button{Text: t.Cancel, Variant: ui.ButtonSecondary, TestID: "report-cancel",
+					OnPress: func() { closeReport(state) }},
+				ui.Button{Text: t.ReportCopy, Variant: ui.ButtonSecondary, Icon: lucide.ClipboardCopy, TestID: "report-copy",
+					OnPress: func() { copyReport(cx, state, state.ReportText.Get()) }},
+				ui.Button{Text: t.ReportIssue, Variant: ui.ButtonPrimary, Icon: lucide.ExternalLink, TestID: "report-issue",
+					OnPress: func() {
+						records := exoCore.RecentFailures(reportRecords)
+						cx.OpenURL(reportURL(reportTitle(records, t), state.ReportText.Get()), nil)
+						closeReport(state)
+					}},
+			},
+			TestID: "report",
 		}
 	})
 }

@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a failure in Exodrive.
+title: "Failure in "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Press **Report a problem** in the window, or run `exodrive doctor`, then paste the text below. The text holds no user name: the home folder reads as `~`.
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: Name the action that stopped and the cache it touched.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps
+      description: List the steps that led to the failure, in order.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste the report from the window, or the output of `exodrive doctor`.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Exodrive version
+      placeholder: v0.6.0

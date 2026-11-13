@@ -37,6 +37,7 @@
           <a href="#undo">把缓存搬回来</a>
           <a href="#stopping">停止窗口</a>
           <a href="#trouble">故障处理</a>
+          <a href="#report">报告问题</a>
           <a href="#platform">平台</a>
           <a href="#security">安全</a>
         </nav>
@@ -180,6 +181,21 @@ exodrive rollback npm.cache</code></pre>
           <p>
             找不到的工具链不会出现在列表里。窗口读取登录 shell 的 PATH。
             把工具加进这个 PATH，再点<strong>重新检查</strong>。
+          </p>
+
+          <h2 id="report">报告问题</h2>
+          <p>
+            每次失败，Exodrive 向 <code>~/.exodrive/failures.jsonl</code> 写入一行。
+            这一行包含时间、版本、平台、步骤、类型、缓存和消息。用户主目录显示为 <code>~</code>。
+          </p>
+          <p>
+            失败卡片上的<strong>复制详情</strong>复制这一条失败。窗口底部的<strong>报告问题</strong>
+            显示报告将携带的完整文字。对话框可以复制文字，或打开预填好的 GitHub issue。
+            提交前可以修改。Exodrive 自身不发送任何内容。
+          </p>
+          <p>在终端运行 <code>exodrive doctor</code>，输出同样的信息。</p>
+          <p>
+            设置 <code>EXODRIVE_NO_FAILURE_LOG=1</code> 可关闭日志。删除该文件即清除全部记录。
           </p>
 
           <h2 id="platform">平台</h2>

@@ -43,6 +43,8 @@ func main() {
 		runRollback(os.Args[2:])
 	case "version", "--version", "-v":
 		printVersion()
+	case "doctor":
+		runDoctor()
 	case "help", "-h", "--help":
 		printHelp()
 	default:
@@ -74,6 +76,7 @@ Usage:
   exodrive migrate --target=<dir>     Move caches to external storage
   exodrive orphans [--clean]          Detect or delete abandoned caches
   exodrive rollback <item_id>         Move a migrated cache back
+  exodrive doctor                     Print the version, the paths, and the last failures
   exodrive version                    Display version information
   exodrive help                       Display this help message
 
@@ -99,6 +102,46 @@ func buildEngine() *core.Engine {
 	return core.NewEngine(accessors...)
 }
 
+// recordFailure writes one line to the failure log. The result of the command
+// does not depend on the write.
+func recordFailure(action, item string, err error) {
+	if err == nil {
+		return
+	}
+	_ = core.RecordFailure(core.Failure{
+		Version: version,
+		Action:  action,
+		Kind:    core.FailureKind(err),
+		Item:    item,
+		Message: err.Error(),
+	})
+}
+
+// runDoctor prints what a report carries, so a person can paste it into an
+// issue. It reads the log and sends nothing.
+func runDoctor() {
+	fmt.Printf("Exodrive %s (%s/%s)\n", versionLabel(version), runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("Ledger: %s\n", core.Redact(core.GetManifestPath()))
+	fmt.Printf("Failure log: %s\n", core.Redact(core.FailurePath()))
+	if strings.TrimSpace(os.Getenv(core.FailureLogEnvVar)) != "" {
+		fmt.Printf("The failure log is off: %s is set.\n", core.FailureLogEnvVar)
+	}
+
+	records := core.RecentFailures(10)
+	if len(records) == 0 {
+		fmt.Println("No failure is recorded.")
+		return
+	}
+	fmt.Printf("\nLast %d failure(s):\n", len(records))
+	for _, f := range records {
+		item := ""
+		if f.Item != "" {
+			item = " " + f.Item
+		}
+		fmt.Printf("%s %s %s%s: %s\n", f.Time, f.Action, f.Kind, item, core.CutMessage(core.Redact(f.Message)))
+	}
+}
+
 // scanCaches returns every detected cache. It stops when the ledger cannot be
 // read. A toolchain that fails to detect prints a warning, and the other items
 // stay usable.
@@ -108,9 +151,11 @@ func scanCaches(engine *core.Engine) []core.CacheItem {
 		return items
 	}
 	if errors.Is(err, core.ErrLedger) {
+		recordFailure("scan", "", err)
 		fmt.Printf("Scan failed: %v\n", err)
 		os.Exit(1)
 	}
+	recordFailure("scan", "", err)
 	fmt.Fprintf(os.Stderr, "Warning: some toolchains could not be detected: %v\n", err)
 	return items
 }
@@ -180,6 +225,7 @@ func runPreflight(args []string) {
 	}
 
 	if err := engine.Preflight(ctx, *targetItem, *target); err != nil {
+		recordFailure("preflight", itemID, err)
 		fmt.Printf("Preflight failed for %s: %v\n", itemID, err)
 		os.Exit(1)
 	}
@@ -278,6 +324,7 @@ func runMigrate(args []string) {
 		fmt.Println()
 
 		if err != nil {
+			recordFailure("migrate", it.ID, err)
 			fmt.Printf("❌ Migration failed for %s: %v\n\n", it.Title, err)
 			failureCount++
 		} else {
@@ -311,6 +358,7 @@ func runMigrateDryRun(ctx context.Context, engine *core.Engine, candidates []cor
 	var failures int
 	for _, it := range candidates {
 		if err := engine.Preflight(ctx, it, target); err != nil {
+			recordFailure("preflight", it.ID, err)
 			fmt.Printf("[blocked] %s: %v\n", it.Title, err)
 			failures++
 			continue
@@ -359,6 +407,7 @@ func runOrphans(args []string) {
 		for _, o := range orphans {
 			fmt.Printf("Removing %s... ", o.CurrentPath)
 			if err := engine.CleanOrphan(o.CurrentPath); err != nil {
+				recordFailure("orphans", o.ID, err)
 				fmt.Printf("Failed: %v\n", err)
 				failCount++
 			} else {
@@ -384,6 +433,7 @@ func runRollback(args []string) {
 
 	fmt.Printf("Moving %s back to its original location...\n", itemID)
 	if err := engine.Rollback(ctx, itemID); err != nil {
+		recordFailure("rollback", itemID, err)
 		fmt.Printf("Rollback failed: %v\n", err)
 		os.Exit(1)
 	}

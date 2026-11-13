@@ -438,3 +438,53 @@ and return an error with the record intact.
   relative link, so the pair works under any base path.
 - `pages.yml` publishes `site/` to GitHub Pages on a push to `main` that
   touches a page. The repository needs the Pages source set to GitHub Actions.
+
+## 9. Failure log contract
+
+Exodrive keeps a local record of every failure it shows. Nothing leaves the
+machine unless a person opens an issue.
+
+- The log is `StatePath("failures.jsonl")`, beside the ledger. It holds one
+  JSON object per line, mode 0600.
+- A record holds `time` (RFC 3339, UTC), `version`, `os`, `arch`, `action`,
+  `kind`, `item`, and `message`.
+- `action` names the step that stopped: `scan`, `choose`, `move`, `move back`,
+  `delete`, `preflight`, `migrate`, `rollback`, or `orphans`.
+- `kind` is one stable token from `FailureKind` in
+  `internal/core/failure_kind.go`: `target`, `unsupported`, `space`,
+  `running`, `symlink`, `verification`, `env`, `no record`, `ledger`,
+  `differs`, `missing`, or `other`. The window's `explain` and the log read
+  the same function, so the two cannot drift.
+- `message` is the error text with the home folder replaced by `~`, cut at 600
+  bytes on a UTF-8 boundary. When the home folder is unknown, the message is
+  dropped and the record keeps its kind.
+- The file stops at 256 KB. A write past that point keeps the newest whole
+  lines, about half the cap, and drops the rest. The write goes through a
+  temporary file and a rename, under a lock of its own.
+- `RecordFailure` is best effort. A caller ignores its error, so a full disk, a
+  read-only folder, or a lock that fails never changes the result of a move, a
+  move back, or a delete.
+- `RecentFailures` reads the newest records, oldest first. A line that does not
+  parse is skipped, and a missing file reads as no record. Reading never fails
+  a caller.
+- The folder field runs a check on every edit. That check writes no record,
+  because a half-typed path is not a failure. The move that follows records the
+  same reason once.
+- `EXODRIVE_NO_FAILURE_LOG` stops every write. A non-empty value turns the log
+  off; the window still shows each reason.
+
+### The report
+
+- `recordFailure` writes the record, and `shownFailure` keeps the same cause in
+  memory, so a card can copy its own details.
+- **Copy details** on a failed card, and in the report dialog, calls
+  `Scope.SetClipboard`.
+- The footer's **Report a problem** reads the newest five records once and
+  holds the text in `AppState.ReportText`. The dialog shows exactly that text.
+- **Open a GitHub issue** calls `Scope.OpenURL` with
+  `https://github.com/Jungley8/exodrive/issues/new`, the newest failure as the
+  title, and the text as the body. The body stops at 2000 bytes on a line
+  boundary. Exodrive sends nothing itself and holds no network client for a
+  report.
+- `exodrive doctor` prints the version, both paths, and the newest ten
+  records, with the home folder redacted. It exits 0 and sends nothing.

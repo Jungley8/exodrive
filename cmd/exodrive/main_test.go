@@ -168,6 +168,44 @@ func TestCLI_Check_JSON(t *testing.T) {
 	}
 }
 
+// A command that stops writes one line, and doctor prints the line. A person
+// pastes the output into an issue.
+func TestCLI_RecordsAFailureAndDoctorPrintsIt(t *testing.T) {
+	home := t.TempDir()
+	env := map[string]string{
+		"HOME":                    home,
+		"EXODRIVE_MANIFEST_PATH":  filepath.Join(home, "manifest.json"),
+		"EXODRIVE_NO_FAILURE_LOG": "",
+	}
+
+	out, code := runCLIEnv(t, env, "rollback", "npm.cache")
+	if code != 1 {
+		t.Fatalf("rollback of a missing record exits %d, want 1; output: %s", code, out)
+	}
+
+	logPath := filepath.Join(home, "failures.jsonl")
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("the command wrote no failure log: %v", err)
+	}
+	if !strings.Contains(string(data), `"action":"rollback"`) || !strings.Contains(string(data), `"item":"npm.cache"`) {
+		t.Fatalf("the record does not name the command: %s", data)
+	}
+	if strings.Contains(string(data), home) {
+		t.Fatalf("the record holds the home folder: %s", data)
+	}
+
+	out, code = runCLIEnv(t, env, "doctor")
+	if code != 0 {
+		t.Fatalf("doctor exits %d, want 0; output: %s", code, out)
+	}
+	for _, want := range []string{"Exodrive dev (", "Ledger:", "Failure log:", "rollback", "npm.cache"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("doctor does not print %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestVersionLabel(t *testing.T) {
 	cases := []struct {
 		version string

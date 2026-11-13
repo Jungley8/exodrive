@@ -63,7 +63,7 @@ type AppState struct {
 	Items    *core.Signal[[]exoCore.CacheItem]
 	Selected *core.Signal[map[string]bool]
 	// Failures holds the reason a cache did not move, by cache ID.
-	Failures *core.Signal[map[string]friendly]
+	Failures *core.Signal[map[string]shownFailure]
 	// FilterFamily holds the group the rail keeps, or "" for every group.
 	FilterFamily *core.Signal[cacheFamily]
 	// FilterPlace holds the place the list keeps: "" for every place, or
@@ -108,6 +108,10 @@ type AppState struct {
 	WelcomeOpen *core.Signal[bool]
 	// Update holds the newer release that the check found, or an empty one.
 	Update *core.Signal[updateState]
+	// ReportOpen shows the report dialog. ReportText holds the exact text that
+	// the dialog shows, copies, and sends.
+	ReportOpen *core.Signal[bool]
+	ReportText *core.Signal[string]
 
 	// Root is the window scope. Background work posts through it, because the
 	// scope of a Dynamic branch is gone as soon as that branch re-renders.
@@ -115,6 +119,9 @@ type AppState struct {
 
 	Engine *exoCore.Engine
 
+	// Lang is the language of Text. A report names it, so a person knows which
+	// words the window showed.
+	Lang lang
 	// Text holds every word the window writes, in the language it shows.
 	Text text
 }
@@ -183,12 +190,13 @@ func window(cx *core.Scope, state *AppState) core.Node {
 }
 
 func newState(cx *core.Scope, engine *exoCore.Engine) *AppState {
+	l := languageOf(cx)
 	state := &AppState{
 		Items:           core.NewSignalFunc(cx, []exoCore.CacheItem{}, nil),
 		Selected:        core.NewSignalFunc(cx, map[string]bool{}, nil),
 		FilterFamily:    core.NewSignal[cacheFamily](cx, ""),
 		FilterPlace:     core.NewSignal(cx, ""),
-		Failures:        core.NewSignalFunc(cx, map[string]friendly{}, nil),
+		Failures:        core.NewSignalFunc(cx, map[string]shownFailure{}, nil),
 		TargetDir:       core.NewSignal(cx, ""),
 		Target:          core.NewSignal(cx, targetState{}),
 		Local:           core.NewSignal(cx, diskState{}),
@@ -210,9 +218,12 @@ func newState(cx *core.Scope, engine *exoCore.Engine) *AppState {
 		AdvancedOpen:    core.NewSignal(cx, false),
 		WelcomeOpen:     core.NewSignal(cx, !welcomeSeen()),
 		Update:          core.NewSignal(cx, updateState{}),
+		ReportOpen:      core.NewSignal(cx, false),
+		ReportText:      core.NewSignal(cx, ""),
 		Root:            cx,
 		Engine:          engine,
-		Text:            texts(languageOf(cx)),
+		Lang:            l,
+		Text:            texts(l),
 	}
 	return state
 }
@@ -267,6 +278,7 @@ func openPicker(state *AppState) {
 	state.Root.PickDirectories(core.PickDirectoriesOptions{Limit: 1}, func(dirs []core.Directory, err error) {
 		if err != nil {
 			f := explain(err, actionChoose, state.Text)
+			recordFailure(actionChoose, "", err)
 			state.Notice.Set(notice{Kind: noticeDanger, Title: f.Title, Body: f.Body, Hint: f.Hint})
 			return
 		}
@@ -361,6 +373,9 @@ func triggerTargetCheck(state *AppState) {
 				return
 			}
 			if err != nil {
+				// A folder field runs a check on every edit, so a record here
+				// would hold a line per keystroke. The move that follows
+				// records the same reason once, and the field shows it now.
 				state.Target.Set(targetState{Path: target, Problem: targetProblem(err, state.Text)})
 				return
 			}
@@ -387,10 +402,11 @@ func triggerScan(state *AppState) {
 		ctx := context.Background()
 		items, err := state.Engine.ScanAll(ctx)
 		local := readDisk()
+		recordFailure(actionScan, "", err)
 		state.Root.Post(func() {
 			state.IsScanning.Set(false)
 			state.Local.Set(local)
-			state.Failures.Set(map[string]friendly{})
+			state.Failures.Set(map[string]shownFailure{})
 
 			if items == nil {
 				// A scan without a ledger cannot tell a moved cache from a
@@ -453,7 +469,7 @@ func triggerMigration(state *AppState) {
 	// The failures map is copied here, on the window thread, so the move
 	// goroutine never reads a signal. A cache that runs again drops its old
 	// failure.
-	failures := make(map[string]friendly, 2)
+	failures := make(map[string]shownFailure, 2)
 	for key, value := range state.Failures.GetUntracked() {
 		failures[key] = value
 	}
@@ -518,7 +534,8 @@ func triggerMigration(state *AppState) {
 			})
 			_ = exoCore.ClearInFlight()
 			if err != nil {
-				failures[it.ID] = explain(err, actionMove, t)
+				failures[it.ID] = shownFailure{friendly: explain(err, actionMove, t), Action: actionMove, Item: it.ID, Cause: err}
+				recordFailure(actionMove, it.ID, err)
 				failed++
 				continue
 			}
@@ -592,14 +609,15 @@ func triggerClean(state *AppState, id string) {
 			}
 			state.Local.Set(local)
 			if err != nil {
-				f := explain(err, actionDelete, t)
+				f := shownFailure{friendly: explain(err, actionDelete, t), Action: actionDelete, Item: id, Cause: err}
+				recordFailure(actionDelete, id, err)
 				next := state.Failures.GetUntracked()
 				next[id] = f
 				state.Failures.Set(next)
 				state.Notice.Set(notice{Kind: noticeDanger, Title: f.Title, Body: f.Body, Hint: f.Hint})
 				return
 			}
-			state.Failures.Set(map[string]friendly{})
+			state.Failures.Set(map[string]shownFailure{})
 			state.Status.Set(fmt.Sprintf(t.DeletedStatus, item.Title, bytes(item.SizeBytes)))
 		})
 	}()
@@ -630,14 +648,15 @@ func triggerRollback(state *AppState, id string) {
 			}
 			state.Local.Set(local)
 			if err != nil {
-				f := explain(err, actionMoveBack, t)
+				f := shownFailure{friendly: explain(err, actionMoveBack, t), Action: actionMoveBack, Item: id, Cause: err}
+				recordFailure(actionMoveBack, id, err)
 				next := state.Failures.GetUntracked()
 				next[id] = f
 				state.Failures.Set(next)
 				state.Notice.Set(notice{Kind: noticeDanger, Title: f.Title, Body: f.Body, Hint: f.Hint})
 				return
 			}
-			state.Failures.Set(map[string]friendly{})
+			state.Failures.Set(map[string]shownFailure{})
 			state.Status.Set(t.RolledBackStatus)
 		})
 	}()

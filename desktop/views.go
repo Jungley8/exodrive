@@ -689,6 +689,8 @@ func renderFooter(cx *core.Scope, state *AppState) core.Node {
 		typeLinef(func() string { return state.Status.Get() }, typeSmall, colors.Muted),
 		fill(),
 		core.Dynamic(func(cx *core.Scope) core.Node { return updateLine(cx, state) }),
+		ui.Button{Text: state.Text.ReportOpen, Variant: ui.ButtonGhost, Size: ui.SizeSmall, Icon: lucide.Flag,
+			OnPress: func() { openReport(state) }, TestID: "report-open"},
 		core.Show{
 			When: func() bool { return state.AdvancedOpen.Get() },
 			Then: func(cx *core.Scope) core.Node {

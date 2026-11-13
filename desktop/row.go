@@ -141,17 +141,20 @@ func pathLine(cx *core.Scope, name, path, testID string) core.Node {
 }
 
 // failureBlock puts the reason a move stopped where the cache is, with the next
-// step under it.
-func failureBlock(cx *core.Scope, state *AppState, it exoCore.CacheItem, failure friendly) core.Node {
+// step under it. A person can copy the details for a report without opening
+// the footer dialog.
+func failureBlock(cx *core.Scope, state *AppState, it exoCore.CacheItem, failure shownFailure) core.Node {
 	colors := ui.ColorsOf(cx)
 	tints := ui.TintsOf(cx)
 	lines := []core.Node{typeLine(failure.Title, typeLabel, colors.Danger), typeLine(failure.Body, typeSmall, colors.Text)}
 	if failure.Hint != "" {
 		lines = append(lines, typeLine(failure.Hint, typeSmall, colors.Muted))
 	}
-	lines = append(lines, core.View{Style: core.Style{Direction: core.Row, Padding: core.Edges{Top: 4}}, Children: []core.Node{
+	lines = append(lines, core.View{Style: core.Style{Direction: core.Row, Gap: 8, Padding: core.Edges{Top: 4}}, Children: []core.Node{
 		ui.Button{Text: state.Text.TryAgain, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.RotateCcw,
 			Disabled: func() bool { return busy(state) }, OnPress: func() { retry(state, it) }, TestID: "retry-" + it.ID},
+		ui.Button{Text: state.Text.ReportCopy, Variant: ui.ButtonGhost, Size: ui.SizeSmall, Icon: lucide.ClipboardCopy,
+			OnPress: func() { copyFailure(cx, state, failure) }, TestID: "copy-" + it.ID},
 	}})
 	return core.View{
 		Style:     core.Style{Direction: core.Column, Gap: 2, Padding: core.Symmetric(8, 10), CornerRadius: 8, Margin: core.Edges{Top: 4, Bottom: 4}},

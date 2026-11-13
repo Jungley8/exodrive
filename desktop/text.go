@@ -208,6 +208,19 @@ type text struct {
 	VolumeMissingFix     string
 	FolderMissing        string // The folder %s does not exist.
 	FolderMissingFix     string
+
+	// Reports.
+	ReportOpen        string
+	ReportTitle       string
+	ReportDescription string
+	ReportCopy        string
+	ReportIssue       string
+	ReportEmpty       string
+	ReportCut         string
+	ReportFoot        string
+	ReportTitleIssue  string
+	DetailsCopied     string
+	DetailsCopiedBody string
 }
 
 var englishText = text{
@@ -393,6 +406,18 @@ var englishText = text{
 	VolumeMissingFix:     "Connect it, then check again.",
 	FolderMissing:        "The folder %s does not exist.",
 	FolderMissingFix:     "Choose a folder that exists.",
+
+	ReportOpen:        "Report a problem",
+	ReportTitle:       "Report a problem",
+	ReportDescription: "This text stays on this Mac until you send it.",
+	ReportCopy:        "Copy details",
+	ReportIssue:       "Open a GitHub issue",
+	ReportEmpty:       "No failure is recorded. Write what happened.",
+	ReportCut:         "The report holds the newest five records. Run exodrive doctor for the whole log.",
+	ReportFoot:        "The record file is ~/.exodrive/manifest.json. Write the steps that led here.",
+	ReportTitleIssue:  "Problem with Exodrive",
+	DetailsCopied:     "Details copied",
+	DetailsCopiedBody: "Paste them into an issue, or into a message to the person who helps you.",
 }
 
 var chineseText = text{
@@ -578,6 +603,18 @@ var chineseText = text{
 	VolumeMissingFix:     "连接后重新检查。",
 	FolderMissing:        "目录 %s 不存在。",
 	FolderMissingFix:     "请选一个存在的目录。",
+
+	ReportOpen:        "报告问题",
+	ReportTitle:       "报告问题",
+	ReportDescription: "这段文字只留在本机，发送与否由你决定。",
+	ReportCopy:        "复制详情",
+	ReportIssue:       "在 GitHub 上提 issue",
+	ReportEmpty:       "没有失败记录。请写下发生了什么。",
+	ReportCut:         "报告只带最新五条记录。运行 exodrive doctor 查看完整日志。",
+	ReportFoot:        "记录文件是 ~/.exodrive/manifest.json。请写下复现步骤。",
+	ReportTitleIssue:  "Exodrive 的问题",
+	DetailsCopied:     "详情已复制",
+	DetailsCopiedBody: "粘贴到 issue 里，或发给帮你排查的人。",
 }
 
 // languageOf picks the window's language: LangEnvVar first, then the system

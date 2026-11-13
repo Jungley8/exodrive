@@ -14,6 +14,7 @@ import (
 // Actions that can stop. The window names each one in its own words, so a
 // message never mixes two of them up.
 const (
+	actionScan     = "scan"
 	actionMove     = "move"
 	actionMoveBack = "move back"
 	actionDelete   = "delete"
@@ -48,48 +49,49 @@ func explain(err error, action string, t text) friendly {
 	}
 
 	var target *exoCore.TargetError
-	switch {
-	case errors.As(err, &target):
+	switch exoCore.FailureKind(err) {
+	case exoCore.KindTarget:
+		_ = errors.As(err, &target)
 		f.Body, f.Hint = targetSentences(target, t)
-	case strings.Contains(raw, "is not supported"), strings.Contains(raw, "incompatible filesystem"):
+	case exoCore.KindUnsupported:
 		f.Title = t.DriveUnsupported
 		f.Body = t.DriveUnsupportedWhy
 		f.Hint = t.DriveUnsupportedFix
-	case strings.Contains(raw, "insufficient space"):
+	case exoCore.KindSpace:
 		f.Title = t.DriveFull
 		f.Body = t.DriveFullWhy
 		f.Hint = t.DriveFullFix
-	case strings.Contains(raw, "is running"):
+	case exoCore.KindRunning:
 		f.Title = t.StillRunning
 		f.Body = t.StillRunningWhy
 		f.Hint = t.StillRunningFix
-	case strings.Contains(raw, "is already a symlink"):
+	case exoCore.KindSymlink:
 		f.Title = t.AlreadyLink
 		f.Body = t.AlreadyLinkWhy
 		f.Hint = t.AlreadyLinkFix
-	case strings.Contains(raw, "verification failed"):
+	case exoCore.KindVerification:
 		f.Title = t.CopyMismatch
 		f.Body = t.CopyMismatchWhy
 		f.Hint = t.CopyMismatchFix
-	case strings.Contains(raw, " is set to "):
+	case exoCore.KindEnv:
 		f.Title = t.ShellVariable
 		f.Body = t.ShellVariableWhy
 		name := raw[:strings.Index(raw, " is set to ")]
 		name = name[strings.LastIndex(name, " ")+1:]
 		f.Hint = fmt.Sprintf(t.ShellVariableFix, name)
-	case strings.Contains(raw, "no record"), strings.Contains(raw, "no migration record"):
+	case exoCore.KindNoRecord:
 		f.Title = t.NoRecord
 		f.Body = t.NoRecordWhy
 		f.Hint = t.NoRecordFix
-	case strings.Contains(raw, "ledger"), strings.Contains(raw, "manifest"):
+	case exoCore.KindLedger:
 		f.Title = t.LedgerUnreadable
 		f.Body = t.LedgerUnreadableWhy
 		f.Hint = t.LedgerUnreadableFix
-	case strings.Contains(raw, "exists and differs"):
+	case exoCore.KindDiffers:
 		f.Title = t.TwoCopies
 		f.Body = t.TwoCopiesWhy
 		f.Hint = t.TwoCopiesFix
-	case strings.Contains(raw, "does not exist"), strings.Contains(raw, "not available"):
+	case exoCore.KindMissing:
 		f.Title = t.FolderGone
 		f.Body = t.FolderGoneWhy
 		f.Hint = t.FolderGoneFix

@@ -37,6 +37,7 @@
           <a href="#undo">Move a cache back</a>
           <a href="#stopping">Stop the window</a>
           <a href="#trouble">Troubleshooting</a>
+          <a href="#report">Report a failure</a>
           <a href="#platform">Platforms</a>
           <a href="#security">Security</a>
         </nav>
@@ -223,6 +224,25 @@ exodrive rollback npm.cache</code></pre>
             A toolchain that Exodrive cannot find does not appear in the list.
             The window reads the PATH of your login shell. Add the tool to that
             PATH, then press <strong>Rescan</strong>.
+          </p>
+
+          <h2 id="report">Report a failure</h2>
+          <p>
+            Exodrive writes one line to <code>~/.exodrive/failures.jsonl</code>
+            for each failure it shows. The line holds the time, the version,
+            the platform, the step, the kind, the cache, and the message. The
+            home folder reads as <code>~</code>.
+          </p>
+          <p>
+            Press <strong>Copy details</strong> on a failed card. Press
+            <strong>Report a problem</strong> in the footer to read the exact
+            text. The dialog copies the text or opens a prefilled GitHub issue.
+            Edit the issue before you send it. Exodrive sends nothing by itself.
+          </p>
+          <p>In the terminal, run <code>exodrive doctor</code>. It prints the same facts.</p>
+          <p>
+            Set <code>EXODRIVE_NO_FAILURE_LOG=1</code> to stop the log. Delete
+            the file to remove every record.
           </p>
 
           <h2 id="platform">Platforms</h2>

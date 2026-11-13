@@ -331,6 +331,24 @@ Set `EXODRIVE_MANIFEST_PATH` to use another file. The tests use this variable.
 
 Keep the ledger and the external volume together. A rollback needs both.
 
+## When something fails
+
+Exodrive shows the reason on the card or in the banner. It also writes one line
+to `~/.exodrive/failures.jsonl`. The line holds the time, the version, the
+platform, the step, the kind, the cache, and the message. The home folder reads
+as `~`. The file stops at 256 KB and keeps the newest lines.
+
+Press **Copy details** on a failed card to copy that failure. Press **Report a
+problem** in the footer to read the exact text that a report carries. The
+dialog offers **Copy details** and **Open a GitHub issue**. The issue opens in
+your browser with a title and a body that you can edit. Exodrive sends nothing
+by itself.
+
+In the terminal, run `exodrive doctor`. It prints the same facts.
+
+Set `EXODRIVE_NO_FAILURE_LOG=1` to stop the log. Delete the file to remove every
+record.
+
 ## Limitations
 
 - Exodrive copies data. A large VM disk takes time and temporary space.
