@@ -15,6 +15,7 @@ Supported toolchains:
 - Go: `go-build` (GOCACHE), `gomod` (GOMODCACHE)
 - Python: `uv` (cache and Python toolchains), `pip`
 - Containers: `docker` (OrbStack, Docker Desktop, Colima)
+- AI model stores: `ollama`, `huggingface` (`hub/` under `HF_HOME`), `lmstudio`
 - Legacy/Orphans: abandoned cache folders from earlier configuration changes
 
 ### Platform promise
@@ -173,6 +174,10 @@ refuses the migration; none of them falls back to a weaker mode.
      not take effect and the local copy would be deleted anyway.
    - Preflight refuses the migration and names the variable. The user unsets it
      and runs the migration again.
+   - A model store reads its folder from `OLLAMA_MODELS` or `HF_HOME`, and
+     Exodrive does not refuse it. The switch replaces the folder with a link,
+     so the variable still names a path that works. The guard exists for a
+     native configuration switch, where the variable would win.
 4. **Binary isolation**:
    - Exodrive never moves `~/.cargo/bin`, `~/.bun/bin`, or `$GOPATH/bin`.
    - Cargo moves only `registry/` and `git/`. Bun moves only `install/cache`.

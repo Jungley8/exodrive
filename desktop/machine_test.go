@@ -34,6 +34,9 @@ func TestFitMachineNamesTheComputer(t *testing.T) {
 		if got := fitMachine(base, "darwin"); got.ThisMac != base.ThisMac {
 			t.Fatalf("%v: macOS wording changed to %q", l, got.ThisMac)
 		}
+		if got := fitMachine(base, "linux"); got.ThisMac != base.ThisMac {
+			t.Fatalf("%v: Linux wording changed to %q", l, got.ThisMac)
+		}
 
 		other := fitMachine(base, "windows")
 		if fields := machineWordsIn(other); len(fields) > 0 {

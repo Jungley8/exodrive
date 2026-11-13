@@ -54,6 +54,7 @@ func NewRegistry() *Registry {
 		NewDockerProvider(),
 		NewOrphanProvider(),
 	)
+	r.Register(Models()...)
 	return r
 }
 

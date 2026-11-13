@@ -8,6 +8,7 @@ type CacheCategory string
 const (
 	CategoryPackageStore CacheCategory = "package_store" // Package download store (npm, pnpm, cargo registry, gomod, uv, pip)
 	CategoryBuildCache   CacheCategory = "build_cache"   // Build output cache (go-build, cargo git)
+	CategoryModelStore   CacheCategory = "model_store"   // AI model weights (ollama, Hugging Face, LM Studio)
 	CategoryVirtualDisk  CacheCategory = "virtual_disk"  // VM virtual disk images (Docker, OrbStack, Colima)
 	CategoryOrphan       CacheCategory = "orphan"        // Historical abandoned caches
 )

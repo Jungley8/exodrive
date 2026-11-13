@@ -36,7 +36,7 @@ flowchart LR
     CLI["exodrive 命令行"] --> Engine
     GUI["exodrive-gui 窗口"] --> Engine
     Engine --> Registry["Provider 注册表"]
-    Registry --> P["npm、pnpm、yarn、cargo、go、<br/>bun、uv、pip、docker、孤儿缓存"]
+    Registry --> P["npm、pnpm、yarn、cargo、go、<br/>bun、uv、pip、docker、<br/>AI 模型缓存、孤儿缓存"]
     Engine --> FS["fsutil<br/>拷贝、校验、软链接、<br/>磁盘检查、进程锁"]
     FS --> Ledger["~/.exodrive/manifest.json"]
 ```
@@ -46,7 +46,7 @@ flowchart LR
 Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读取新路径。
 
 - npm、pnpm、yarn、pip、Go 在命令启动时读取配置。开一个新终端，或重新启动该工具。
-- cargo、bun、uv、Docker Desktop、Colima 的路径不变。Exodrive 把原目录或原文件换成软链接，下次启动直接使用外置副本。
+- cargo、bun、uv、Docker Desktop、Colima 以及 AI 模型缓存的路径不变。Exodrive 把原目录或原文件换成软链接，下次启动直接使用外置副本。
 - OrbStack 在启动时读取 `data_dir`。重新启动 OrbStack。
 - 已经在运行的进程仍持有旧路径。迁移在工具运行时拒绝执行，所以先停止工具。
 
@@ -58,7 +58,7 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 
 | 规则 | 行为 |
 |---|---|
-| 文件系统白名单 | 目标必须是 APFS、HFS+、ext2/3/4、btrfs、zfs、xfs、f2fs 或 bcachefs。拒绝 exFAT、FAT32、NTFS，以及任何未知类型。 |
+| 文件系统白名单 | 目标必须是 APFS、HFS+、ext2/3/4、btrfs、zfs、xfs、f2fs、bcachefs 或 NTFS。拒绝 exFAT、FAT32，以及任何未知类型。 |
 | 进程互斥 | 包管理器或容器引擎正在运行时，拒绝迁移。先停止该工具。 |
 | 环境变量检查 | 缓存路径的环境变量优先于工具配置。Exodrive 拒绝迁移，并指出该变量。清除后再执行。 |
 | 二进制隔离 | 只迁移缓存，不迁移 `~/.cargo/bin`、`~/.bun/bin`、`$GOPATH/bin`。 |
@@ -83,6 +83,9 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 | Docker（OrbStack） | VM 数据与镜像 | `~/.orbstack/config.json` 的 `data_dir` | 先停止 OrbStack。 |
 | Docker Desktop | `Docker.raw`，4.15 之前的版本为 `Docker.qcow2` | 指向文件的软链接 | 先停止 Docker Desktop。 |
 | Colima | VM 磁盘 | 指向 `~/.colima` 的软链接 | 先执行 `colima stop`。 |
+| Ollama | 模型仓库 | 指向模型目录的软链接 | 先停止 `ollama`。目录由 `OLLAMA_MODELS` 指定。 |
+| Hugging Face | `HF_HOME` 下的 `hub/` | 软链接 | 先停止正在进行的下载。`HF_HOME` 指向根目录，软链接让它继续有效。 |
+| LM Studio | 模型仓库 | 指向模型目录的软链接 | 先退出 LM Studio。 |
 | 孤儿缓存 | 配置变更后遗留的本地缓存 | `exodrive orphans --clean` 删除 | 先执行 `exodrive orphans` 查看列表。 |
 
 ## 环境要求

@@ -54,6 +54,8 @@ func setupMockEnv(t *testing.T) *mockEnv {
 	t.Setenv("BUN_INSTALL", filepath.Join(home, ".bun"))
 	t.Setenv("YARN_CACHE_FOLDER", filepath.Join(home, "Library", "Caches", "Yarn"))
 	t.Setenv("ORBSTACK_DATA_DIR", filepath.Join(home, "Library", "Application Support", "OrbStack", "data"))
+	t.Setenv("OLLAMA_MODELS", filepath.Join(home, ".ollama", "models"))
+	t.Setenv("HF_HOME", filepath.Join(home, ".cache", "huggingface"))
 
 	// Provide a hermetic process table that holds no tool processes.
 	writeMockCLI(t, bin, "ps", "exit 0")
@@ -1254,5 +1256,153 @@ fi
 	}
 	if err := core.NewEngine(p).Preflight(ctx, item, env.targetRoot); err == nil {
 		t.Fatal("expected Engine.Preflight to refuse a Yarn 4 cache")
+	}
+}
+
+// TestLifecycle_ModelStores moves each AI model store to the target volume,
+// checks that a link replaces the folder, and moves it back.
+func TestLifecycle_ModelStores(t *testing.T) {
+	env := setupMockEnv(t)
+	ctx := context.Background()
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"ollama", filepath.Join(env.home, ".ollama", "models")},
+		{"huggingface", filepath.Join(env.home, ".cache", "huggingface", "hub")},
+		{"lmstudio", filepath.Join(env.home, ".lmstudio", "models")},
+	}
+
+	providers := make(map[string]Provider)
+	for _, p := range Models() {
+		providers[p.Name()] = p
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			blobs := filepath.Join(tc.path, "blobs")
+			if err := os.MkdirAll(blobs, 0755); err != nil {
+				t.Fatal(err)
+			}
+			payload := bytes.Repeat([]byte("m"), 4096)
+			if err := os.WriteFile(filepath.Join(blobs, "sha256-abc"), payload, 0644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(tc.path, "index.json"), []byte(`{"models":[]}`), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			p := providers[tc.name]
+			if p == nil {
+				t.Fatalf("%s is not in the registry", tc.name)
+			}
+
+			items, err := p.Detect(ctx)
+			if err != nil {
+				t.Fatalf("Detect failed: %v", err)
+			}
+			if len(items) != 1 {
+				t.Fatalf("expected one item, got %+v", items)
+			}
+			item := items[0]
+			if item.Category != core.CategoryModelStore {
+				t.Fatalf("category is %q, want %q", item.Category, core.CategoryModelStore)
+			}
+			if item.CurrentPath != tc.path {
+				t.Fatalf("current path is %q, want %q", item.CurrentPath, tc.path)
+			}
+			if item.SizeBytes <= 0 {
+				t.Fatalf("size is %d, want the bytes on disk", item.SizeBytes)
+			}
+			if item.IsMigrated {
+				t.Fatal("a store on this disk must not report a move")
+			}
+			if item.TargetSubdir == "" {
+				t.Fatal("the item names no folder on the target volume")
+			}
+
+			if err := p.PreflightCheck(ctx, item, env.targetRoot); err != nil {
+				t.Fatalf("PreflightCheck refused the move: %v", err)
+			}
+			if err := p.Migrate(ctx, item, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
+				t.Fatalf("Migrate failed: %v", err)
+			}
+
+			dest := filepath.Join(env.targetRoot, item.TargetSubdir)
+			copied, err := os.ReadFile(filepath.Join(dest, "blobs", "sha256-abc"))
+			if err != nil {
+				t.Fatalf("the copy holds no blob: %v", err)
+			}
+			if !bytes.Equal(copied, payload) {
+				t.Fatal("the copy holds different bytes")
+			}
+			if !fsutil.IsSymlink(tc.path) {
+				t.Fatal("the store is not a link after the move")
+			}
+			if target := fsutil.ReadSymlinkTarget(tc.path); target != dest {
+				t.Fatalf("the link points at %q, want %q", target, dest)
+			}
+
+			manifest, err := core.LoadManifest()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := manifest.Records[item.ID]; !ok {
+				t.Fatalf("the ledger holds no record for %s", item.ID)
+			}
+
+			// The tool reads the old path through the link, so Exodrive never
+			// rewrites the environment variable that names the store.
+			through, err := os.ReadFile(filepath.Join(tc.path, "index.json"))
+			if err != nil {
+				t.Fatalf("the old path no longer reaches the models: %v", err)
+			}
+			if string(through) != `{"models":[]}` {
+				t.Fatalf("the old path returns %q", through)
+			}
+
+			if err := p.Rollback(ctx, item); err != nil {
+				t.Fatalf("Rollback failed: %v", err)
+			}
+
+			if fsutil.IsSymlink(tc.path) {
+				t.Fatal("the store is still a link after the rollback")
+			}
+			restored, err := os.ReadFile(filepath.Join(tc.path, "blobs", "sha256-abc"))
+			if err != nil {
+				t.Fatalf("the rollback lost the blob: %v", err)
+			}
+			if !bytes.Equal(restored, payload) {
+				t.Fatal("the rollback restored different bytes")
+			}
+			if _, err := os.Stat(dest); !os.IsNotExist(err) {
+				t.Fatalf("the copy on the drive is still there: %v", err)
+			}
+			manifest, err = core.LoadManifest()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(manifest.Records) != 0 {
+				t.Fatalf("the ledger still holds %d records", len(manifest.Records))
+			}
+		})
+	}
+}
+
+// TestModelStoresStayHiddenWithoutAFolder keeps a scan quiet: a tool that is
+// not installed must not add a card with a guessed path.
+func TestModelStoresStayHiddenWithoutAFolder(t *testing.T) {
+	setupMockEnv(t)
+	ctx := context.Background()
+
+	for _, p := range Models() {
+		items, err := p.Detect(ctx)
+		if err != nil {
+			t.Fatalf("%s: Detect failed: %v", p.Name(), err)
+		}
+		if len(items) != 0 {
+			t.Fatalf("%s reports %d items without a folder", p.Name(), len(items))
+		}
 	}
 }

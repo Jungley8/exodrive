@@ -44,7 +44,7 @@ flowchart LR
     CLI["exodrive CLI"] --> Engine
     GUI["exodrive-gui"] --> Engine
     Engine --> Registry["Provider registry"]
-    Registry --> P["npm, pnpm, yarn, cargo, go,<br/>bun, uv, pip, docker, orphan"]
+    Registry --> P["npm, pnpm, yarn, cargo, go,<br/>bun, uv, pip, docker,<br/>AI model stores, orphan"]
     Engine --> FS["fsutil<br/>copy, verify, symlink,<br/>disk check, process lock"]
     FS --> Ledger["~/.exodrive/manifest.json"]
 ```
@@ -56,9 +56,9 @@ effect at the next start of the tool.
 
 - npm, pnpm, yarn, pip, and Go read their setting when a command starts. Open
   a new terminal, or start the tool again.
-- cargo, bun, uv, Docker Desktop, and Colima keep their path. Exodrive
-  replaces the folder or the file with a symbolic link, so the next start uses
-  the external copy.
+- cargo, bun, uv, Docker Desktop, Colima, and the AI model stores keep their
+  path. Exodrive replaces the folder or the file with a symbolic link, so the
+  next start uses the external copy.
 - OrbStack reads `data_dir` at launch. Start OrbStack again.
 - A process that already runs keeps the old path. The migration stops while a
   tool runs, so stop the tool first.
@@ -71,7 +71,7 @@ Exodrive stops before it damages data. It never continues in a weaker mode.
 
 | Rule | Behavior |
 |---|---|
-| Filesystem allowlist | The target must be APFS, HFS+, ext2/3/4, btrfs, zfs, xfs, f2fs, or bcachefs. Exodrive refuses exFAT, FAT32, NTFS, and every unknown type. |
+| Filesystem allowlist | The target must be APFS, HFS+, ext2/3/4, btrfs, zfs, xfs, f2fs, bcachefs, or NTFS. Exodrive refuses exFAT, FAT32, and every unknown type. |
 | Process lock | A running package manager or container engine stops the migration. Stop the tool first. |
 | Environment check | A set cache variable wins over the tool settings. Exodrive refuses the move and names the variable. Unset it, then run again. |
 | Binary isolation | Exodrive moves caches only. It never moves `~/.cargo/bin`, `~/.bun/bin`, or `$GOPATH/bin`. |
@@ -96,6 +96,9 @@ holds. Run `exodrive rollback <item>` first.
 | Docker (OrbStack) | VM data and images | `data_dir` in `~/.orbstack/config.json` | Stop OrbStack first. |
 | Docker Desktop | `Docker.raw`, or `Docker.qcow2` before version 4.15 | Symbolic link to the file | Stop Docker Desktop first. |
 | Colima | VM disks | Symbolic link to `~/.colima` | Run `colima stop` first. |
+| Ollama | Model store | Symbolic link to the models folder | Stop `ollama` first. `OLLAMA_MODELS` names the folder. |
+| Hugging Face | `hub/` under `HF_HOME` | Symbolic link | Stop a download first. `HF_HOME` names the root, so the link keeps the variable valid. |
+| LM Studio | Model store | Symbolic link to the models folder | Quit LM Studio first. |
 | Orphans | Local caches left by an earlier change | `exodrive orphans --clean` deletes them | Run `exodrive orphans` first to review the list. |
 
 ## Requirements

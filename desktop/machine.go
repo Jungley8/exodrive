@@ -14,10 +14,11 @@ var machineWords = [][2]string{
 	{"这台 Mac", "这台电脑"},
 }
 
-// fitMachine replaces the name of the computer when the system is not macOS,
-// so a Windows window never says Mac. Every other word stays as it is.
+// fitMachine replaces the name of the computer on Windows, so a Windows window
+// never says Mac. Every other word stays as it is. macOS and Linux keep the
+// wording of the catalog, which names this Mac.
 func fitMachine(t text, goos string) text {
-	if goos == "darwin" {
+	if goos != "windows" {
 		return t
 	}
 	v := reflect.ValueOf(&t).Elem()
