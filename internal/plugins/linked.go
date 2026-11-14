@@ -23,6 +23,10 @@ type linkedRow struct {
 	// blocked says why Exodrive never moves this folder. An empty value means
 	// the folder can move.
 	blocked string
+	// lock names the processes that write this folder, when they differ from
+	// the processes of the other rows of the provider. An empty value means the
+	// provider list applies.
+	lock []string
 }
 
 // linkedProvider moves a fixed set of folders and replaces each with a
@@ -76,7 +80,7 @@ func (p *linkedProvider) PreflightCheck(ctx context.Context, item core.CacheItem
 	if item.BlockedReason != "" {
 		return fmt.Errorf("%s: %s", item.Title, item.BlockedReason)
 	}
-	running, err := fsutil.CheckRunningProcesses(p.lock...)
+	running, err := fsutil.CheckRunningProcesses(p.locksFor(item.ID)...)
 	if err != nil {
 		return err
 	}
@@ -113,4 +117,15 @@ func under(root, rel string) string {
 		return ""
 	}
 	return filepath.Join(root, rel)
+}
+
+// locksFor names the processes that write one row. A row that names its own
+// processes keeps a move of another row from waiting on them.
+func (p *linkedProvider) locksFor(id string) []string {
+	for _, row := range p.rows {
+		if row.id == id && len(row.lock) > 0 {
+			return row.lock
+		}
+	}
+	return p.lock
 }

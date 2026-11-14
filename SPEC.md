@@ -209,7 +209,9 @@ refuses the migration; none of them falls back to a weaker mode.
      or the daemon runs. `cocoapods` refuses while `pod` runs. `swiftpm` refuses
      while `swift`, `swiftc`, or `xcodebuild` runs.
    - `dart` refuses while `dart`, `flutter`, or `pub` runs. `android` refuses
-     while `gradle` or the daemon runs. `conda` refuses while `conda`, `mamba`,
+     while `gradle` or the daemon runs, for the build cache, and while
+     `emulator` or `qemu-system-*` runs, for the emulator images. A row names
+     its own processes, so one row never waits on the program of another. `conda` refuses while `conda`, `mamba`,
      or `micromamba` runs. `homebrew` refuses while `brew` runs.
    - `ruby` refuses while `bundle` or `gem` runs. It does not name `ruby`:
      a Rails server is not a package command. `composer` refuses while

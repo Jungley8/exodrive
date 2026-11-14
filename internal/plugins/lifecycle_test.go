@@ -67,6 +67,7 @@ func setupMockEnv(t *testing.T) *mockEnv {
 	t.Setenv("CYPRESS_CACHE_FOLDER", filepath.Join(home, "Library", "Caches", "Cypress"))
 	t.Setenv("PUPPETEER_CACHE_DIR", filepath.Join(home, ".cache", "puppeteer"))
 	t.Setenv("GOLANGCI_LINT_CACHE", filepath.Join(home, "Library", "Caches", "golangci-lint"))
+	t.Setenv("ANDROID_AVD_HOME", filepath.Join(home, ".android", "avd"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 
 	// Provide a hermetic process table that holds no tool processes.

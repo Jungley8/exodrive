@@ -101,7 +101,7 @@ Xcode 可能删除 DerivedData 或 Previews 目录，并在原位置重建真实
 | CocoaPods | 缓存与 spec 仓库 | 软链接 | 先退出 Xcode。需要时 CocoaPods 会重新下载。 |
 | SwiftPM | 包缓存 | 软链接 | 先退出 Xcode。需要时 SwiftPM 会重新下载依赖包。 |
 | Dart / Flutter | pub 缓存中的 `hosted/` 与 `git/` | 分别为每个目录建立软链接 | 先停止所有构建。根目录由 `PUB_CACHE` 指定。`bin/` 保留在内置磁盘。 |
-| Android | 构建缓存 | 软链接 | 先执行 `gradle --stop` 停止守护进程。 |
+| Android | 构建缓存与模拟器镜像 | 分别为每个目录建立软链接 | 先执行 `gradle --stop` 停止守护进程。根目录由 `ANDROID_AVD_HOME` 指定。先停止模拟器。磁盘慢会拖慢每次启动，请使用速度较快的外置 SSD。 |
 | Conda | `conda info` 报告的每个包目录 | 分别为每个目录建立软链接 | 先停止所有 conda 命令。跨磁盘时 conda 复制包，环境占用更多空间。 |
 | Homebrew | Homebrew 缓存中的 `downloads/` | 软链接 | 先停止所有 brew 命令。根目录由 `HOMEBREW_CACHE` 指定。需要时 Homebrew 会重新下载。 |
 | Ruby | Bundler 缓存，以及每个用户 gem 目录下的缓存 | 分别为每个目录建立软链接 | 先停止所有 `bundle` 与 `gem` 命令。Bundler 根目录由 `BUNDLE_USER_CACHE` 指定。 |

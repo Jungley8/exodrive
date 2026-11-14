@@ -130,7 +130,7 @@ holds. Run `exodrive rollback <item>` first.
 | CocoaPods | The cache and the spec repos | Symbolic link | Quit Xcode first. CocoaPods downloads the data again when it needs it. |
 | SwiftPM | The package cache | Symbolic link | Quit Xcode first. SwiftPM downloads the packages again when it needs them. |
 | Dart and Flutter | `hosted/` and `git/` under the pub cache | Symbolic link for each folder | Stop every build first. `PUB_CACHE` names the root. `bin/` stays on the internal disk. |
-| Android | The build cache | Symbolic link | Stop the Gradle daemon with `gradle --stop` first. |
+| Android | The build cache and the emulator images | Symbolic link for each folder | Stop the Gradle daemon with `gradle --stop` first. `ANDROID_AVD_HOME` names the image root. Stop the emulator before the move. A slow disk slows every launch, so use a fast external SSD. |
 | Conda | Every package folder that `conda info` reports | Symbolic link for each folder | Stop every conda command first. Conda copies packages across volumes, so environments use more space. |
 | Homebrew | `downloads/` under the Homebrew cache | Symbolic link | Stop every brew command first. `HOMEBREW_CACHE` names the root. Homebrew downloads the files again when it needs them. |
 | Ruby | The Bundler cache and the cache of every user gem folder | Symbolic link for each folder | Stop every `bundle` and `gem` command first. `BUNDLE_USER_CACHE` names the Bundler root. |

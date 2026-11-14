@@ -312,6 +312,42 @@ func TestLifecycle_Android(t *testing.T) {
 		filepath.Join(env.home, ".android", "build-cache"), filepath.Join("android", "build-cache"))
 }
 
+// TestLifecycle_AndroidAVD moves the emulator images. ANDROID_AVD_HOME names
+// the folder, so the test reads the same path on every platform.
+func TestLifecycle_AndroidAVD(t *testing.T) {
+	env := setupMockEnv(t)
+	root := filepath.Join(t.TempDir(), "avd")
+	t.Setenv("ANDROID_AVD_HOME", root)
+	testLinkedMove(t, env, NewAndroidProvider(), "android.avd", root, filepath.Join("android", "avd"))
+}
+
+// TestAndroidRowsKeepTheirOwnLocks keeps one row from waiting on the program of
+// another row: an emulator writes the images, and a Gradle build writes the
+// cache.
+func TestAndroidRowsKeepTheirOwnLocks(t *testing.T) {
+	env := setupMockEnv(t)
+	ctx := context.Background()
+	path := filepath.Join(env.home, ".probe")
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
+
+	writeMockCLI(t, env.bin, "ps", "echo \"99999 1 /Users/x/Library/Android/sdk/emulator/emulator -avd Pixel\"")
+	t.Cleanup(func() { writeMockCLI(t, env.bin, "ps", "exit 0") })
+
+	avd := core.CacheItem{ID: "android.avd", ToolName: "android", Title: "Android Emulator Images", CurrentPath: path}
+	err := NewAndroidProvider().PreflightCheck(ctx, avd, env.targetRoot)
+	if err == nil || !strings.Contains(err.Error(), "emulator is running") {
+		t.Fatalf("PreflightCheck accepted a move while the emulator runs: %v", err)
+	}
+
+	cache := core.CacheItem{ID: "android.build-cache", ToolName: "android", Title: "Android Build Cache", CurrentPath: path}
+	if err := NewAndroidProvider().PreflightCheck(ctx, cache, env.targetRoot); err != nil {
+		t.Fatalf("the build cache waited on the emulator: %v", err)
+	}
+}
+
 func TestLifecycle_Homebrew(t *testing.T) {
 	env := setupMockEnv(t)
 	testLinkedMove(t, env, NewHomebrewProvider(), "homebrew.downloads",
