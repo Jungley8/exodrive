@@ -71,6 +71,9 @@ func NewRegistry() *Registry {
 		NewGolangciLintProvider(),
 		NewGoplsProvider(),
 		NewAntigravityProvider(),
+		NewClaudeProvider(),
+		NewCodexProvider(),
+		NewOpenCodeProvider(),
 		NewOrphanProvider(),
 	)
 	r.Register(Models()...)

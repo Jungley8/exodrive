@@ -33,7 +33,12 @@ Supported toolchains:
   cache folder)
 - AI model stores: `ollama`, `huggingface` (`hub/` under `HF_HOME`), `lmstudio`
 - Agent session stores: `antigravity` (`conversations/` and `brain/` under
-  `~/.gemini/antigravity-cli`; the CLI follows a symbolic link at that path)
+  `~/.gemini/antigravity-cli`), `claude` (`projects/` and `file-history/` under
+  `~/.claude`), `codex` (`sessions/` and `archived_sessions/` under `~/.codex`),
+  and `opencode` (`opencode.db`, `snapshot/`, and `storage/` under
+  `~/.local/share/opencode`). Each program follows a symbolic link at these
+  paths. The `opencode.db` row moves one file, so it refuses a move while
+  `opencode.db-wal` holds bytes.
 - Legacy/Orphans: abandoned cache folders from earlier configuration changes
 
 ### Platform promise
@@ -67,12 +72,12 @@ internal/
   plugins/                # Providers for each toolchain
     provider.go           # Provider interface and registry
     move.go               # shared copy, verify, record, and link step
-    linked.go             # table-driven provider for fixed folders
+    linked.go             # table-driven provider for fixed folders and files
     rollback.go           # shared rollback and cleanup helpers
     npm.go pnpm.go yarn.go cargo.go golang.go bun.go uv.go pip.go docker.go
     xcode.go jvm.go apple.go dart.go android.go conda.go homebrew.go
     ruby.go composer.go nuget.go devtools.go browsers.go gotools.go
-    antigravity.go
+    antigravity.go agents.go
     orphan.go
   ui/                     # terminal table and progress bar
 desktop/                  # nsgo reactive window
