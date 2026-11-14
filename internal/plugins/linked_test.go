@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -548,9 +549,29 @@ func TestLifecycle_Devtools(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
 			testLinkedMove(t, env, p, tc.id,
-				filepath.Join(env.home, "Library", "Caches", tc.folder),
+				systemCacheFolder(t, env.home, tc.folder),
 				filepath.FromSlash(tc.subdir))
 		})
+	}
+}
+
+// systemCacheFolder names where the operating system keeps a tool's cache
+// folder. The test states the rule itself, so a provider that reads a different
+// rule on another platform fails here.
+func systemCacheFolder(t *testing.T, home, name string) string {
+	t.Helper()
+	switch runtime.GOOS {
+	case "darwin":
+		return filepath.Join(home, "Library", "Caches", name)
+	case "windows":
+		appData := os.Getenv("LOCALAPPDATA")
+		if appData == "" {
+			t.Skip("LOCALAPPDATA is not set")
+		}
+		return filepath.Join(appData, name)
+	default:
+		// setupMockEnv sets XDG_CACHE_HOME to <home>/.cache.
+		return filepath.Join(home, ".cache", name)
 	}
 }
 
