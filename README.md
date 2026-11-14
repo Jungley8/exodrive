@@ -75,6 +75,10 @@ A tool can delete the link and write its folder again. `exodrive check` then
 shows the state Rewritten, and the card says so. The folder on this Mac is real
 again, so the tool no longer reaches the copy.
 
+A record holds the folder that it moved. A tool can later read a different
+folder. The scan stops that row and names both folders. Run
+`exodrive rollback <item>` to return the copy, then scan again.
+
 Xcode can delete Derived Data or the previews folder, and then create a real
 folder in place of the link. Exodrive keeps the ledger record, so a rollback
 compares the two folders first. A rollback that would drop newer files stops,

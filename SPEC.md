@@ -297,7 +297,12 @@ refuses the migration; none of them falls back to a weaker mode.
    - Writers take an exclusive lock on `manifest.json.lock`, so two Exodrive
      processes cannot lose an update.
    - A record ID is unique. A second record for the same ID is refused.
-   - A scan marks an item as migrated when the ledger holds its ID.
+   - A scan marks an item as migrated when the ledger holds its ID and the
+     record names the folder that the item now reports.
+   - A record that names another folder stops the row: the item keeps no move
+     claim, and `BlockedReason` names the recorded folder, the folder that the
+     tool reads, and the rollback command. A provider can change the folder it
+     reports, and the record then describes a folder that no tool reads.
    - For a record that moved the data by link, the scan reads the original path
      and sets `LinkState`. `moved` means the link reaches the copy. `rewritten`
      means a real folder sits there again, or the link points elsewhere. Empty

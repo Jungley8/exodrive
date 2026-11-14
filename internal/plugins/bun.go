@@ -24,7 +24,8 @@ func (p *BunProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	var items []core.CacheItem
 
 	// bun prints its cache only inside a project, so Exodrive reads the install
-	// root instead. BUN_INSTALL names it; the default is ~/.bun.
+	// root instead. BUN_INSTALL names it; the default is ~/.bun. The install
+	// cache is the folder that bun fills: an install writes the packages there.
 	cacheDir, _ := toolQuery(ctx, "bun", "pm", "cache")
 
 	home, _ := os.UserHomeDir()
@@ -32,7 +33,6 @@ func (p *BunProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 		cacheDir,
 		filepath.Join(bunInstallRoot(home), "install", "cache"),
 		filepath.Join(home, ".bun", "install", "cache"),
-		filepath.Join(home, "Library", "Caches", "bun"),
 	}
 
 	seen := make(map[string]bool)

@@ -381,10 +381,11 @@ func TestScanAllReadsHowTheLinkStands(t *testing.T) {
 	}
 }
 
-// TestScanAllIgnoresARecordForAnotherPath keeps a record that names a different
-// path from speaking about this item. A provider can change the folder that it
-// reports, and the old record then describes something else.
-func TestScanAllIgnoresARecordForAnotherPath(t *testing.T) {
+// TestScanAllRefusesARecordForAnotherPath keeps a record that names a different
+// folder from speaking about this item. A provider can change the folder that
+// it reports, and the old record then describes another folder. The row stops,
+// and it names the command that returns the copy.
+func TestScanAllRefusesARecordForAnotherPath(t *testing.T) {
 	t.Setenv(ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
 
 	original := filepath.Join(t.TempDir(), "home", ".bun", "install", "cache")
@@ -409,11 +410,18 @@ func TestScanAllIgnoresARecordForAnotherPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !items[0].IsMigrated {
-		t.Fatal("the scan lost the record")
+	if items[0].IsMigrated {
+		t.Fatal("the scan claimed a move for a record of another folder")
 	}
 	if items[0].LinkState != LinkUnknown {
 		t.Fatalf("the scan read another path's record as %q, want none", items[0].LinkState)
+	}
+	reason := items[0].BlockedReason
+	if !strings.Contains(reason, "mock.drift") || !strings.Contains(reason, original) {
+		t.Fatalf("the row holds no way out: %q", reason)
+	}
+	if !strings.Contains(reason, "exodrive rollback mock.drift") {
+		t.Fatalf("the row does not name the command: %q", reason)
 	}
 }
 

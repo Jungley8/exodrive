@@ -777,3 +777,22 @@ func TestGoToolCachesStayQuietWithoutAFolder(t *testing.T) {
 		}
 	}
 }
+
+// TestBunIgnoresTheSystemCacheFolder keeps bun on the folder that it fills. The
+// install cache holds the packages, and a folder at the system cache path
+// belongs to another tool, so a scan claims nothing about it.
+func TestBunIgnoresTheSystemCacheFolder(t *testing.T) {
+	env := setupMockEnv(t)
+	writeMockCLI(t, env.bin, "bun", "exit 1")
+	t.Setenv("BUN_INSTALL", filepath.Join(env.home, ".bun"))
+
+	foreign := filepath.Join(env.home, "Library", "Caches", "bun")
+	if err := os.MkdirAll(filepath.Join(foreign, "packages"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(foreign) })
+
+	if items := mustDetect(t, NewBunProvider()); len(items) != 0 {
+		t.Fatalf("the scan reports a folder that bun does not read: %+v", items)
+	}
+}

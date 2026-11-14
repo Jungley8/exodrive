@@ -72,15 +72,29 @@ func (e *Engine) ScanAll(ctx context.Context) ([]CacheItem, error) {
 		if !ok {
 			continue
 		}
+		// A record that names another folder does not describe this item: the
+		// tool reads a path that no record covers, and the copy belongs to a
+		// folder that the tool no longer reads. A move claim here would hide
+		// both, so the scan stops the row and names the way out.
+		if filepath.Clean(rec.OriginalPath) != filepath.Clean(allItems[i].CurrentPath) {
+			if allItems[i].BlockedReason == "" {
+				allItems[i].BlockedReason = driftReason(rec, allItems[i].CurrentPath)
+			}
+			continue
+		}
 		allItems[i].IsMigrated = true
 		allItems[i].DestinationPath = rec.DestinationDir
-		// A record that names another path does not describe this item, so the
-		// scan claims nothing about its link.
-		if filepath.Clean(rec.OriginalPath) == filepath.Clean(allItems[i].CurrentPath) {
-			allItems[i].LinkState = linkStateOf(rec)
-		}
+		allItems[i].LinkState = linkStateOf(rec)
 	}
 	return allItems, errors.Join(detectErrs...)
+}
+
+// driftReason tells the person that a record describes another folder. The
+// record still holds the copy, so a rollback returns it.
+func driftReason(rec MigrationRecord, current string) string {
+	return fmt.Sprintf(
+		"Exodrive recorded a move of %s. This tool reads %s. Run 'exodrive rollback %s' to return the copy.",
+		rec.OriginalPath, current, rec.ID)
 }
 
 // linkStateOf reads the original path of a record. It inspects only a record
