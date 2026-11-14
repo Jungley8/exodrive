@@ -70,6 +70,7 @@ func NewRegistry() *Registry {
 		NewPuppeteerProvider(),
 		NewGolangciLintProvider(),
 		NewGoplsProvider(),
+		NewAntigravityProvider(),
 		NewOrphanProvider(),
 	)
 	r.Register(Models()...)

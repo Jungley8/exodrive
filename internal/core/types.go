@@ -10,6 +10,7 @@ const (
 	CategoryBuildCache   CacheCategory = "build_cache"   // Build output cache (go-build, cargo git)
 	CategoryModelStore   CacheCategory = "model_store"   // AI model weights (ollama, Hugging Face, LM Studio)
 	CategoryVirtualDisk  CacheCategory = "virtual_disk"  // VM virtual disk images (Docker, OrbStack, Colima)
+	CategorySessionStore CacheCategory = "session_store" // Agent session history and artifacts (Antigravity)
 	CategoryOrphan       CacheCategory = "orphan"        // Historical abandoned caches
 )
 

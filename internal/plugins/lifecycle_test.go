@@ -413,6 +413,87 @@ func TestLifecycle_Cargo_PreservesBin(t *testing.T) {
 	}
 }
 
+func TestLifecycle_Antigravity_LeavesSiblingsInPlace(t *testing.T) {
+	env := setupMockEnv(t)
+	ctx := context.Background()
+
+	appDir := filepath.Join(env.home, ".gemini", "antigravity-cli")
+	conversations := filepath.Join(appDir, "conversations")
+	brain := filepath.Join(appDir, "brain")
+	settingsFile := filepath.Join(appDir, "settings.json")
+
+	if err := os.MkdirAll(conversations, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(brain, "abc-123"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	sessionFile := filepath.Join(conversations, "abc-123.db")
+	planFile := filepath.Join(brain, "abc-123", "plan.md")
+	_ = os.WriteFile(sessionFile, []byte("session-bytes"), 0644)
+	_ = os.WriteFile(planFile, []byte("plan-bytes"), 0644)
+	_ = os.WriteFile(settingsFile, []byte(`{"model":"x"}`), 0644)
+
+	p := NewAntigravityProvider()
+	items, err := p.Detect(ctx)
+	if err != nil {
+		t.Fatalf("Detect failed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items (conversations, brain), got %d", len(items))
+	}
+
+	for _, it := range items {
+		if it.Category != core.CategorySessionStore {
+			t.Fatalf("%s: expected session_store category, got %q", it.ID, it.Category)
+		}
+		if err := p.PreflightCheck(ctx, it, env.targetRoot); err != nil {
+			t.Fatalf("PreflightCheck failed on %s: %v", it.ID, err)
+		}
+		if err := p.Migrate(ctx, it, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
+			t.Fatalf("Migrate failed on %s: %v", it.ID, err)
+		}
+		if !fsutil.IsSymlink(it.CurrentPath) {
+			t.Fatalf("expected %s to be replaced with a symlink", it.CurrentPath)
+		}
+	}
+
+	// The conversation and its artifact arrive on the target volume.
+	if data, err := os.ReadFile(filepath.Join(env.targetRoot, "antigravity", "conversations", "abc-123.db")); err != nil || string(data) != "session-bytes" {
+		t.Fatalf("conversation copy is missing or changed")
+	}
+	if data, err := os.ReadFile(filepath.Join(env.targetRoot, "antigravity", "brain", "abc-123", "plan.md")); err != nil || string(data) != "plan-bytes" {
+		t.Fatalf("brain copy is missing or changed")
+	}
+
+	// Settings stay where the CLI expects them.
+	if data, err := os.ReadFile(settingsFile); err != nil || string(data) != `{"model":"x"}` {
+		t.Fatalf("settings.json moved or changed")
+	}
+
+	for _, it := range items {
+		if err := p.Rollback(ctx, it); err != nil {
+			t.Fatalf("Rollback failed on %s: %v", it.ID, err)
+		}
+		if fsutil.IsSymlink(it.CurrentPath) {
+			t.Fatalf("expected %s to be a real folder after rollback", it.CurrentPath)
+		}
+	}
+
+	if data, err := os.ReadFile(sessionFile); err != nil || string(data) != "session-bytes" {
+		t.Fatalf("conversation did not return after rollback")
+	}
+
+	m, err := core.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest failed: %v", err)
+	}
+	if len(m.Records) != 0 {
+		t.Fatalf("expected 0 manifest records after rollback, got %d", len(m.Records))
+	}
+}
+
 func TestLifecycle_Go(t *testing.T) {
 	env := setupMockEnv(t)
 	ctx := context.Background()
