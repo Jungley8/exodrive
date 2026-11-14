@@ -36,7 +36,7 @@ flowchart LR
     CLI["exodrive 命令行"] --> Engine
     GUI["exodrive-gui 窗口"] --> Engine
     Engine --> Registry["Provider 注册表"]
-    Registry --> P["npm、pnpm、yarn、cargo、go、<br/>bun、uv、pip、conda、docker、<br/>Xcode、Maven、Gradle、<br/>CocoaPods、SwiftPM、<br/>Dart、Android、Homebrew、<br/>AI 模型缓存、孤儿缓存"]
+    Registry --> P["npm、pnpm、yarn、cargo、go、<br/>bun、uv、pip、conda、docker、<br/>Xcode、Maven、Gradle、<br/>CocoaPods、SwiftPM、<br/>Dart、Android、Homebrew、<br/>Ruby、Composer、NuGet、<br/>dev 工具缓存、AI 模型缓存、<br/>孤儿缓存"]
     Engine --> FS["fsutil<br/>拷贝、校验、软链接、<br/>磁盘检查、进程锁"]
     FS --> Ledger["~/.exodrive/manifest.json"]
 ```
@@ -47,7 +47,7 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 
 - npm、pnpm、yarn、pip、Go 在命令启动时读取配置。开一个新终端，或重新启动该工具。
 - cargo、bun、uv、Docker Desktop、Colima 以及 AI 模型缓存的路径不变。Exodrive 把原目录或原文件换成软链接，下次启动直接使用外置副本。
-- Xcode、Maven、Gradle、CocoaPods、SwiftPM、Dart、Android、Conda、Homebrew 的路径同样不变。Exodrive 把目录换成软链接。
+- Xcode、Maven、Gradle、CocoaPods、SwiftPM、Dart、Android、Conda、Homebrew、Ruby、Composer、NuGet，以及 Electron、node-gyp、tsc 缓存的路径同样不变。Exodrive 把目录换成软链接。
 - OrbStack 在启动时读取 `data_dir`。重新启动 OrbStack。
 - 已经在运行的进程仍持有旧路径。迁移在工具运行时拒绝执行，所以先停止工具。
 
@@ -102,6 +102,10 @@ Xcode 可能删除 DerivedData 或 Previews 目录，并在原位置重建真实
 | Android | 构建缓存 | 软链接 | 先执行 `gradle --stop` 停止守护进程。 |
 | Conda | `conda info` 报告的每个包目录 | 分别为每个目录建立软链接 | 先停止所有 conda 命令。跨磁盘时 conda 复制包，环境占用更多空间。 |
 | Homebrew | Homebrew 缓存中的 `downloads/` | 软链接 | 先停止所有 brew 命令。根目录由 `HOMEBREW_CACHE` 指定。需要时 Homebrew 会重新下载。 |
+| Ruby | Bundler 缓存，以及每个用户 gem 目录下的缓存 | 分别为每个目录建立软链接 | 先停止所有 `bundle` 与 `gem` 命令。Bundler 根目录由 `BUNDLE_USER_CACHE` 指定。 |
+| Composer | 下载缓存 | 软链接 | 先停止所有 composer 命令。根目录由 `COMPOSER_CACHE_DIR` 指定。 |
+| NuGet | 全局包目录 | 软链接 | 先停止所有 dotnet 构建。根目录由 `NUGET_PACKAGES` 指定。 |
+| Electron、node-gyp、tsc | 下载缓存与构建缓存 | 分别为每个目录建立软链接 | 先停止正在写这个缓存的构建。需要时每个工具会重新缓存。 |
 | 孤儿缓存 | 配置变更后遗留的本地缓存 | `exodrive orphans --clean` 删除 | 先执行 `exodrive orphans` 查看列表。 |
 
 ## 环境要求
@@ -264,7 +268,7 @@ exodrive verify --all --json
 
 每个缓存是一张卡片。卡片显示名称、大小和一个状态词：**On this Mac**、**On the drive**、**Cannot move** 或 **Unused**；同时列出该缓存的目录、副本目录，以及 Exodrive 做的改动。改程序配置的，程序下次启动时生效；建软链接的，程序侧没有任何变化。
 
-左侧的栏按工具链分组列出检测结果：Node、Python、Rust、Go、Apple、JVM、Mobile、Homebrew、Docker。每个分组下的横条显示这一组有多少还在本机、多少已经搬走。点某个分组，右边只显示该组的缓存；点 **All caches** 恢复全部。
+左侧的栏按工具链分组列出检测结果：Node、Python、Ruby、Rust、Go、Apple、JVM、Mobile、Homebrew、Docker。每个分组下的横条显示这一组有多少还在本机、多少已经搬走。点某个分组，右边只显示该组的缓存；点 **All caches** 恢复全部。
 
 列表上方的筛选器保留一个位置：**All**、**On this Mac** 或 **On the drive**。分组和位置筛选都会收窄列表，迁移只作用于屏幕上看到的缓存；切换筛选会清空当前勾选。
 

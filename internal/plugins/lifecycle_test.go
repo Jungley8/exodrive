@@ -60,6 +60,10 @@ func setupMockEnv(t *testing.T) *mockEnv {
 	t.Setenv("CP_HOME_DIR", filepath.Join(home, ".cocoapods"))
 	t.Setenv("PUB_CACHE", filepath.Join(home, ".pub-cache"))
 	t.Setenv("HOMEBREW_CACHE", filepath.Join(home, "Library", "Caches", "Homebrew"))
+	t.Setenv("BUNDLE_USER_CACHE", filepath.Join(home, ".bundle", "cache"))
+	t.Setenv("COMPOSER_CACHE_DIR", filepath.Join(home, "Library", "Caches", "composer"))
+	t.Setenv("NUGET_PACKAGES", filepath.Join(home, ".nuget", "packages"))
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 
 	// Provide a hermetic process table that holds no tool processes.
 	writeMockCLI(t, bin, "ps", "exit 0")

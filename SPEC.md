@@ -23,6 +23,10 @@ Supported toolchains:
   (`build-cache/`)
 - conda: `conda` (every `pkgs_dirs` entry that `conda info --json` reports)
 - Homebrew: `homebrew` (`downloads/` under the Homebrew cache)
+- Ruby: `ruby` (the Bundler cache, and the cache of every user gem folder)
+- PHP: `composer` (the download cache)
+- .NET: `nuget` (the global package folder)
+- Dev tools: `devtools` (Electron downloads, node-gyp headers, the tsc cache)
 - AI model stores: `ollama`, `huggingface` (`hub/` under `HF_HOME`), `lmstudio`
 - Legacy/Orphans: abandoned cache folders from earlier configuration changes
 
@@ -60,7 +64,8 @@ internal/
     linked.go             # table-driven provider for fixed folders
     rollback.go           # shared rollback and cleanup helpers
     npm.go pnpm.go yarn.go cargo.go golang.go bun.go uv.go pip.go docker.go
-    xcode.go jvm.go apple.go dart.go android.go conda.go homebrew.go orphan.go
+    xcode.go jvm.go apple.go dart.go android.go conda.go homebrew.go
+    ruby.go composer.go nuget.go devtools.go orphan.go
   ui/                     # terminal table and progress bar
 desktop/                  # nsgo reactive window
 packaging/Info.plist.in   # app bundle template
@@ -201,6 +206,11 @@ refuses the migration; none of them falls back to a weaker mode.
    - `dart` refuses while `dart`, `flutter`, or `pub` runs. `android` refuses
      while `gradle` or the daemon runs. `conda` refuses while `conda`, `mamba`,
      or `micromamba` runs. `homebrew` refuses while `brew` runs.
+   - `ruby` refuses while `bundle` or `gem` runs. It does not name `ruby`:
+     a Rails server is not a package command. `composer` refuses while
+     `composer` runs. `nuget` refuses while `dotnet`, `msbuild`, or `nuget`
+     runs. `devtools` names no process: `node` runs long-lived programs, so a
+     lock on it would stop a move on a machine that builds nothing.
    - Each package manager refuses to run while its own process runs.
    - The check reads the process table and matches the program and the paths
      that name a tool. The first token that is neither a flag nor a shell
@@ -229,6 +239,8 @@ refuses the migration; none of them falls back to a weaker mode.
      not take effect and the local copy would be deleted anyway.
    - Preflight refuses the migration and names the variable. The user unsets it
      and runs the migration again.
+   - `BUNDLE_USER_CACHE`, `COMPOSER_CACHE_DIR`, and `NUGET_PACKAGES` name a
+     folder that a symbolic link replaces, so Exodrive does not refuse them.
    - A model store reads its folder from `OLLAMA_MODELS` or `HF_HOME`, and
      Exodrive does not refuse it. The switch replaces the folder with a link,
      so the variable still names a path that works. The guard exists for a
@@ -427,8 +439,8 @@ refuses the migration; none of them falls back to a weaker mode.
   wrote again offers `Keep the local folder`, because a move back would fail on
   the two trees. Each one asks for confirmation. The delete names the path and
   says the data is gone.
-- The rail lists what the check found, by group: Node, Python, Rust, Go,
-  Apple, JVM, Mobile, Homebrew, Docker, and Other. Each group shows its count
+- The rail lists what the check found, by group: Node, Python, Ruby, Rust,
+  Go, Apple, JVM, Mobile, Homebrew, Docker, and Other. Each group shows its count
   and a bar split by place, so a press on a group reads before it filters. A
   group with no cache is absent. `familyLabel` returns the group name itself,
   so Apple, JVM, Mobile, and Homebrew read the same in both languages.

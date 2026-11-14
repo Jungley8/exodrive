@@ -265,6 +265,7 @@ type cacheFamily string
 const (
 	familyNode     cacheFamily = "Node"
 	familyPython   cacheFamily = "Python"
+	familyRuby     cacheFamily = "Ruby"
 	familyRust     cacheFamily = "Rust"
 	familyGo       cacheFamily = "Go"
 	familyApple    cacheFamily = "Apple"
@@ -278,7 +279,7 @@ const (
 // familyOrder is the order the rail lists the groups in. A group with no cache
 // does not appear.
 var familyOrder = []cacheFamily{
-	familyNode, familyPython, familyRust, familyGo,
+	familyNode, familyPython, familyRuby, familyRust, familyGo,
 	familyApple, familyJVM, familyMobile, familyHomebrew, familyDocker, familyOther,
 }
 
@@ -290,6 +291,8 @@ func familyOf(tool string) cacheFamily {
 		return familyNode
 	case "pip", "uv", "conda":
 		return familyPython
+	case "ruby":
+		return familyRuby
 	case "cargo":
 		return familyRust
 	case "go", "golang":

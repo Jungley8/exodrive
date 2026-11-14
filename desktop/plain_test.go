@@ -317,10 +317,11 @@ func TestFamiliesGroupsTheCachesByToolchain(t *testing.T) {
 		{ID: "10", ToolName: "android", SizeBytes: 5120, IsActive: true},
 		{ID: "11", ToolName: "homebrew", SizeBytes: 10240, IsActive: true},
 		{ID: "12", ToolName: "conda", SizeBytes: 20480, IsActive: true},
+		{ID: "13", ToolName: "ruby", SizeBytes: 40960, IsActive: true},
 	}
 
 	got := families(items)
-	want := []cacheFamily{familyNode, familyPython, familyRust, familyApple, familyJVM,
+	want := []cacheFamily{familyNode, familyPython, familyRuby, familyRust, familyApple, familyJVM,
 		familyMobile, familyHomebrew, familyDocker, familyOther}
 	if len(got) != len(want) {
 		t.Fatalf("families returned %d groups, want %d: %+v", len(got), len(want), got)
@@ -333,8 +334,8 @@ func TestFamiliesGroupsTheCachesByToolchain(t *testing.T) {
 	if got[0].Count != 2 || got[0].Local != 30 || got[0].Moved != 0 {
 		t.Fatalf("Node is %+v, want 2 caches and 30 bytes on this Mac", got[0])
 	}
-	if got[2].Moved != 80 || got[2].Local != 0 {
-		t.Fatalf("Rust is %+v, want its bytes on the drive", got[2])
+	if got[3].Moved != 80 || got[3].Local != 0 {
+		t.Fatalf("Rust is %+v, want its bytes on the drive", got[3])
 	}
 
 	if !hasFamily(items, familyOther) || hasFamily(items, familyGo) {
@@ -345,6 +346,7 @@ func TestFamiliesGroupsTheCachesByToolchain(t *testing.T) {
 		"maven": familyJVM, "gradle": familyJVM,
 		"dart": familyMobile, "android": familyMobile,
 		"homebrew": familyHomebrew, "conda": familyPython,
+		"ruby": familyRuby, "composer": familyOther, "nuget": familyOther, "devtools": familyOther,
 	} {
 		if got := familyOf(tool); got != family {
 			t.Fatalf("familyOf(%q) is %q, want %q", tool, got, family)

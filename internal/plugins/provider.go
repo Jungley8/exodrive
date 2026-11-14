@@ -61,6 +61,10 @@ func NewRegistry() *Registry {
 		NewAndroidProvider(),
 		NewCondaProvider(),
 		NewHomebrewProvider(),
+		NewRubyProvider(),
+		NewComposerProvider(),
+		NewNuGetProvider(),
+		NewDevtoolsProvider(),
 		NewOrphanProvider(),
 	)
 	r.Register(Models()...)

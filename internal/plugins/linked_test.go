@@ -416,6 +416,7 @@ func TestNewStoresStayHiddenWithoutAFolder(t *testing.T) {
 		NewXcodeProvider(), NewMavenProvider(), NewGradleProvider(),
 		NewCocoaPodsProvider(), NewSwiftPMProvider(),
 		NewDartProvider(), NewAndroidProvider(), NewHomebrewProvider(),
+		NewComposerProvider(), NewNuGetProvider(), NewDevtoolsProvider(), NewRubyProvider(),
 	} {
 		items, err := p.Detect(ctx)
 		if err != nil {
@@ -446,6 +447,9 @@ func TestNewStoresRefuseWhileTheToolRuns(t *testing.T) {
 		{"android build", "/opt/homebrew/bin/gradle assemble", "gradle is running", NewAndroidProvider()},
 		{"conda", "/opt/miniconda3/bin/conda install numpy", "conda is running", NewCondaProvider()},
 		{"homebrew", "/opt/homebrew/bin/brew install jq", "brew is running", NewHomebrewProvider()},
+		{"composer", "/usr/local/bin/composer install", "composer is running", NewComposerProvider()},
+		{"nuget", "/usr/local/share/dotnet/dotnet build", "dotnet is running", NewNuGetProvider()},
+		{"ruby gems", "/usr/local/bin/gem install rails", "gem is running", NewRubyProvider()},
 	}
 
 	for _, tc := range cases {
@@ -479,4 +483,138 @@ func mustDetect(t *testing.T, p Provider) []core.CacheItem {
 		t.Fatalf("%s: Detect failed: %v", p.Name(), err)
 	}
 	return items
+}
+
+func TestLifecycle_Composer(t *testing.T) {
+	env := setupMockEnv(t)
+	testLinkedMove(t, env, NewComposerProvider(), "composer.cache",
+		filepath.Join(env.home, "Library", "Caches", "composer"),
+		filepath.Join("composer", "cache"))
+}
+
+// TestComposerCacheFollowsTheEnvironment keeps the provider on the folder that
+// COMPOSER_CACHE_DIR names.
+func TestComposerCacheFollowsTheEnvironment(t *testing.T) {
+	setupMockEnv(t)
+	root := filepath.Join(t.TempDir(), "composer-home")
+	t.Setenv("COMPOSER_CACHE_DIR", root)
+
+	path := root
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+
+	item := findItem(t, mustDetect(t, NewComposerProvider()), "composer.cache")
+	if item.CurrentPath != path {
+		t.Fatalf("current path is %q, want %q", item.CurrentPath, path)
+	}
+}
+
+func TestLifecycle_NuGet(t *testing.T) {
+	env := setupMockEnv(t)
+	testLinkedMove(t, env, NewNuGetProvider(), "nuget.packages",
+		filepath.Join(env.home, ".nuget", "packages"),
+		filepath.Join("nuget", "packages"))
+}
+
+// TestNuGetFollowsTheEnvironment keeps the provider on the folder that
+// NUGET_PACKAGES names.
+func TestNuGetFollowsTheEnvironment(t *testing.T) {
+	setupMockEnv(t)
+	root := filepath.Join(t.TempDir(), "nuget-global")
+	t.Setenv("NUGET_PACKAGES", root)
+
+	if err := os.MkdirAll(root, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+
+	item := findItem(t, mustDetect(t, NewNuGetProvider()), "nuget.packages")
+	if item.CurrentPath != root {
+		t.Fatalf("current path is %q, want %q", item.CurrentPath, root)
+	}
+}
+
+func TestLifecycle_Devtools(t *testing.T) {
+	env := setupMockEnv(t)
+	p := NewDevtoolsProvider()
+
+	cases := []struct{ id, folder, subdir string }{
+		{"devtools.electron", "electron", filepath.Join("devtools", "electron")},
+		{"devtools.node-gyp", "node-gyp", filepath.Join("devtools", "node-gyp")},
+		{"devtools.typescript", "typescript", filepath.Join("devtools", "typescript")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.id, func(t *testing.T) {
+			testLinkedMove(t, env, p, tc.id,
+				filepath.Join(env.home, "Library", "Caches", tc.folder),
+				filepath.FromSlash(tc.subdir))
+		})
+	}
+}
+
+// TestLifecycle_Ruby moves the Bundler cache and one user gem cache. The gem
+// folder carries the Ruby version, so the provider discovers it on the scan.
+func TestLifecycle_Ruby(t *testing.T) {
+	env := setupMockEnv(t)
+	p := NewRubyProvider()
+
+	t.Run("bundler", func(t *testing.T) {
+		testLinkedMove(t, env, p, "ruby.bundler-cache",
+			filepath.Join(env.home, ".bundle", "cache"),
+			filepath.Join("ruby", "bundler-cache"))
+	})
+	t.Run("gem cache", func(t *testing.T) {
+		gemCache := filepath.Join(env.home, ".gem", "ruby", "3.3.0", "cache")
+		item := findItem(t, mustDetectAfterFolder(t, env, p, gemCache), "ruby.gem-cache-"+shortDigest(gemCache))
+		testLinkedMove(t, env, p, item.ID, gemCache, item.TargetSubdir)
+	})
+}
+
+// mustDetectAfterFolder creates the folder that a provider discovers on its own,
+// then returns what a scan reports.
+func mustDetectAfterFolder(t *testing.T, env *mockEnv, p Provider, path string) []core.CacheItem {
+	t.Helper()
+	if err := os.MkdirAll(path, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Join(env.home, ".gem")) })
+	return mustDetect(t, p)
+}
+
+// TestRubyKeepsOneIDPerGemFolder keeps every gem folder apart, and keeps its
+// name across scans.
+func TestRubyKeepsOneIDPerGemFolder(t *testing.T) {
+	env := setupMockEnv(t)
+	first := filepath.Join(env.home, ".gem", "ruby", "3.3.0", "cache")
+	second := filepath.Join(env.home, ".gem", "ruby", "3.2.0", "cache")
+	for _, dir := range []string{first, second} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Join(env.home, ".gem")) })
+
+	items := mustDetect(t, NewRubyProvider())
+	if len(items) != 2 {
+		t.Fatalf("Detect reports %d gem caches, want 2: %+v", len(items), items)
+	}
+	if items[0].ID == items[1].ID {
+		t.Fatalf("both gem caches share the ID %q", items[0].ID)
+	}
+	if items[0].TargetSubdir == items[1].TargetSubdir {
+		t.Fatalf("both gem caches share the target %q", items[0].TargetSubdir)
+	}
+	if again := mustDetect(t, NewRubyProvider()); again[0].ID != items[0].ID || again[1].ID != items[1].ID {
+		t.Fatalf("a second scan renames the caches: %q, %q", again[0].ID, again[1].ID)
+	}
+}
+
+// TestRubyStaysQuietWithoutAFolder keeps a scan empty on a machine without Ruby.
+func TestRubyStaysQuietWithoutAFolder(t *testing.T) {
+	setupMockEnv(t)
+	if items := mustDetect(t, NewRubyProvider()); len(items) != 0 {
+		t.Fatalf("Detect reports %d items without a folder", len(items))
+	}
 }
