@@ -26,6 +26,11 @@ func (p *BunProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 	// bun prints its cache only inside a project, so Exodrive reads the install
 	// root instead. BUN_INSTALL names it; the default is ~/.bun. The install
 	// cache is the folder that bun fills: an install writes the packages there.
+	//
+	// The system cache folder (Library/Caches/bun on macOS) is not this cache.
+	// Any bun-based program writes manifests there, and a move of it would name
+	// a folder that no installer reads. It stays out of the candidates, because
+	// an ID that holds two folders hides a stale record.
 	cacheDir, _ := toolQuery(ctx, "bun", "pm", "cache")
 
 	home, _ := os.UserHomeDir()
