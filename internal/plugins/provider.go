@@ -65,6 +65,9 @@ func NewRegistry() *Registry {
 		NewComposerProvider(),
 		NewNuGetProvider(),
 		NewDevtoolsProvider(),
+		NewPlaywrightProvider(),
+		NewCypressProvider(),
+		NewPuppeteerProvider(),
 		NewOrphanProvider(),
 	)
 	r.Register(Models()...)

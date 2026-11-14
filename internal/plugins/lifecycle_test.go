@@ -63,6 +63,9 @@ func setupMockEnv(t *testing.T) *mockEnv {
 	t.Setenv("BUNDLE_USER_CACHE", filepath.Join(home, ".bundle", "cache"))
 	t.Setenv("COMPOSER_CACHE_DIR", filepath.Join(home, "Library", "Caches", "composer"))
 	t.Setenv("NUGET_PACKAGES", filepath.Join(home, ".nuget", "packages"))
+	t.Setenv("PLAYWRIGHT_BROWSERS_PATH", filepath.Join(home, "Library", "Caches", "ms-playwright"))
+	t.Setenv("CYPRESS_CACHE_FOLDER", filepath.Join(home, "Library", "Caches", "Cypress"))
+	t.Setenv("PUPPETEER_CACHE_DIR", filepath.Join(home, ".cache", "puppeteer"))
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, ".cache"))
 
 	// Provide a hermetic process table that holds no tool processes.

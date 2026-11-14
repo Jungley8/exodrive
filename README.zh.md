@@ -36,7 +36,7 @@ flowchart LR
     CLI["exodrive 命令行"] --> Engine
     GUI["exodrive-gui 窗口"] --> Engine
     Engine --> Registry["Provider 注册表"]
-    Registry --> P["npm、pnpm、yarn、cargo、go、<br/>bun、uv、pip、conda、docker、<br/>Xcode、Maven、Gradle、<br/>CocoaPods、SwiftPM、<br/>Dart、Android、Homebrew、<br/>Ruby、Composer、NuGet、<br/>dev 工具缓存、AI 模型缓存、<br/>孤儿缓存"]
+    Registry --> P["npm、pnpm、yarn、cargo、go、<br/>bun、uv、pip、conda、docker、<br/>Xcode、Maven、Gradle、<br/>CocoaPods、SwiftPM、<br/>Dart、Android、Homebrew、<br/>Ruby、Composer、NuGet、<br/>dev 工具缓存、<br/>浏览器测试缓存、<br/>AI 模型缓存、孤儿缓存"]
     Engine --> FS["fsutil<br/>拷贝、校验、软链接、<br/>磁盘检查、进程锁"]
     FS --> Ledger["~/.exodrive/manifest.json"]
 ```
@@ -47,7 +47,7 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 
 - npm、pnpm、yarn、pip、Go 在命令启动时读取配置。开一个新终端，或重新启动该工具。
 - cargo、bun、uv、Docker Desktop、Colima 以及 AI 模型缓存的路径不变。Exodrive 把原目录或原文件换成软链接，下次启动直接使用外置副本。
-- Xcode、Maven、Gradle、CocoaPods、SwiftPM、Dart、Android、Conda、Homebrew、Ruby、Composer、NuGet，以及 Electron、node-gyp、tsc 缓存的路径同样不变。Exodrive 把目录换成软链接。
+- Xcode、Maven、Gradle、CocoaPods、SwiftPM、Dart、Android、Conda、Homebrew、Ruby、Composer、NuGet、Electron、node-gyp、tsc，以及 Playwright、Cypress、Puppeteer 的路径同样不变。Exodrive 把目录换成软链接。
 - OrbStack 在启动时读取 `data_dir`。重新启动 OrbStack。
 - 已经在运行的进程仍持有旧路径。迁移在工具运行时拒绝执行，所以先停止工具。
 
@@ -106,6 +106,9 @@ Xcode 可能删除 DerivedData 或 Previews 目录，并在原位置重建真实
 | Composer | 下载缓存 | 软链接 | 先停止所有 composer 命令。根目录由 `COMPOSER_CACHE_DIR` 指定。 |
 | NuGet | 全局包目录 | 软链接 | 先停止所有 dotnet 构建。根目录由 `NUGET_PACKAGES` 指定。 |
 | Electron、node-gyp、tsc | 下载缓存与构建缓存 | 分别为每个目录建立软链接 | 先停止正在写这个缓存的构建。需要时每个工具会重新缓存。 |
+| Playwright | Playwright 下载的浏览器 | 软链接 | 先停止所有测试。根目录由 `PLAYWRIGHT_BROWSERS_PATH` 指定。值为 `0` 时浏览器放在 `node_modules`，Exodrive 不列出该项。 |
+| Cypress | Cypress 下载的程序包 | 软链接 | 先停止所有测试。根目录由 `CYPRESS_CACHE_FOLDER` 指定。需要时 Cypress 会重新下载。 |
+| Puppeteer | Puppeteer 下载的浏览器 | 软链接 | 先停止所有测试。根目录由 `PUPPETEER_CACHE_DIR` 指定。需要时 Puppeteer 会重新下载。 |
 | 孤儿缓存 | 配置变更后遗留的本地缓存 | `exodrive orphans --clean` 删除 | 先执行 `exodrive orphans` 查看列表。 |
 
 ## 环境要求

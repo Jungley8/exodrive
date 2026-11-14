@@ -27,6 +27,8 @@ Supported toolchains:
 - PHP: `composer` (the download cache)
 - .NET: `nuget` (the global package folder)
 - Dev tools: `devtools` (Electron downloads, node-gyp headers, the tsc cache)
+- Browser test stores: `playwright` (`PLAYWRIGHT_BROWSERS_PATH`), `cypress`
+  (`CYPRESS_CACHE_FOLDER`), `puppeteer` (`PUPPETEER_CACHE_DIR`)
 - AI model stores: `ollama`, `huggingface` (`hub/` under `HF_HOME`), `lmstudio`
 - Legacy/Orphans: abandoned cache folders from earlier configuration changes
 
@@ -65,7 +67,7 @@ internal/
     rollback.go           # shared rollback and cleanup helpers
     npm.go pnpm.go yarn.go cargo.go golang.go bun.go uv.go pip.go docker.go
     xcode.go jvm.go apple.go dart.go android.go conda.go homebrew.go
-    ruby.go composer.go nuget.go devtools.go orphan.go
+    ruby.go composer.go nuget.go devtools.go browsers.go orphan.go
   ui/                     # terminal table and progress bar
 desktop/                  # nsgo reactive window
 packaging/Info.plist.in   # app bundle template
@@ -211,6 +213,10 @@ refuses the migration; none of them falls back to a weaker mode.
      `composer` runs. `nuget` refuses while `dotnet`, `msbuild`, or `nuget`
      runs. `devtools` names no process: `node` runs long-lived programs, so a
      lock on it would stop a move on a machine that builds nothing.
+   - `playwright`, `cypress`, and `puppeteer` name no process. The run that
+     reads the store is `node`, and the browser program names are shared with
+     programs that never touch the folder. A name lock would miss the writer or
+     stop an unrelated program, so the row carries the next step instead.
    - Each package manager refuses to run while its own process runs.
    - The check reads the process table and matches the program and the paths
      that name a tool. The first token that is neither a flag nor a shell

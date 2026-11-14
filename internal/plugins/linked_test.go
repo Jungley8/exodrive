@@ -639,3 +639,95 @@ func TestRubyStaysQuietWithoutAFolder(t *testing.T) {
 		t.Fatalf("Detect reports %d items without a folder", len(items))
 	}
 }
+
+// TestLifecycle_BrowserStores moves the store of each browser test tool. The
+// environment names the folder, so the test reads the same path on every
+// platform the tool supports.
+func TestLifecycle_BrowserStores(t *testing.T) {
+	env := setupMockEnv(t)
+
+	cases := []struct {
+		variable string
+		provider Provider
+		id       string
+		subdir   string
+	}{
+		{"PLAYWRIGHT_BROWSERS_PATH", NewPlaywrightProvider(), "playwright.browsers", filepath.Join("playwright", "browsers")},
+		{"CYPRESS_CACHE_FOLDER", NewCypressProvider(), "cypress.binaries", filepath.Join("cypress", "binaries")},
+		{"PUPPETEER_CACHE_DIR", NewPuppeteerProvider(), "puppeteer.browsers", filepath.Join("puppeteer", "browsers")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.id, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), tc.id)
+			t.Setenv(tc.variable, root)
+			testLinkedMove(t, env, tc.provider, tc.id, root, tc.subdir)
+		})
+	}
+}
+
+// TestPlaywrightKeepsTheHermeticInstallApart reads the value that turns the
+// shared folder off. Playwright keeps the browsers in node_modules then, so the
+// value 0 must never become a path.
+func TestPlaywrightKeepsTheHermeticInstallApart(t *testing.T) {
+	env := setupMockEnv(t)
+	t.Setenv("PLAYWRIGHT_BROWSERS_PATH", "0")
+
+	for _, item := range mustDetect(t, NewPlaywrightProvider()) {
+		if item.CurrentPath == "0" || filepath.Base(filepath.Dir(item.CurrentPath)) == "0" {
+			t.Fatalf("the hermetic value became a path: %q", item.CurrentPath)
+		}
+	}
+
+	// The scan reads the system cache folder instead, which the mock home
+	// holds.
+	want := systemCacheFolder(t, env.home, "ms-playwright")
+	if err := os.MkdirAll(want, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(want) })
+	item := findItem(t, mustDetect(t, NewPlaywrightProvider()), "playwright.browsers")
+	if item.CurrentPath != want {
+		t.Fatalf("current path is %q, want %q", item.CurrentPath, want)
+	}
+}
+
+// TestBrowserStoresStayQuietWithoutAFolder keeps a scan empty on a machine
+// that runs none of these tools.
+func TestBrowserStoresStayQuietWithoutAFolder(t *testing.T) {
+	setupMockEnv(t)
+	for _, p := range []Provider{NewPlaywrightProvider(), NewCypressProvider(), NewPuppeteerProvider()} {
+		if items := mustDetect(t, p); len(items) != 0 {
+			t.Fatalf("%s reports %d items without a folder", p.Name(), len(items))
+		}
+	}
+}
+
+// TestBrowserStoresFollowTheEnvironment keeps each provider on the folder its
+// variable names.
+func TestBrowserStoresFollowTheEnvironment(t *testing.T) {
+	setupMockEnv(t)
+	cases := []struct {
+		variable string
+		provider Provider
+		id       string
+	}{
+		{"PLAYWRIGHT_BROWSERS_PATH", NewPlaywrightProvider(), "playwright.browsers"},
+		{"CYPRESS_CACHE_FOLDER", NewCypressProvider(), "cypress.binaries"},
+		{"PUPPETEER_CACHE_DIR", NewPuppeteerProvider(), "puppeteer.browsers"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.id, func(t *testing.T) {
+			root := filepath.Join(t.TempDir(), "store")
+			t.Setenv(tc.variable, root)
+			if err := os.MkdirAll(root, 0755); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.RemoveAll(root) })
+
+			item := findItem(t, mustDetect(t, tc.provider), tc.id)
+			if item.CurrentPath != root {
+				t.Fatalf("current path is %q, want %q", item.CurrentPath, root)
+			}
+		})
+	}
+}
