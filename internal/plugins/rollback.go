@@ -180,13 +180,27 @@ func reconcileOriginal(original, destination string) error {
 		}
 		return fmt.Errorf("rollback: inspect %s: %w", original, err)
 	}
-	if err := fsutil.VerifyTree(destination, original); err != nil {
+	if err := verifySameData(destination, original); err != nil {
 		return fmt.Errorf("rollback: %s exists and differs from %s: %w", original, destination, err)
 	}
 	if err := os.RemoveAll(destination); err != nil {
 		return fmt.Errorf("rollback: remove %s: %w", destination, err)
 	}
 	return nil
+}
+
+// verifySameData compares the copy on the drive with the path on this machine.
+// A tree check on a single file compares nothing, so a file row needs the file
+// check: the digest would pass on two empty walks.
+func verifySameData(destination, original string) error {
+	info, err := os.Stat(destination)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fsutil.VerifyFile(destination, original)
+	}
+	return fsutil.VerifyTree(destination, original)
 }
 
 // restoreNativeData moves the migrated data back after the tool configuration

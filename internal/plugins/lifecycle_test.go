@@ -1509,3 +1509,294 @@ func TestModelStoresStayHiddenWithoutAFolder(t *testing.T) {
 		}
 	}
 }
+
+func TestLifecycle_Claude_LeavesSettingsAndPluginsInPlace(t *testing.T) {
+	env := setupMockEnv(t)
+	ctx := context.Background()
+
+	claudeDir := filepath.Join(env.home, ".claude")
+	projects := filepath.Join(claudeDir, "projects", "-Users-me-app")
+	history := filepath.Join(claudeDir, "file-history", "abc-123")
+	settings := filepath.Join(claudeDir, "settings.json")
+	plugin := filepath.Join(claudeDir, "plugins", "marketplaces", "x", "plugin.json")
+
+	for _, dir := range []string{projects, history, filepath.Dir(plugin)} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	transcript := filepath.Join(projects, "11111111-2222-3333-4444-555555555555.jsonl")
+	_ = os.WriteFile(transcript, []byte(`{"type":"user"}`), 0644)
+	_ = os.WriteFile(filepath.Join(history, "file.txt"), []byte("before the edit"), 0644)
+	_ = os.WriteFile(settings, []byte(`{"model":"opus"}`), 0644)
+	_ = os.WriteFile(plugin, []byte(`{"name":"x"}`), 0644)
+
+	p := NewClaudeProvider()
+	items, err := p.Detect(ctx)
+	if err != nil {
+		t.Fatalf("Detect failed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items (projects, file-history), got %d", len(items))
+	}
+	for _, it := range items {
+		if it.Category != core.CategorySessionStore {
+			t.Fatalf("%s: expected session_store category, got %q", it.ID, it.Category)
+		}
+		if err := p.Migrate(ctx, it, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
+			t.Fatalf("Migrate failed on %s: %v", it.ID, err)
+		}
+		if !fsutil.IsSymlink(it.CurrentPath) {
+			t.Fatalf("expected %s to be replaced with a symlink", it.CurrentPath)
+		}
+	}
+
+	if data, err := os.ReadFile(filepath.Join(env.targetRoot, "claude", "projects", "-Users-me-app", filepath.Base(transcript))); err != nil || string(data) != `{"type":"user"}` {
+		t.Fatalf("conversation copy is missing or changed")
+	}
+	if data, err := os.ReadFile(filepath.Join(env.targetRoot, "claude", "file-history", "abc-123", "file.txt")); err != nil || string(data) != "before the edit" {
+		t.Fatalf("file history copy is missing or changed")
+	}
+	// The settings, the credentials, and the plugins stay where Claude Code
+	// reads them.
+	if data, err := os.ReadFile(settings); err != nil || string(data) != `{"model":"opus"}` {
+		t.Fatalf("settings.json moved or changed")
+	}
+	if data, err := os.ReadFile(plugin); err != nil || string(data) != `{"name":"x"}` {
+		t.Fatalf("a plugin moved or changed")
+	}
+
+	for _, it := range items {
+		if err := p.Rollback(ctx, it); err != nil {
+			t.Fatalf("Rollback failed on %s: %v", it.ID, err)
+		}
+		if fsutil.IsSymlink(it.CurrentPath) {
+			t.Fatalf("expected %s to be a real folder after rollback", it.CurrentPath)
+		}
+	}
+	if data, err := os.ReadFile(transcript); err != nil || string(data) != `{"type":"user"}` {
+		t.Fatalf("conversation did not return after rollback")
+	}
+
+	m, err := core.LoadManifest()
+	if err != nil {
+		t.Fatalf("LoadManifest failed: %v", err)
+	}
+	if len(m.Records) != 0 {
+		t.Fatalf("expected 0 manifest records after rollback, got %d", len(m.Records))
+	}
+}
+
+func TestLifecycle_Codex_RollsBackArchivedSessions(t *testing.T) {
+	env := setupMockEnv(t)
+	ctx := context.Background()
+
+	sessions := filepath.Join(env.home, ".codex", "sessions", "2026", "11", "14")
+	archived := filepath.Join(env.home, ".codex", "archived_sessions")
+	config := filepath.Join(env.home, ".codex", "config.toml")
+
+	for _, dir := range []string{sessions, archived} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rollout := filepath.Join(sessions, "rollout-2026-11-14T10-00-00-abc.jsonl")
+	old := filepath.Join(archived, "rollout-2026-10-01T10-00-00-def.jsonl")
+	_ = os.WriteFile(rollout, []byte(`{"type":"session_meta"}`), 0644)
+	_ = os.WriteFile(old, []byte(`{"type":"session_meta","old":true}`), 0644)
+	_ = os.WriteFile(config, []byte("model = \"gpt-5\""), 0644)
+
+	p := NewCodexProvider()
+	items, err := p.Detect(ctx)
+	if err != nil {
+		t.Fatalf("Detect failed: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items (sessions, archived_sessions), got %d", len(items))
+	}
+	for _, it := range items {
+		if err := p.Migrate(ctx, it, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
+			t.Fatalf("Migrate failed on %s: %v", it.ID, err)
+		}
+	}
+	if data, err := os.ReadFile(filepath.Join(env.targetRoot, "codex", "archived-sessions", filepath.Base(old))); err != nil || string(data) != `{"type":"session_meta","old":true}` {
+		t.Fatalf("archived rollout copy is missing or changed")
+	}
+	if data, err := os.ReadFile(config); err != nil || string(data) != `model = "gpt-5"` {
+		t.Fatalf("config.toml moved or changed")
+	}
+
+	for _, it := range items {
+		if err := p.Rollback(ctx, it); err != nil {
+			t.Fatalf("Rollback failed on %s: %v", it.ID, err)
+		}
+	}
+	if data, err := os.ReadFile(rollout); err != nil || string(data) != `{"type":"session_meta"}` {
+		t.Fatalf("rollout did not return after rollback")
+	}
+}
+
+// TestLifecycle_OpenCode_MovesTheDatabaseAsAFile pins the one row that moves a
+// file: the database takes the place of the folder, and the rollback gives the
+// file back with its bytes.
+func TestLifecycle_OpenCode_MovesTheDatabaseAsAFile(t *testing.T) {
+	env := setupMockEnv(t)
+	t.Setenv("XDG_DATA_HOME", "")
+	ctx := context.Background()
+
+	root := filepath.Join(env.home, ".local", "share", "opencode")
+	snapshots := filepath.Join(root, "snapshot", "05952fff")
+	storage := filepath.Join(root, "storage", "message")
+	for _, dir := range []string{snapshots, storage} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db := filepath.Join(root, "opencode.db")
+	_ = os.WriteFile(db, []byte("sqlite-bytes"), 0644)
+	_ = os.WriteFile(filepath.Join(snapshots, "object"), []byte("snapshot"), 0644)
+	_ = os.WriteFile(filepath.Join(storage, "part.json"), []byte("part"), 0644)
+	_ = os.WriteFile(filepath.Join(root, "auth.json"), []byte("{}"), 0600)
+
+	p := NewOpenCodeProvider()
+	items, err := p.Detect(ctx)
+	if err != nil {
+		t.Fatalf("Detect failed: %v", err)
+	}
+	if len(items) != 3 {
+		t.Fatalf("expected 3 items (database, snapshot, storage), got %d", len(items))
+	}
+
+	var dbItem core.CacheItem
+	for _, it := range items {
+		if it.Category != core.CategorySessionStore {
+			t.Fatalf("%s: expected session_store category, got %q", it.ID, it.Category)
+		}
+		if it.ID == "opencode.database" {
+			dbItem = it
+			if it.SizeBytes != int64(len("sqlite-bytes")) {
+				t.Fatalf("a file row reports %d bytes, want the size of the file", it.SizeBytes)
+			}
+		}
+		if err := p.Migrate(ctx, it, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
+			t.Fatalf("Migrate failed on %s: %v", it.ID, err)
+		}
+		if !fsutil.IsSymlink(it.CurrentPath) {
+			t.Fatalf("expected %s to be replaced with a symlink", it.CurrentPath)
+		}
+	}
+
+	copied := filepath.Join(env.targetRoot, "opencode", "opencode.db")
+	if data, err := os.ReadFile(copied); err != nil || string(data) != "sqlite-bytes" {
+		t.Fatalf("database copy is missing or changed")
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "auth.json")); err != nil || string(data) != "{}" {
+		t.Fatalf("auth.json moved or changed")
+	}
+
+	if err := p.Rollback(ctx, dbItem); err != nil {
+		t.Fatalf("Rollback failed on %s: %v", dbItem.ID, err)
+	}
+	if fsutil.IsSymlink(db) {
+		t.Fatalf("expected %s to be a real file after rollback", db)
+	}
+	if data, err := os.ReadFile(db); err != nil || string(data) != "sqlite-bytes" {
+		t.Fatalf("database did not return with its bytes after rollback")
+	}
+	if _, err := os.Stat(copied); !os.IsNotExist(err) {
+		t.Fatalf("rollback left the copy behind at %s", copied)
+	}
+}
+
+// TestOpenCode_RefusesAPendingJournal guards the check that stops a move which
+// would split a database from pages that it has not written yet.
+func TestOpenCode_RefusesAPendingJournal(t *testing.T) {
+	env := setupMockEnv(t)
+	t.Setenv("XDG_DATA_HOME", "")
+	ctx := context.Background()
+
+	root := filepath.Join(env.home, ".local", "share", "opencode")
+	if err := os.MkdirAll(root, 0755); err != nil {
+		t.Fatal(err)
+	}
+	db := filepath.Join(root, "opencode.db")
+	_ = os.WriteFile(db, []byte("sqlite-bytes"), 0644)
+
+	p := NewOpenCodeProvider()
+	items, err := p.Detect(ctx)
+	if err != nil {
+		t.Fatalf("Detect failed: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "opencode.database" {
+		t.Fatalf("expected only the database row, got %+v", items)
+	}
+	if err := p.PreflightCheck(ctx, items[0], env.targetRoot); err != nil {
+		t.Fatalf("a database with no journal must pass: %v", err)
+	}
+
+	_ = os.WriteFile(db+"-wal", []byte("unwritten page"), 0644)
+	err = p.PreflightCheck(ctx, items[0], env.targetRoot)
+	if err == nil || !strings.Contains(err.Error(), "-wal") {
+		t.Fatalf("a database with a pending journal must fail and name the journal, got %v", err)
+	}
+}
+
+// TestLifecycle_OpenCode_RollbackKeepsTwoDifferentFiles pins the check that a
+// rollback must not delete a copy that differs from the file on this machine.
+// A tree check on one file walks nothing, so the same bytes and different bytes
+// would both pass: the test holds the two cases apart.
+func TestLifecycle_OpenCode_RollbackKeepsTwoDifferentFiles(t *testing.T) {
+	env := setupMockEnv(t)
+	t.Setenv("XDG_DATA_HOME", "")
+	ctx := context.Background()
+
+	root := filepath.Join(env.home, ".local", "share", "opencode")
+	if err := os.MkdirAll(root, 0755); err != nil {
+		t.Fatal(err)
+	}
+	db := filepath.Join(root, "opencode.db")
+	_ = os.WriteFile(db, []byte("sqlite-bytes"), 0644)
+
+	p := NewOpenCodeProvider()
+	items, err := p.Detect(ctx)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("Detect failed: %v, items %d", err, len(items))
+	}
+	item := items[0]
+	if err := p.Migrate(ctx, item, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	copied := filepath.Join(env.targetRoot, "opencode", "opencode.db")
+
+	// The program wrote the file again after the move. The bytes match, so the
+	// rollback may remove the copy on the drive.
+	if err := os.Remove(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(db, []byte("sqlite-bytes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Rollback(ctx, item); err != nil {
+		t.Fatalf("a rollback of two equal files failed: %v", err)
+	}
+	if _, err := os.Stat(copied); !os.IsNotExist(err) {
+		t.Fatalf("rollback left the equal copy behind at %s", copied)
+	}
+
+	// The same steps with different bytes: Exodrive must keep both files.
+	if err := p.Migrate(ctx, item, env.targetRoot, fsutil.MigrateProgress{}); err != nil {
+		t.Fatalf("second Migrate failed: %v", err)
+	}
+	if err := os.Remove(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(db, []byte("newer-bytes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Rollback(ctx, item); err == nil {
+		t.Fatalf("a rollback of two different files must stop")
+	}
+	if data, err := os.ReadFile(copied); err != nil || string(data) != "sqlite-bytes" {
+		t.Fatalf("the differing copy on the drive was removed or changed")
+	}
+}

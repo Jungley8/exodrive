@@ -36,7 +36,7 @@ flowchart LR
     CLI["exodrive 命令行"] --> Engine
     GUI["exodrive-gui 窗口"] --> Engine
     Engine --> Registry["Provider 注册表"]
-    Registry --> P["npm、pnpm、yarn、cargo、go、<br/>bun、uv、pip、conda、docker、<br/>Xcode、Maven、Gradle、<br/>CocoaPods、SwiftPM、<br/>Dart、Android、Homebrew、<br/>Ruby、Composer、NuGet、<br/>Antigravity、dev 工具缓存、<br/>浏览器测试缓存、<br/>Go 工具缓存、AI 模型缓存、<br/>孤儿缓存"]
+    Registry --> P["npm、pnpm、yarn、cargo、go、<br/>bun、uv、pip、conda、docker、<br/>Xcode、Maven、Gradle、<br/>CocoaPods、SwiftPM、<br/>Dart、Android、Homebrew、<br/>Ruby、Composer、NuGet、<br/>Antigravity、Claude Code、<br/>Codex、OpenCode、dev 工具缓存、<br/>浏览器测试缓存、<br/>Go 工具缓存、AI 模型缓存、<br/>孤儿缓存"]
     Engine --> FS["fsutil<br/>拷贝、校验、软链接、<br/>磁盘检查、进程锁"]
     FS --> Ledger["~/.exodrive/manifest.json"]
 ```
@@ -47,7 +47,7 @@ Exodrive 在切换步骤改写工具自身的配置。工具下次启动时读�
 
 - npm、pnpm、yarn、pip、Go 在命令启动时读取配置。开一个新终端，或重新启动该工具。
 - cargo、bun、uv、Docker Desktop、Colima 以及 AI 模型缓存的路径不变。Exodrive 把原目录或原文件换成软链接，下次启动直接使用外置副本。
-- Xcode、Maven、Gradle、CocoaPods、SwiftPM、Dart、Android、Conda、Homebrew、Ruby、Composer、NuGet、Antigravity、Electron、node-gyp、tsc、Playwright、Cypress、Puppeteer，以及 golangci-lint、gopls 缓存的路径同样不变。Exodrive 把目录换成软链接。
+- Xcode、Maven、Gradle、CocoaPods、SwiftPM、Dart、Android、Conda、Homebrew、Ruby、Composer、NuGet、Antigravity、Claude Code、Codex、OpenCode、Electron、node-gyp、tsc、Playwright、Cypress、Puppeteer，以及 golangci-lint、gopls 缓存的路径同样不变。Exodrive 把目录换成软链接。
 - OrbStack 在启动时读取 `data_dir`。重新启动 OrbStack。
 - 已经在运行的进程仍持有旧路径。迁移在工具运行时拒绝执行，所以先停止工具。
 
@@ -114,6 +114,9 @@ Xcode 可能删除 DerivedData 或 Previews 目录，并在原位置重建真实
 | golangci-lint | 分析缓存 | 软链接 | 先停止所有 golangci-lint 运行。根目录由 `GOLANGCI_LINT_CACHE` 指定。下次运行会重写缓存。 |
 | gopls | 分析缓存 | 软链接 | 先停止正在运行 gopls 的编辑器。下次分析会重写缓存。 |
 | Antigravity | 会话库与每个会话的产物 | 分别为每个目录建立软链接 | 先停止 `agy`。`settings.json` 与钥匙串引用保留在原处。Antigravity 会自行删除旧会话。 |
+| Claude Code | 会话历史与撤销用的文件快照 | 分别为每个目录建立软链接 | 先退出 Claude Code。设置、凭据与插件保留在原处。 |
+| Codex | 会话与已归档会话 | 分别为每个目录建立软链接 | 先退出 Codex。`config.toml` 与凭据保留在原处。 |
+| OpenCode | 会话数据库、撤销快照与消息记录 | 数据库与每个目录分别建立软链接 | 先退出 OpenCode，并停止它的后台服务。凭据、程序与配置保留在原处。 |
 | 孤儿缓存 | 配置变更后遗留的本地缓存 | `exodrive orphans --clean` 删除 | 先执行 `exodrive orphans` 查看列表。 |
 
 ## 环境要求

@@ -10,9 +10,9 @@ import (
 	"exodrive/internal/fsutil"
 )
 
-// linkedRow names one folder that a tool reads through a fixed path. The tool
+// linkedRow names one path that a tool reads through a fixed address. The tool
 // keeps that path after the move, because a symbolic link takes the place of
-// the folder.
+// the folder or the file.
 type linkedRow struct {
 	id       string
 	title    string
@@ -20,6 +20,11 @@ type linkedRow struct {
 	category core.CacheCategory
 	subdir   string
 	warning  string
+	// file marks a row that moves one file instead of a folder.
+	file bool
+	// check refuses a move that would strand data outside the path, such as a
+	// database journal. An empty value means the path needs no extra check.
+	check func(path string) error
 	// blocked says why Exodrive never moves this folder. An empty value means
 	// the folder can move.
 	blocked string
@@ -49,11 +54,22 @@ func (p *linkedProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 			continue
 		}
 		info, err := os.Stat(path)
-		if err != nil || !info.IsDir() {
+		if err != nil {
+			continue
+		}
+		// A row names one shape. A folder in the place of a file row is another
+		// program's folder, and a file in the place of a folder row is not the
+		// store this provider describes.
+		if info.IsDir() == row.file {
 			continue
 		}
 
-		size, _ := fsutil.DirSize(ctx, path)
+		var size int64
+		if row.file {
+			size = info.Size()
+		} else {
+			size, _ = fsutil.DirSize(ctx, path)
+		}
 		blocked := row.blocked != ""
 		items = append(items, core.CacheItem{
 			ID:             row.id,
@@ -79,6 +95,11 @@ func (p *linkedProvider) Detect(ctx context.Context) ([]core.CacheItem, error) {
 func (p *linkedProvider) PreflightCheck(ctx context.Context, item core.CacheItem, targetRoot string) error {
 	if item.BlockedReason != "" {
 		return fmt.Errorf("%s: %s", item.Title, item.BlockedReason)
+	}
+	if row, ok := p.rowFor(item.ID); ok && row.check != nil {
+		if err := row.check(item.CurrentPath); err != nil {
+			return err
+		}
 	}
 	running, err := fsutil.CheckRunningProcesses(p.locksFor(item.ID)...)
 	if err != nil {
@@ -119,13 +140,21 @@ func under(root, rel string) string {
 	return filepath.Join(root, rel)
 }
 
+// rowFor returns the row that names one path.
+func (p *linkedProvider) rowFor(id string) (linkedRow, bool) {
+	for _, row := range p.rows {
+		if row.id == id {
+			return row, true
+		}
+	}
+	return linkedRow{}, false
+}
+
 // locksFor names the processes that write one row. A row that names its own
 // processes keeps a move of another row from waiting on them.
 func (p *linkedProvider) locksFor(id string) []string {
-	for _, row := range p.rows {
-		if row.id == id && len(row.lock) > 0 {
-			return row.lock
-		}
+	if row, ok := p.rowFor(id); ok && len(row.lock) > 0 {
+		return row.lock
 	}
 	return p.lock
 }
