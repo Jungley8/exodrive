@@ -538,6 +538,9 @@ refuses the migration; none of them falls back to a weaker mode.
   below. Its bytes count as local.
   A provider that fails prints a warning; the other items stay usable. An
   unreadable ledger stops the command.
+- A scan measures every cache it finds. `DirSize` reads up to eight folders at
+  once, and every call in one run shares those readers, so a 60 GB store does
+  not open hundreds of reads at the same time.
 - `preflight <item> --target` runs the same checks a migration runs first.
 - `migrate --target` moves the selected caches. The command prints a blocked
   cache as `[blocked] <title>: <reason>` and leaves it out of the run. When
