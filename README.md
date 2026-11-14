@@ -45,7 +45,7 @@ flowchart LR
     CLI["exodrive CLI"] --> Engine
     GUI["exodrive-gui"] --> Engine
     Engine --> Registry["Provider registry"]
-    Registry --> P["npm, pnpm, yarn, cargo, go,<br/>bun, uv, pip, conda, docker,<br/>Xcode, Maven, Gradle,<br/>CocoaPods, SwiftPM,<br/>Dart, Android, Homebrew,<br/>Ruby, Composer, NuGet,<br/>dev tools, browser test stores,<br/>Go tool caches, AI model stores,<br/>orphan"]
+    Registry --> P["npm, pnpm, yarn, cargo, go,<br/>bun, uv, pip, conda, docker,<br/>Xcode, Maven, Gradle,<br/>CocoaPods, SwiftPM,<br/>Dart, Android, Homebrew,<br/>Ruby, Composer, NuGet,<br/>Antigravity, dev tools,<br/>browser test stores,<br/>Go tool caches, AI model stores,<br/>orphan"]
     Engine --> FS["fsutil<br/>copy, verify, symlink,<br/>disk check, process lock"]
     FS --> Ledger["~/.exodrive/manifest.json"]
 ```
@@ -61,10 +61,10 @@ effect at the next start of the tool.
   path. Exodrive replaces the folder or the file with a symbolic link, so the
   next start uses the external copy.
 - Xcode, Maven, Gradle, CocoaPods, SwiftPM, Dart, Android, Conda, Homebrew,
-  Ruby, Composer, NuGet, the Electron, node-gyp, and tsc caches, and the
-  Playwright, Cypress, and Puppeteer stores, and the golangci-lint and gopls
-  caches keep their path too. Exodrive replaces the folder with a symbolic
-  link.
+  Ruby, Composer, NuGet, Antigravity, the Electron, node-gyp, and tsc caches,
+  and the Playwright, Cypress, and Puppeteer stores, and the golangci-lint and
+  gopls caches keep their path too. Exodrive replaces the folder with a
+  symbolic link.
 - OrbStack reads `data_dir` at launch. Start OrbStack again.
 - A process that already runs keeps the old path. The migration stops while a
   tool runs, so stop the tool first.
@@ -142,6 +142,7 @@ holds. Run `exodrive rollback <item>` first.
 | Puppeteer | The browsers that Puppeteer downloaded | Symbolic link | Stop every test run first. `PUPPETEER_CACHE_DIR` names the root. Puppeteer downloads a browser again when it needs one. |
 | golangci-lint | The analysis cache | Symbolic link | Stop every lint run first. `GOLANGCI_LINT_CACHE` names the root. The next run writes the cache again. |
 | gopls | The analysis cache | Symbolic link | Stop every editor session that runs gopls first. The next analysis writes the cache again. |
+| Antigravity | The conversation store and the artifacts of each conversation | Symbolic link for each folder | Stop `agy` first. `settings.json` and the keychain reference stay in place. Antigravity deletes old conversations on its own. |
 | Orphans | Local caches left by an earlier change | `exodrive orphans --clean` deletes them | Run `exodrive orphans` first to review the list. |
 
 ## Requirements

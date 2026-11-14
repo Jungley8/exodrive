@@ -32,6 +32,8 @@ Supported toolchains:
 - Go tool caches: `golangci-lint` (`GOLANGCI_LINT_CACHE`), `gopls` (the system
   cache folder)
 - AI model stores: `ollama`, `huggingface` (`hub/` under `HF_HOME`), `lmstudio`
+- Agent session stores: `antigravity` (`conversations/` and `brain/` under
+  `~/.gemini/antigravity-cli`; the CLI follows a symbolic link at that path)
 - Legacy/Orphans: abandoned cache folders from earlier configuration changes
 
 ### Platform promise
@@ -70,6 +72,7 @@ internal/
     npm.go pnpm.go yarn.go cargo.go golang.go bun.go uv.go pip.go docker.go
     xcode.go jvm.go apple.go dart.go android.go conda.go homebrew.go
     ruby.go composer.go nuget.go devtools.go browsers.go gotools.go
+    antigravity.go
     orphan.go
   ui/                     # terminal table and progress bar
 desktop/                  # nsgo reactive window

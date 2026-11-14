@@ -206,7 +206,7 @@ func TestShortPathHidesOnlyTheHomeFolder(t *testing.T) {
 	if got := shortPath(sibling); got != sibling {
 		t.Fatalf("%q became %q; a folder outside home lost its path", sibling, got)
 	}
-	outside := "/Volumes/PHD/caches"
+	outside := "/Volumes/SSD/caches"
 	if got := shortPath(outside); got != outside {
 		t.Fatalf("%q became %q", outside, got)
 	}
