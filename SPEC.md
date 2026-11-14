@@ -29,6 +29,8 @@ Supported toolchains:
 - Dev tools: `devtools` (Electron downloads, node-gyp headers, the tsc cache)
 - Browser test stores: `playwright` (`PLAYWRIGHT_BROWSERS_PATH`), `cypress`
   (`CYPRESS_CACHE_FOLDER`), `puppeteer` (`PUPPETEER_CACHE_DIR`)
+- Go tool caches: `golangci-lint` (`GOLANGCI_LINT_CACHE`), `gopls` (the system
+  cache folder)
 - AI model stores: `ollama`, `huggingface` (`hub/` under `HF_HOME`), `lmstudio`
 - Legacy/Orphans: abandoned cache folders from earlier configuration changes
 
@@ -67,7 +69,8 @@ internal/
     rollback.go           # shared rollback and cleanup helpers
     npm.go pnpm.go yarn.go cargo.go golang.go bun.go uv.go pip.go docker.go
     xcode.go jvm.go apple.go dart.go android.go conda.go homebrew.go
-    ruby.go composer.go nuget.go devtools.go browsers.go orphan.go
+    ruby.go composer.go nuget.go devtools.go browsers.go gotools.go
+    orphan.go
   ui/                     # terminal table and progress bar
 desktop/                  # nsgo reactive window
 packaging/Info.plist.in   # app bundle template
@@ -217,6 +220,9 @@ refuses the migration; none of them falls back to a weaker mode.
      reads the store is `node`, and the browser program names are shared with
      programs that never touch the folder. A name lock would miss the writer or
      stop an unrelated program, so the row carries the next step instead.
+   - `golangci-lint` refuses while `golangci-lint` runs. `gopls` names no
+     process: an editor keeps it running, so the lock would stop a move on every
+     machine with an open editor.
    - Each package manager refuses to run while its own process runs.
    - The check reads the process table and matches the program and the paths
      that name a tool. The first token that is neither a flag nor a shell

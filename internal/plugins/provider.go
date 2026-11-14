@@ -68,6 +68,8 @@ func NewRegistry() *Registry {
 		NewPlaywrightProvider(),
 		NewCypressProvider(),
 		NewPuppeteerProvider(),
+		NewGolangciLintProvider(),
+		NewGoplsProvider(),
 		NewOrphanProvider(),
 	)
 	r.Register(Models()...)

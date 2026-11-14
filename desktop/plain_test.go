@@ -347,6 +347,7 @@ func TestFamiliesGroupsTheCachesByToolchain(t *testing.T) {
 		"dart": familyMobile, "android": familyMobile,
 		"homebrew": familyHomebrew, "conda": familyPython,
 		"ruby": familyRuby, "composer": familyOther, "nuget": familyOther, "devtools": familyOther,
+		"golangci-lint": familyGo, "gopls": familyGo,
 	} {
 		if got := familyOf(tool); got != family {
 			t.Fatalf("familyOf(%q) is %q, want %q", tool, got, family)

@@ -451,6 +451,7 @@ func TestNewStoresRefuseWhileTheToolRuns(t *testing.T) {
 		{"composer", "/usr/local/bin/composer install", "composer is running", NewComposerProvider()},
 		{"nuget", "/usr/local/share/dotnet/dotnet build", "dotnet is running", NewNuGetProvider()},
 		{"ruby gems", "/usr/local/bin/gem install rails", "gem is running", NewRubyProvider()},
+		{"golangci-lint", "/opt/homebrew/bin/golangci-lint run ./...", "golangci-lint is running", NewGolangciLintProvider()},
 	}
 
 	for _, tc := range cases {
@@ -729,5 +730,50 @@ func TestBrowserStoresFollowTheEnvironment(t *testing.T) {
 				t.Fatalf("current path is %q, want %q", item.CurrentPath, root)
 			}
 		})
+	}
+}
+
+// TestLifecycle_GoTools moves the caches of the two Go analysis tools.
+func TestLifecycle_GoTools(t *testing.T) {
+	env := setupMockEnv(t)
+
+	t.Run("golangci-lint", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "golangci-cache")
+		t.Setenv("GOLANGCI_LINT_CACHE", root)
+		testLinkedMove(t, env, NewGolangciLintProvider(), "golangci-lint.cache",
+			root, filepath.Join("go-tools", "golangci-lint"))
+	})
+	t.Run("gopls", func(t *testing.T) {
+		testLinkedMove(t, env, NewGoplsProvider(), "gopls.cache",
+			systemCacheFolder(t, env.home, "gopls"),
+			filepath.Join("go-tools", "gopls"))
+	})
+}
+
+// TestGolangciLintFollowsTheEnvironment keeps the provider on the folder that
+// GOLANGCI_LINT_CACHE names.
+func TestGolangciLintFollowsTheEnvironment(t *testing.T) {
+	setupMockEnv(t)
+	root := filepath.Join(t.TempDir(), "lint-cache")
+	t.Setenv("GOLANGCI_LINT_CACHE", root)
+	if err := os.MkdirAll(root, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+
+	item := findItem(t, mustDetect(t, NewGolangciLintProvider()), "golangci-lint.cache")
+	if item.CurrentPath != root {
+		t.Fatalf("current path is %q, want %q", item.CurrentPath, root)
+	}
+}
+
+// TestGoToolCachesStayQuietWithoutAFolder keeps a scan empty on a machine that
+// runs neither tool.
+func TestGoToolCachesStayQuietWithoutAFolder(t *testing.T) {
+	setupMockEnv(t)
+	for _, p := range []Provider{NewGolangciLintProvider(), NewGoplsProvider()} {
+		if items := mustDetect(t, p); len(items) != 0 {
+			t.Fatalf("%s reports %d items without a folder", p.Name(), len(items))
+		}
 	}
 }

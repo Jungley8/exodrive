@@ -295,7 +295,7 @@ func familyOf(tool string) cacheFamily {
 		return familyRuby
 	case "cargo":
 		return familyRust
-	case "go", "golang":
+	case "go", "golang", "golangci-lint", "gopls":
 		return familyGo
 	case "xcode", "cocoapods", "swiftpm":
 		return familyApple

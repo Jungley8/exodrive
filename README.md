@@ -45,7 +45,7 @@ flowchart LR
     CLI["exodrive CLI"] --> Engine
     GUI["exodrive-gui"] --> Engine
     Engine --> Registry["Provider registry"]
-    Registry --> P["npm, pnpm, yarn, cargo, go,<br/>bun, uv, pip, conda, docker,<br/>Xcode, Maven, Gradle,<br/>CocoaPods, SwiftPM,<br/>Dart, Android, Homebrew,<br/>Ruby, Composer, NuGet,<br/>dev tools, browser test stores,<br/>AI model stores, orphan"]
+    Registry --> P["npm, pnpm, yarn, cargo, go,<br/>bun, uv, pip, conda, docker,<br/>Xcode, Maven, Gradle,<br/>CocoaPods, SwiftPM,<br/>Dart, Android, Homebrew,<br/>Ruby, Composer, NuGet,<br/>dev tools, browser test stores,<br/>Go tool caches, AI model stores,<br/>orphan"]
     Engine --> FS["fsutil<br/>copy, verify, symlink,<br/>disk check, process lock"]
     FS --> Ledger["~/.exodrive/manifest.json"]
 ```
@@ -62,8 +62,9 @@ effect at the next start of the tool.
   next start uses the external copy.
 - Xcode, Maven, Gradle, CocoaPods, SwiftPM, Dart, Android, Conda, Homebrew,
   Ruby, Composer, NuGet, the Electron, node-gyp, and tsc caches, and the
-  Playwright, Cypress, and Puppeteer stores keep their path too. Exodrive
-  replaces the folder with a symbolic link.
+  Playwright, Cypress, and Puppeteer stores, and the golangci-lint and gopls
+  caches keep their path too. Exodrive replaces the folder with a symbolic
+  link.
 - OrbStack reads `data_dir` at launch. Start OrbStack again.
 - A process that already runs keeps the old path. The migration stops while a
   tool runs, so stop the tool first.
@@ -135,6 +136,8 @@ holds. Run `exodrive rollback <item>` first.
 | Playwright | The browsers that Playwright downloaded | Symbolic link | Stop every test run first. `PLAYWRIGHT_BROWSERS_PATH` names the root. The value `0` keeps the browsers in `node_modules`, so Exodrive reads none. |
 | Cypress | The binary bundle that Cypress downloaded | Symbolic link | Stop every test run first. `CYPRESS_CACHE_FOLDER` names the root. Cypress downloads the bundle again when it needs it. |
 | Puppeteer | The browsers that Puppeteer downloaded | Symbolic link | Stop every test run first. `PUPPETEER_CACHE_DIR` names the root. Puppeteer downloads a browser again when it needs one. |
+| golangci-lint | The analysis cache | Symbolic link | Stop every lint run first. `GOLANGCI_LINT_CACHE` names the root. The next run writes the cache again. |
+| gopls | The analysis cache | Symbolic link | Stop every editor session that runs gopls first. The next analysis writes the cache again. |
 | Orphans | Local caches left by an earlier change | `exodrive orphans --clean` deletes them | Run `exodrive orphans` first to review the list. |
 
 ## Requirements
