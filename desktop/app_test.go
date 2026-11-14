@@ -1110,13 +1110,15 @@ func TestWindowRailNamesTheNewGroups(t *testing.T) {
 	dart.ID, dart.ToolName, dart.Title = "dart.pub-cache", "dart", "Dart Pub Package Cache"
 	brew := fakeCache()
 	brew.ID, brew.ToolName, brew.Title = "homebrew.downloads", "homebrew", "Homebrew Downloads"
+	ruby := fakeCache()
+	ruby.ID, ruby.ToolName, ruby.Title = "ruby.bundler-cache", "ruby", "Bundler Cache"
 
-	engine := exoCore.NewEngine(&fakeProvider{name: "fake", items: []exoCore.CacheItem{dart, brew}})
+	engine := exoCore.NewEngine(&fakeProvider{name: "fake", items: []exoCore.CacheItem{dart, brew, ruby}})
 	app := nsgotest.Start(t, NewMain(engine), nsgotest.Size(1100, 800))
 	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Dart Pub Package Cache") })
 	app.Settle()
 
-	for _, group := range []string{"Mobile", "Homebrew"} {
+	for _, group := range []string{"Ruby", "Mobile", "Homebrew"} {
 		// The quoted selector reads the whole text, so a card title that holds
 		// the word does not stand in for the rail label.
 		if !app.Exists(`text:"` + group + `"`) {
