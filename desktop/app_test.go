@@ -93,6 +93,25 @@ func (f *fakeProvider) Migrate(ctx context.Context, item exoCore.CacheItem, targ
 	if item.TargetSubdir != "" {
 		destination = filepath.Join(targetRoot, item.TargetSubdir)
 	}
+	// The real engine leaves a link at the old path. The scan reads that link to
+	// tell a moved cache from one that a tool wrote again, so the fake makes one
+	// too.
+	if err := os.MkdirAll(destination, 0o755); err != nil {
+		return err
+	}
+	if _, statErr := os.Lstat(item.CurrentPath); statErr == nil {
+		if err := os.RemoveAll(item.CurrentPath); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(statErr) {
+		return statErr
+	}
+	if err := os.MkdirAll(filepath.Dir(item.CurrentPath), 0o755); err != nil {
+		return err
+	}
+	if err := os.Symlink(destination, item.CurrentPath); err != nil {
+		return err
+	}
 	return exoCore.RecordMigration(exoCore.MigrationRecord{
 		ID:             item.ID,
 		ToolName:       f.name,
@@ -109,6 +128,11 @@ func (f *fakeProvider) Rollback(ctx context.Context, item exoCore.CacheItem) err
 	defer f.writes.Add(-1)
 	if f.rollbackErr != nil {
 		return f.rollbackErr
+	}
+	// The engine puts the folder back. The fake removes the link, so the next
+	// scan reads a local cache.
+	if info, err := os.Lstat(item.CurrentPath); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		_ = os.Remove(item.CurrentPath)
 	}
 	return exoCore.RemoveRecord(item.ID)
 }
@@ -981,6 +1005,17 @@ func recordMovedCopy(t *testing.T, withDigest bool) string {
 	if err := exoCore.RecordMigration(rec); err != nil {
 		t.Fatalf("RecordMigration failed: %v", err)
 	}
+	// The record stands for a link at the old path. The scan reads that link to
+	// tell a moved cache from one that a tool wrote again.
+	if _, err := os.Lstat(rec.OriginalPath); err == nil {
+		if err := os.RemoveAll(rec.OriginalPath); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(copyDir, rec.OriginalPath); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(rec.OriginalPath) })
 	return copyDir
 }
 
@@ -1168,5 +1203,50 @@ func TestWindowKeepsTheLocalFolderAfterTheToolWritesAgain(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(original, "new.dat")); err != nil {
 		t.Fatalf("the local folder changed: %v", err)
+	}
+}
+
+// TestWindowShowsACacheThatAToolWroteAgain keeps the card honest when a tool
+// writes its folder again after a move. The card must not say that the cache is
+// on the drive, and it must offer the way out without a failed press first.
+func TestWindowShowsACacheThatAToolWroteAgain(t *testing.T) {
+	t.Setenv(exoCore.ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	original := filepath.Join(t.TempDir(), "home", "Library", "Caches", "fake")
+	if err := os.MkdirAll(original, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(original, "new.dat"), []byte("new"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	copyDir := t.TempDir()
+	if err := exoCore.RecordMigration(exoCore.MigrationRecord{
+		ID:             "fake.cache",
+		ToolName:       "fake",
+		OriginalPath:   original,
+		DestinationDir: copyDir,
+		RedirectMethod: exoCore.RedirectSymlink,
+		MigratedAt:     time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	item := fakeCache()
+	item.CurrentPath = original
+	app := nsgotest.Start(t, NewMain(newFakeEngine(item)), nsgotest.Size(1100, 800))
+	app.WaitUntil(2*time.Second, func() bool { return app.Exists("text:Fake Cache") })
+	app.Settle()
+
+	if got := badgeText(app, item.ID); got != "Rewritten" {
+		t.Fatalf("the card shows %q, want Rewritten", got)
+	}
+	if !app.Exists("text:" + englishText.RewrittenNote) {
+		t.Fatalf("the card does not say what happened:\n%s", app.Dump())
+	}
+	if !app.Exists("id:keep-local-" + item.ID) {
+		t.Fatalf("the card offers no way out:\n%s", app.Dump())
+	}
+	if app.Exists("id:rollback-"+item.ID) || app.Exists("id:check-"+item.ID) {
+		t.Fatalf("the card offers a move back or a check that cannot work:\n%s", app.Dump())
 	}
 }

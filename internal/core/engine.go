@@ -68,12 +68,51 @@ func (e *Engine) ScanAll(ctx context.Context) ([]CacheItem, error) {
 		return nil, fmt.Errorf("%w: %v", ErrLedger, err)
 	}
 	for i := range allItems {
-		if rec, ok := manifest.Records[allItems[i].ID]; ok {
-			allItems[i].IsMigrated = true
-			allItems[i].DestinationPath = rec.DestinationDir
+		rec, ok := manifest.Records[allItems[i].ID]
+		if !ok {
+			continue
+		}
+		allItems[i].IsMigrated = true
+		allItems[i].DestinationPath = rec.DestinationDir
+		// A record that names another path does not describe this item, so the
+		// scan claims nothing about its link.
+		if filepath.Clean(rec.OriginalPath) == filepath.Clean(allItems[i].CurrentPath) {
+			allItems[i].LinkState = linkStateOf(rec)
 		}
 	}
 	return allItems, errors.Join(detectErrs...)
+}
+
+// linkStateOf reads the original path of a record. It inspects only a record
+// that moved the data by link, because a tool setting leaves no link to read.
+// An original path that is gone is not a problem: the copy holds the data, and
+// the tool writes a new folder when it needs one. A path that Exodrive cannot
+// read counts as written again, so the card asks the person to look.
+func linkStateOf(rec MigrationRecord) LinkState {
+	if rec.RedirectMethod != RedirectSymlink {
+		return LinkUnknown
+	}
+	info, err := os.Lstat(rec.OriginalPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return LinkUnknown
+		}
+		return LinkRewritten
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return LinkRewritten
+	}
+	target, err := os.Readlink(rec.OriginalPath)
+	if err != nil {
+		return LinkRewritten
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(rec.OriginalPath), target)
+	}
+	if filepath.Clean(target) == filepath.Clean(rec.DestinationDir) {
+		return LinkMoved
+	}
+	return LinkRewritten
 }
 
 // provider returns the registered provider for an item. It fails closed: an

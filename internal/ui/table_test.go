@@ -182,3 +182,27 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	return string(out)
 }
+
+// A cache that a tool wrote again must not read as moved. The folder is here
+// again, so its bytes count as local and the row says what to do.
+func TestRenderTableShowsACacheWrittenAgain(t *testing.T) {
+	items := []core.CacheItem{{
+		ID: "dart.pub-cache", ToolName: "dart", Title: "Dart Pub Package Cache",
+		Category: core.CategoryPackageStore, CurrentPath: "/Users/x/.pub-cache/hosted",
+		DestinationPath: "/Volumes/SSD/exodrive/dart/hosted",
+		SizeBytes:       2048, IsActive: true, IsMigrated: true,
+		LinkState: core.LinkRewritten, RedirectMethod: core.RedirectSymlink,
+	}}
+
+	out := captureStdout(t, func() { RenderTable(items) })
+
+	if !strings.Contains(out, "Rewritten") {
+		t.Fatalf("the table does not say the folder is here again:\n%s", out)
+	}
+	if !strings.Contains(out, "A tool wrote this folder again.") {
+		t.Fatalf("the table does not name the way out:\n%s", out)
+	}
+	if !strings.Contains(out, "Total Local SSD Cache: 2.0 KB | Already on External: 0 B") {
+		t.Fatalf("the table counts the bytes on the drive:\n%s", out)
+	}
+}

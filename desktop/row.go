@@ -114,6 +114,8 @@ func rowProblem(cx *core.Scope, it exoCore.CacheItem, place cacheState, failed b
 		return inlineNote(cx, lucide.TriangleAlert, colors.Danger, it.BlockedReason)
 	case failed:
 		return inlineNote(cx, lucide.TriangleAlert, colors.Danger, t.MoveStopped)
+	case place == stateRewritten:
+		return inlineNote(cx, lucide.TriangleAlert, colors.Warn, t.RewrittenNote)
 	case it.Warning != "":
 		return inlineNote(cx, lucide.TriangleAlert, colors.Warn, it.Warning)
 	case place == stateUnused:
@@ -158,8 +160,9 @@ func failureBlock(cx *core.Scope, state *AppState, it exoCore.CacheItem, failure
 			Disabled: func() bool { return busy(state) }, OnPress: func() { retry(state, it) }, TestID: "retry-" + it.ID},
 	}
 	// A cache with a record can keep its local folder. This is the way out when
-	// a tool wrote the folder again after a move.
-	if it.IsMigrated {
+	// a tool wrote the folder again after a move. The card already offers that
+	// action when the scan reads the folder as written again.
+	if it.IsMigrated && it.LinkState != exoCore.LinkRewritten {
 		actions = append(actions, ui.Button{Text: state.Text.KeepLocalAction, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.FolderInput,
 			Disabled: func() bool { return busy(state) }, OnPress: func() { state.KeepLocalTarget.Set(it.ID) }, TestID: "keep-local-" + it.ID})
 	}
@@ -177,6 +180,10 @@ func failureBlock(cx *core.Scope, state *AppState, it exoCore.CacheItem, failure
 // a retry never moves data on one press alone.
 func retry(state *AppState, it exoCore.CacheItem) {
 	switch {
+	// A rollback on a folder that a tool wrote again fails again. Keep the
+	// folder that is here instead.
+	case it.LinkState == exoCore.LinkRewritten:
+		state.KeepLocalTarget.Set(it.ID)
 	case it.IsMigrated:
 		state.RollbackTarget.Set(it.ID)
 	case !it.IsActive:
@@ -206,9 +213,10 @@ func moveOne(state *AppState, it exoCore.CacheItem) {
 func rowFoot(cx *core.Scope, state *AppState, it exoCore.CacheItem, place cacheState) core.Node {
 	colors := ui.ColorsOf(cx)
 	actions := rowActions(state, it, place)
-	// A blocked cache never moves, so the card names no change.
+	// A blocked cache never moves, so the card names no change. A cache that a
+	// tool wrote again names the problem above instead.
 	note := ""
-	if place != stateBlocked {
+	if place != stateBlocked && place != stateRewritten {
 		note = switchNote(it.RedirectMethod, state.Text)
 	}
 	if len(actions) == 0 && note == "" {
@@ -247,6 +255,11 @@ func rowActions(state *AppState, it exoCore.CacheItem, place cacheState) []core.
 	case stateUnused:
 		return []core.Node{ui.Button{Text: t.DeleteCache, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.Trash,
 			Disabled: disabled, OnPress: func() { state.CleanTarget.Set(it.ID) }, TestID: "clean-" + it.ID}}
+	// A tool wrote the folder again, so the copy cannot come back. The way out
+	// is to keep the folder that is here.
+	case stateRewritten:
+		return []core.Node{ui.Button{Text: t.KeepLocalAction, Variant: ui.ButtonSecondary, Size: ui.SizeSmall, Icon: lucide.FolderInput,
+			Disabled: disabled, OnPress: func() { state.KeepLocalTarget.Set(it.ID) }, TestID: "keep-local-" + it.ID}}
 	}
 	return nil
 }

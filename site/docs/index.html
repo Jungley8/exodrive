@@ -220,7 +220,9 @@ exodrive rollback npm.cache</code></pre>
             Run <code>exodrive rollback --keep-local &lt;item&gt;</code> to keep the
             folder on this Mac. The command deletes the copy on the drive and
             removes the record. The window offers the same action as
-            <strong>Keep the local folder</strong> on the failure card.
+            <strong>Keep the local folder</strong> on the card, with no failed
+            press first. <code>exodrive check</code> shows such a cache as
+            <code>Rewritten</code>, because the folder is here again.
           </p>
 
           <h2 id="stopping">Stop the window</h2>
@@ -279,7 +281,7 @@ exodrive rollback npm.cache</code></pre>
               </tr>
               <tr>
                 <td>Xcode created a real folder in place of the link</td>
-                <td>A rollback compares the two folders first. When they differ, both stay. Press <strong>Keep the local folder</strong> to delete the copy.</td>
+                <td>The card shows <strong>Rewritten</strong>. Press <strong>Keep the local folder</strong> to delete the copy. A rollback compares the two folders first, so it refuses when they differ.</td>
               </tr>
               <tr>
                 <td>No record of this move</td>

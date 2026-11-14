@@ -138,7 +138,8 @@ and return an error with the record intact.
 
 A tool that deletes the link and writes its cache again leaves an item that a
 rollback cannot finish. `rollback --keep-local` takes the local folder as the
-truth. The window offers it as **Keep the local folder** on a failure card.
+truth. The window offers it as **Keep the local folder** on the card, with no
+failed press first.
 
 1. Load the ledger record. A missing record is an error.
 2. Run the record check. The check refuses a record whose paths could delete the
@@ -273,6 +274,14 @@ refuses the migration; none of them falls back to a weaker mode.
      processes cannot lose an update.
    - A record ID is unique. A second record for the same ID is refused.
    - A scan marks an item as migrated when the ledger holds its ID.
+   - For a record that moved the data by link, the scan reads the original path
+     and sets `LinkState`. `moved` means the link reaches the copy. `rewritten`
+     means a real folder sits there again, or the link points elsewhere. Empty
+     means the path is gone, or the record moved the data with a tool setting.
+     A path that the scan cannot read counts as `rewritten`, so the card asks
+     the person to look.
+   - `rewritten` keeps the record. The card offers **Keep the local folder** and
+     no move back or check, because the two trees differ.
    - A rollback removes the record only after it restores the data. A rollback
      that cannot restore the data keeps the record.
 7. **Orphan deletion guard**:
@@ -404,18 +413,20 @@ refuses the migration; none of them falls back to a weaker mode.
   the failure with its next step, and the one action that fits the state. No
   fact waits behind a press.
 - The state chip carries a word, so color is never the only signal:
-  `On this Mac`, `On the drive`, `Cannot move`, `Unused`, `Move failed`,
-  `Move back failed`.
-- `stateOf` reads the move first, then use, then the block. A moved cache shows
-  where it lives even when it also carries a reason.
+  `On this Mac`, `On the drive`, `Cannot move`, `Unused`, `Rewritten`,
+  `Move failed`, `Move back failed`.
+- `stateOf` reads the rewritten link first, then the move, then use, then the
+  block. A moved cache shows where it lives even when it also carries a reason.
 - A cache that is moved, unused, or blocked shows a disabled checkbox.
   `movable` is the only gate that select all, the move, and the count of caches
   that can move read.
 - A card offers the action that fits its place. A local cache offers `Move`,
   which asks for a confirmation that holds that cache alone; without a checked
   folder it opens the folder picker first. A moved cache offers `Check the copy`
-  and `Move back`. An unused cache offers `Delete cache`. Each one asks for
-  confirmation. The delete names the path and says the data is gone.
+  and `Move back`. An unused cache offers `Delete cache`. A cache that a tool
+  wrote again offers `Keep the local folder`, because a move back would fail on
+  the two trees. Each one asks for confirmation. The delete names the path and
+  says the data is gone.
 - The rail lists what the check found, by group: Node, Python, Rust, Go,
   Apple, JVM, Mobile, Homebrew, Docker, and Other. Each group shows its count
   and a bar split by place, so a press on a group reads before it filters. A
@@ -522,7 +533,9 @@ refuses the migration; none of them falls back to a weaker mode.
 ## 6. Command line contract
 
 - `check` prints the detected caches, the tool version, and the switch method.
-  A migrated cache prints its copy as `   └── copy: <path>`.
+  A migrated cache prints its copy as `   └── copy: <path>`. A cache that a
+  tool wrote again prints the state `Rewritten` and the next step on the line
+  below. Its bytes count as local.
   A provider that fails prints a warning; the other items stay usable. An
   unreadable ledger stops the command.
 - `preflight <item> --target` runs the same checks a migration runs first.

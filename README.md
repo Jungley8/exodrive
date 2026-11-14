@@ -68,6 +68,10 @@ effect at the next start of the tool.
 
 Run `exodrive check` to confirm. A moved cache shows the state Migrated.
 
+A tool can delete the link and write its folder again. `exodrive check` then
+shows the state Rewritten, and the card says so. The folder on this Mac is real
+again, so the tool no longer reaches the copy.
+
 Xcode can delete Derived Data or the previews folder, and then create a real
 folder in place of the link. Exodrive keeps the ledger record, so a rollback
 compares the two folders first. A rollback that would drop newer files stops,
@@ -75,9 +79,9 @@ and Exodrive keeps both folders.
 
 Run `exodrive rollback --keep-local <item>` to keep the folder on this Mac. The
 command deletes the copy on the drive and removes the record. The window offers
-the same action as **Keep the local folder** on the failure card. The command
-refuses while the original path is still a link, because the rollback can finish
-that case.
+the same action as **Keep the local folder** on the card, with no failed press
+first. The command refuses while the original path is still a link, because the
+rollback can finish that case.
 
 ## Safety rules
 

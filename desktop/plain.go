@@ -181,10 +181,15 @@ const (
 	stateMoved
 	stateBlocked
 	stateUnused
+	stateRewritten
 )
 
 func stateOf(it exoCore.CacheItem) cacheState {
 	switch {
+	// A record can hold a copy that the tool no longer reaches. The card must
+	// say so, because the folder on this Mac is real again.
+	case it.LinkState == exoCore.LinkRewritten:
+		return stateRewritten
 	case it.IsMigrated:
 		return stateMoved
 	case !it.IsActive:
@@ -203,6 +208,8 @@ func (s cacheState) label(t text) string {
 		return t.CannotMove
 	case stateUnused:
 		return t.Unused
+	case stateRewritten:
+		return t.Rewritten
 	}
 	return t.OnThisMac
 }

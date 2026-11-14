@@ -29,11 +29,17 @@ func RenderTable(items []core.CacheItem) {
 	var totalInternal, totalMigrated int64
 
 	for _, item := range items {
+		// A record can hold a copy that the tool no longer reaches. A folder
+		// that a tool wrote again counts as local, because it is here again.
 		status := "Internal"
-		if item.IsMigrated {
+		switch {
+		case item.LinkState == core.LinkRewritten:
+			status = "Rewritten"
+			totalInternal += item.SizeBytes
+		case item.IsMigrated:
 			status = "Migrated"
 			totalMigrated += item.SizeBytes
-		} else {
+		default:
 			totalInternal += item.SizeBytes
 		}
 
@@ -67,6 +73,9 @@ func RenderTable(items []core.CacheItem) {
 		}
 		if item.DestinationPath != "" {
 			fmt.Printf("   └── copy: %s\n", item.DestinationPath)
+		}
+		if item.LinkState == core.LinkRewritten {
+			fmt.Println("   └── [!] A tool wrote this folder again. Keep the folder on this Mac, or restore the copy.")
 		}
 		if item.Warning != "" {
 			fmt.Printf("   └── [!] %s\n", item.Warning)

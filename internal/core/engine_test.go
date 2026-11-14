@@ -287,6 +287,153 @@ func TestEngineScanMarksLedgerItems(t *testing.T) {
 	}
 }
 
+// TestScanAllReadsHowTheLinkStands keeps the card honest after a tool writes a
+// folder again. The ledger alone cannot tell, so the scan reads the path.
+func TestScanAllReadsHowTheLinkStands(t *testing.T) {
+	cases := []struct {
+		name   string
+		method RedirectMethod
+		build  func(t *testing.T, original, copyDir string)
+		want   LinkState
+	}{
+		{
+			name:   "a link to the copy",
+			method: RedirectSymlink,
+			build: func(t *testing.T, original, copyDir string) {
+				mustMkdir(t, copyDir)
+				mustLink(t, copyDir, original)
+			},
+			want: LinkMoved,
+		},
+		{
+			name:   "a folder written again",
+			method: RedirectSymlink,
+			build: func(t *testing.T, original, _ string) {
+				mustMkdir(t, filepath.Join(original, "pkg"))
+			},
+			want: LinkRewritten,
+		},
+		{
+			name:   "a link to another folder",
+			method: RedirectSymlink,
+			build: func(t *testing.T, original, _ string) {
+				mustLink(t, t.TempDir(), original)
+			},
+			want: LinkRewritten,
+		},
+		{
+			// The copy holds the data, and the tool writes a new folder when it
+			// needs one. The card needs no warning.
+			name:   "a path that is gone",
+			method: RedirectSymlink,
+			build:  func(t *testing.T, original, _ string) {},
+			want:   LinkUnknown,
+		},
+		{
+			// A tool setting leaves no link to read, so the scan does not claim
+			// to know where the data stands.
+			name:   "a record that moved with a setting",
+			method: RedirectNativeConfig,
+			build: func(t *testing.T, original, _ string) {
+				mustMkdir(t, original)
+			},
+			want: LinkUnknown,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+			original := filepath.Join(t.TempDir(), "home", ".cache", "mock")
+			copyDir := filepath.Join(t.TempDir(), "drive", "mock")
+			tc.build(t, original, copyDir)
+
+			engine := NewEngine(&MockProvider{name: "mock", items: []CacheItem{{
+				ID: "mock.link", ToolName: "mock", Title: "Mock", Category: CategoryPackageStore,
+				CurrentPath: original, IsActive: true,
+			}}})
+			if err := RecordMigration(MigrationRecord{
+				ID:             "mock.link",
+				ToolName:       "mock",
+				OriginalPath:   original,
+				DestinationDir: copyDir,
+				RedirectMethod: tc.method,
+				MigratedAt:     time.Now(),
+			}); err != nil {
+				t.Fatal(err)
+			}
+
+			items, err := engine.ScanAll(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(items) != 1 {
+				t.Fatalf("the scan reports %d items, want 1", len(items))
+			}
+			if !items[0].IsMigrated {
+				t.Fatal("the scan lost the record")
+			}
+			if items[0].LinkState != tc.want {
+				t.Fatalf("the scan reads the link as %q, want %q", items[0].LinkState, tc.want)
+			}
+		})
+	}
+}
+
+// TestScanAllIgnoresARecordForAnotherPath keeps a record that names a different
+// path from speaking about this item. A provider can change the folder that it
+// reports, and the old record then describes something else.
+func TestScanAllIgnoresARecordForAnotherPath(t *testing.T) {
+	t.Setenv(ManifestEnvVar, filepath.Join(t.TempDir(), "manifest.json"))
+
+	original := filepath.Join(t.TempDir(), "home", ".bun", "install", "cache")
+	mustMkdir(t, original) // A real folder, which a matching record would call rewritten.
+
+	engine := NewEngine(&MockProvider{name: "mock", items: []CacheItem{{
+		ID: "mock.drift", ToolName: "mock", Title: "Mock", Category: CategoryPackageStore,
+		CurrentPath: original, IsActive: true,
+	}}})
+	if err := RecordMigration(MigrationRecord{
+		ID:             "mock.drift",
+		ToolName:       "mock",
+		OriginalPath:   filepath.Join(t.TempDir(), "Library", "Caches", "mock"),
+		DestinationDir: filepath.Join(t.TempDir(), "drive", "mock"),
+		RedirectMethod: RedirectSymlink,
+		MigratedAt:     time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := engine.ScanAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !items[0].IsMigrated {
+		t.Fatal("the scan lost the record")
+	}
+	if items[0].LinkState != LinkUnknown {
+		t.Fatalf("the scan read another path's record as %q, want none", items[0].LinkState)
+	}
+}
+
+func mustMkdir(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func mustLink(t *testing.T, target, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+}
+
 type failingProvider struct{ name string }
 
 func (f *failingProvider) Name() string { return f.name }

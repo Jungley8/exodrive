@@ -32,6 +32,24 @@ const (
 	PhaseVerify MovePhase = "verify"
 )
 
+// LinkState says how the original path stands for a record that moved by
+// symbolic link. A scan reads the path, because the ledger alone cannot say
+// whether a tool wrote the folder again after the move.
+type LinkState string
+
+const (
+	// LinkUnknown means the scan cannot tell: the ledger holds no record for
+	// the item, the record moved the data with a tool setting, or the original
+	// path is gone.
+	LinkUnknown LinkState = ""
+	// LinkMoved means the original path is a link to the copy on the drive.
+	LinkMoved LinkState = "moved"
+	// LinkRewritten means the tool no longer reaches the copy through the
+	// original path, because a real folder sits there again or the link points
+	// somewhere else.
+	LinkRewritten LinkState = "rewritten"
+)
+
 // CacheItem represents a single developer cache entity.
 type CacheItem struct {
 	ID          string        `json:"id"`
@@ -41,15 +59,18 @@ type CacheItem struct {
 	Category    CacheCategory `json:"category"`
 	CurrentPath string        `json:"current_path"`
 	// DestinationPath holds the moved copy from the ledger record, or "".
-	DestinationPath string         `json:"destination_path,omitempty"`
-	ConfiguredPath  string         `json:"configured_path,omitempty"`
-	SizeBytes       int64          `json:"size_bytes"`
-	IsActive        bool           `json:"is_active"`
-	IsMigrated      bool           `json:"is_migrated"`
-	IsSymlink       bool           `json:"is_symlink"`
-	RedirectMethod  RedirectMethod `json:"redirect_method"`
-	TargetSubdir    string         `json:"target_subdir"`
-	Warning         string         `json:"warning,omitempty"`
+	DestinationPath string `json:"destination_path,omitempty"`
+	ConfiguredPath  string `json:"configured_path,omitempty"`
+	SizeBytes       int64  `json:"size_bytes"`
+	IsActive        bool   `json:"is_active"`
+	IsMigrated      bool   `json:"is_migrated"`
+	IsSymlink       bool   `json:"is_symlink"`
+	// LinkState says where the move stands for a record that used a link. The
+	// scan fills it. Empty for a cache with no record.
+	LinkState      LinkState      `json:"link_state,omitempty"`
+	RedirectMethod RedirectMethod `json:"redirect_method"`
+	TargetSubdir   string         `json:"target_subdir"`
+	Warning        string         `json:"warning,omitempty"`
 	// BlockedReason says why Exodrive cannot move this item. Empty when it can.
 	// A blocked item stays visible, so the user can read the reason and act.
 	BlockedReason string `json:"blocked_reason,omitempty"`

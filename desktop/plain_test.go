@@ -231,6 +231,12 @@ func TestStateOfReadsTheMoveFirst(t *testing.T) {
 	if got := stateOf(local); got != stateLocal || got.label(englishText) != "On this Mac" {
 		t.Fatalf("a local cache reads as %v", got)
 	}
+	// A tool wrote the folder again, so the cache is here and the copy is out
+	// of reach. The card must not say that the cache is on the drive.
+	rewritten := exoCore.CacheItem{ID: "x", IsMigrated: true, IsActive: true, LinkState: exoCore.LinkRewritten}
+	if got := stateOf(rewritten); got != stateRewritten || got.label(englishText) != "Rewritten" {
+		t.Fatalf("a cache written again reads as %v", got)
+	}
 }
 
 // TestMovableRefusesAUsedOrBlockedCache guards the gate that every move, select

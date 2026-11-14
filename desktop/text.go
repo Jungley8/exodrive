@@ -104,6 +104,8 @@ type text struct {
 	MoveBackFailed  string
 	CannotMove      string
 	Unused          string
+	Rewritten       string
+	RewrittenNote   string
 	MoveStopped     string
 	UnusedNote      string
 	SwitchNative    string
@@ -322,6 +324,8 @@ var englishText = text{
 	MoveBackFailed: "Move back failed",
 	CannotMove:     "Cannot move",
 	Unused:         "Unused",
+	Rewritten:      "Rewritten",
+	RewrittenNote:  "A tool wrote this folder again. Keep the folder on this Mac, or restore the copy.",
 	MoveStopped:    "The move below stopped. Read the reason, then try again.",
 	UnusedNote:     "The program does not use this cache anymore.",
 	SwitchNative:   "Exodrive changes this program's setting. The program reads it at its next start.",
@@ -534,6 +538,8 @@ var chineseText = text{
 	MoveBackFailed: "搬回失败",
 	CannotMove:     "无法迁移",
 	Unused:         "未使用",
+	Rewritten:      "已重写",
+	RewrittenNote:  "工具重建了这个目录。保留本机目录，或从外置盘还原副本。",
 	MoveStopped:    "下面的迁移已停止。读完原因后重试。",
 	UnusedNote:     "程序已不再使用这个缓存。",
 	SwitchNative:   "Exodrive 会修改这个程序的设置。程序下次启动时读取。",
